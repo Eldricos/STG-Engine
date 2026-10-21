@@ -23,6 +23,11 @@ inline uint32 READ_LE_UINT32(const void *ptr) {
 	return (uint32)b[0] | ((uint32)b[1] << 8) | ((uint32)b[2] << 16) | ((uint32)b[3] << 24);
 }
 
+inline uint64 READ_LE_UINT64(const void *ptr) {
+	const byte *b = (const byte *)ptr;
+	return (uint64)READ_LE_UINT32(b) | ((uint64)READ_LE_UINT32(b + 4) << 32);
+}
+
 inline uint16 READ_BE_UINT16(const void *ptr) {
 	const byte *b = (const byte *)ptr;
 	return (uint16)((b[0] << 8) | b[1]);

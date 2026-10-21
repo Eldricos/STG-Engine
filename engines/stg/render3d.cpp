@@ -174,7 +174,7 @@ void LevelRenderer::drawFlats(Graphics::Surface &dst, uint32 time) {
 	const std::vector<LevelFile::Vertex> &vertices = _level.getVertices();
 	std::vector<Vertex> poly;
 	for (const LevelFile::Sector &flat : _level.getSectors()) {
-		if (!(flat.flags & LevelFile::kFlagVisible))
+		if (!(flat.flags & LevelFile::kFlagVisible) || !(flat.zones & _zones))
 			continue;
 		double height = fromFixed(flat.height);
 		// Floors are only seen from above and ceilings from below.
@@ -207,7 +207,7 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 	const std::vector<LevelFile::Vertex> &vertices = _level.getVertices();
 	std::vector<Vertex> poly(4);
 	for (const LevelFile::Wall &wall : _level.getWalls()) {
-		if (!(wall.flags & LevelFile::kFlagVisible))
+		if (!(wall.flags & LevelFile::kFlagVisible) || !(wall.zones & _zones))
 			continue;
 		double x1 = fromFixed(vertices[wall.vertex1].x), y1 = fromFixed(vertices[wall.vertex1].y);
 		double x2 = fromFixed(vertices[wall.vertex2].x), y2 = fromFixed(vertices[wall.vertex2].y);
@@ -235,6 +235,8 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 	std::vector<Vertex> poly(4);
 	for (const LevelFile::Billboard &billboard : _level.getBillboards()) {
+		if (!(billboard.zones & _zones))
+			continue;
 		const Texture *texture = getTexture(billboard.texture, billboard.frames, time);
 		if (!texture)
 			continue;
@@ -358,60 +360,46 @@ void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *textur
 	}
 }
 
-namespace {
-
-/** Even-odd point in polygon test on the floor plan. */
-bool containsPoint(const std::vector<LevelFile::Vertex> &vertices, const LevelFile::Sector &flat, double x, double y) {
-	bool inside = false;
-	size_t n = flat.vertices.size();
-	for (size_t i = 0, j = n - 1; i < n; j = i++) {
-		double xi = fromFixed(vertices[flat.vertices[i]].x), yi = fromFixed(vertices[flat.vertices[i]].y);
-		double xj = fromFixed(vertices[flat.vertices[j]].x), yj = fromFixed(vertices[flat.vertices[j]].y);
-		if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
-			inside = !inside;
-	}
-	return inside;
-}
-
-} // End of anonymous namespace
-
-bool LevelRenderer::findFloor(double x, double y, double maxHeight, double &height) const {
-	bool found = false;
-	for (const LevelFile::Sector &flat : _level.getSectors()) {
-		if (flat.isCeiling() || flat.vertices.size() < 3)
-			continue;
-		double h = fromFixed(flat.height);
-		if (h > maxHeight || (found && h <= height))
-			continue;
-		if (containsPoint(_level.getVertices(), flat, x, y)) {
-			height = h;
-			found = true;
-		}
-	}
-	return found;
-}
-
 Camera LevelRenderer::getStartCamera(double eyeHeight) const {
-	Camera camera;
+	struct Floor {
+		double area, x, y;
+		int32 height;
+	};
+	std::vector<Floor> floors;
+	std::map<int32, double> areaByHeight, largestByHeight;
 	const std::vector<LevelFile::Vertex> &vertices = _level.getVertices();
-	double bestArea = -1;
 	for (const LevelFile::Sector &flat : _level.getSectors()) {
 		if (flat.isCeiling() || flat.vertices.size() < 3)
 			continue;
-		double area = 0, cx = 0, cy = 0;
+		Floor floor = { 0, 0, 0, flat.height };
 		size_t n = flat.vertices.size();
 		for (size_t i = 0; i < n; i++) {
 			const LevelFile::Vertex &a = vertices[flat.vertices[i]], &b = vertices[flat.vertices[(i + 1) % n]];
-			area += fromFixed(a.x) * fromFixed(b.y) - fromFixed(b.x) * fromFixed(a.y);
-			cx += fromFixed(a.x);
-			cy += fromFixed(a.y);
+			floor.area += fromFixed(a.x) * fromFixed(b.y) - fromFixed(b.x) * fromFixed(a.y);
+			floor.x += fromFixed(a.x);
+			floor.y += fromFixed(a.y);
 		}
-		area = std::fabs(area) / 2;
-		if (area > bestArea) {
-			bestArea = area;
-			camera.x = cx / n;
-			camera.y = cy / n;
-			camera.z = fromFixed(flat.height) + eyeHeight;
+		floor.area = std::fabs(floor.area) / 2;
+		floor.x /= n;
+		floor.y /= n;
+		floors.push_back(floor);
+		areaByHeight[flat.height] += floor.area;
+		largestByHeight[flat.height] = std::max(largestByHeight[flat.height], floor.area);
+	}
+
+	// Levels surround the play area with large single floors, so prefer the
+	// height where the most floor area is made of several pieces, and stand
+	// in the middle of its largest piece.
+	Camera camera;
+	double bestScore = -1, bestArea = -1;
+	for (const Floor &floor : floors) {
+		double score = areaByHeight[floor.height] - largestByHeight[floor.height];
+		if (score > bestScore || (score == bestScore && floor.area > bestArea)) {
+			bestScore = score;
+			bestArea = floor.area;
+			camera.x = floor.x;
+			camera.y = floor.y;
+			camera.z = fromFixed(floor.height) + eyeHeight;
 		}
 	}
 	return camera;

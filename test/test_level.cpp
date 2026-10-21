@@ -8,10 +8,13 @@
 
 #include "test/test.h"
 
+#include <cmath>
+
 #include "common/endian.h"
 #include "common/stream.h"
 #include "engines/stg/level.h"
 #include "engines/stg/render3d.h"
+#include "engines/stg/walker.h"
 
 namespace {
 
@@ -190,6 +193,8 @@ std::vector<Chunk> makeRenderableLevel() {
 	WRITE_LE_UINT32(sector + 0x48, 0x10000);
 	WRITE_LE_UINT32(sector + 0x50, 0x10000);
 	WRITE_LE_UINT16(sector + 0x11C, 9);
+	WRITE_LE_UINT32(sector + 0x3C, 1); // zone 0
+	WRITE_LE_UINT32(sector + 0x74, 1); // only zone 0 in play
 
 	byte *wall = chunks[3].data.data();
 	WRITE_LE_UINT32(wall + 0x2C, 0x10000);
@@ -198,6 +203,7 @@ std::vector<Chunk> makeRenderableLevel() {
 	WRITE_LE_UINT32(wall + 0x50, 0x30000);
 	WRITE_LE_UINT32(wall + 0x6C, STG::LevelFile::kFlagVisible);
 	WRITE_LE_UINT16(wall + 0x96, 9);
+	WRITE_LE_UINT32(wall + 0x3C, 1);
 
 	Chunk billboards = { STG::LevelFile::kChunkBillboards, 1, 1, std::vector<byte>(140) };
 	WRITE_LE_UINT32(&billboards.data[0x1C], 0x1CCCD);           // x 1.8
@@ -207,6 +213,7 @@ std::vector<Chunk> makeRenderableLevel() {
 	WRITE_LE_UINT32(&billboards.data[0x38], 0x4000);
 	WRITE_LE_UINT16(&billboards.data[0x86], 1);
 	WRITE_LE_UINT16(&billboards.data[0x8A], 9);
+	WRITE_LE_UINT32(&billboards.data[0x3C], 1);
 	chunks.push_back(billboards);
 
 	Chunk sky = { STG::LevelFile::kChunkSky, 0, 1, std::vector<byte>(64 + 8, 0x77) };
@@ -248,12 +255,6 @@ TEST(level_renderer_draws_floor_wall_and_sky) {
 	STG::LevelFile level;
 	CHECK(loadLevel(level, makeLevelFile(makeRenderableLevel())));
 	STG::LevelRenderer renderer(level);
-
-	double floor = -1;
-	CHECK(renderer.findFloor(1, 1, 10, floor));
-	CHECK(floor == 0);
-	CHECK(!renderer.findFloor(5, 1, 10, floor));
-	CHECK(!renderer.findFloor(1, 1, -1, floor));
 
 	// Standing in the square, looking along +x at the wall.
 	STG::Camera camera;
@@ -333,4 +334,197 @@ TEST(level_renderer_lighting) {
 	renderer.setLightingEnabled(false);
 	renderer.render(camera, view, 0);
 	CHECK(view.getPixel(28, 17) >= 10);
+}
+
+TEST(level_renderer_draws_only_visible_zones) {
+	STG::LevelFile level;
+	CHECK(loadLevel(level, makeLevelFile(makeRenderableLevel())));
+	STG::LevelRenderer renderer(level);
+	STG::Camera camera;
+	camera.x = 0.2;
+	camera.y = 1;
+	camera.z = 0.25;
+	Graphics::Surface view;
+	view.create(64, 32, Graphics::PixelFormat::createFormatCLUT8());
+
+	renderer.setVisibleZones(2); // everything in the level is in zone 0
+	renderer.render(camera, view, 0);
+	CHECK_EQ(view.getPixel(28, 17), 0x77u);
+	CHECK_EQ(view.getPixel(32, 31), 0x77u);
+}
+
+namespace {
+
+/** Builds levels of rectangular floors and straight walls for the walker. */
+struct LevelBuilder {
+	std::vector<std::pair<int32, int32>> vertices;
+	std::vector<std::vector<byte>> flats, walls;
+
+	uint16 addVertex(double x, double y) {
+		vertices.push_back({ (int32)(x * 65536), (int32)(y * 65536) });
+		return (uint16)(vertices.size() - 1);
+	}
+
+	void addFloor(double x0, double y0, double x1, double y1, double height, uint32 zone = 1, uint32 active = 1) {
+		std::vector<byte> r(292);
+		WRITE_LE_UINT32(&r[108], STG::LevelFile::kFlagVisible);
+		WRITE_LE_UINT32(&r[0x20], (uint32)(int32)(height * 65536));
+		WRITE_LE_UINT32(&r[0x3C], zone);
+		WRITE_LE_UINT32(&r[0x74], active);
+		WRITE_LE_UINT16(&r[266], 4);
+		WRITE_LE_UINT16(&r[268], addVertex(x0, y0));
+		WRITE_LE_UINT16(&r[270], addVertex(x1, y0));
+		WRITE_LE_UINT16(&r[272], addVertex(x1, y1));
+		WRITE_LE_UINT16(&r[274], addVertex(x0, y1));
+		flats.push_back(r);
+	}
+
+	/** A wall from (x0, y0) to (x1, y1), solid on its left as seen walking along it. */
+	void addWall(double x0, double y0, double x1, double y1, double bottom, double top, uint32 flags = 0,
+	             uint32 zone = 1) {
+		std::vector<byte> r(152);
+		double dx = x1 - x0, dy = y1 - y0, length = std::sqrt(dx * dx + dy * dy);
+		double nx = -dy / length, ny = dx / length, d = -(nx * x0 + ny * y0);
+		WRITE_LE_UINT32(&r[0x1C], (uint32)(int32)(nx * 65536));
+		WRITE_LE_UINT32(&r[0x24], (uint32)(int32)(ny * 65536));
+		WRITE_LE_UINT32(&r[0x28], (uint32)(int32)(d * 65536));
+		WRITE_LE_UINT32(&r[0x2C], (uint32)(int32)(top * 65536));
+		WRITE_LE_UINT32(&r[0x30], (uint32)(int32)(bottom * 65536));
+		WRITE_LE_UINT32(&r[0x3C], zone);
+		WRITE_LE_UINT32(&r[0x6C], STG::LevelFile::kFlagVisible | flags);
+		WRITE_LE_UINT16(&r[0x86], addVertex(x0, y0));
+		WRITE_LE_UINT16(&r[0x88], addVertex(x1, y1));
+		walls.push_back(r);
+	}
+
+	std::vector<byte> build() const {
+		std::vector<Chunk> chunks;
+		chunks.push_back({ STG::LevelFile::kChunkPalette, 1, 256, std::vector<byte>(1024) });
+		Chunk v = { STG::LevelFile::kChunkVertices, 1, (uint16)vertices.size(), {} };
+		for (const auto &p : vertices) {
+			byte b[8];
+			WRITE_LE_UINT32(b, (uint32)p.first);
+			WRITE_LE_UINT32(b + 4, (uint32)p.second);
+			v.data.insert(v.data.end(), b, b + 8);
+		}
+		chunks.push_back(v);
+		Chunk f = { STG::LevelFile::kChunkSectors, 1, (uint16)flats.size(), {} };
+		for (const auto &r : flats)
+			f.data.insert(f.data.end(), r.begin(), r.end());
+		chunks.push_back(f);
+		Chunk w = { STG::LevelFile::kChunkWalls, 1, (uint16)walls.size(), {} };
+		for (const auto &r : walls)
+			w.data.insert(w.data.end(), r.begin(), r.end());
+		chunks.push_back(w);
+		return makeLevelFile(chunks);
+	}
+};
+
+/** A 20 x 20 floor at height 0, with a wall along x = 10 facing -x. */
+LevelBuilder makeRoom(double wallTop = 12, uint32 wallFlags = 0, uint32 wallZone = 1) {
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 20, 20, 0);
+	builder.addWall(10, 0, 10, 20, 0, wallTop, wallFlags, wallZone);
+	return builder;
+}
+
+} // End of anonymous namespace
+
+TEST(walker_stops_at_walls) {
+	STG::LevelFile level;
+	CHECK(loadLevel(level, makeRoom().build()));
+	STG::Walker walker(level);
+	walker.place(5, 10, 0);
+	CHECK_EQ(walker.getFloor(), 0);
+	CHECK(walker.getFeet() == 0);
+	CHECK(walker.getEye() == STG::Walker::kEyeHeight);
+
+	walker.move(10, 0, 0.1);
+	CHECK(std::fabs(walker.getX() - (10 - STG::Walker::kRadius)) < 0.05);
+	CHECK(std::fabs(walker.getY() - 10) < 1e-9);
+
+	// Pushing into the wall at an angle slides along it.
+	walker.move(5, 4, 0.1);
+	CHECK(walker.getX() < 10 - STG::Walker::kRadius + 0.01);
+	CHECK(std::fabs(walker.getY() - 14) < 0.05);
+
+	// Walking away is never blocked.
+	walker.move(-3, 0, 0.1);
+	CHECK(std::fabs(walker.getX() - (7 - STG::Walker::kRadius)) < 0.05);
+
+	walker.setCollisionEnabled(false);
+	walker.move(10, 0, 0.1);
+	CHECK(walker.getX() > 15);
+}
+
+TEST(walker_wall_sides_heights_and_zones) {
+	// From behind, a one-sided wall lets the player through...
+	{
+		STG::LevelFile level;
+		CHECK(loadLevel(level, makeRoom().build()));
+		STG::Walker walker(level);
+		walker.place(15, 10, 0);
+		walker.move(-10, 0, 0.1);
+		CHECK(std::fabs(walker.getX() - 5) < 1e-9);
+	}
+	// ...but one solid on both sides does not.
+	{
+		STG::LevelFile level;
+		CHECK(loadLevel(level, makeRoom(12, STG::LevelFile::kWallSolidBothSides).build()));
+		STG::Walker walker(level);
+		walker.place(15, 10, 0);
+		walker.move(-10, 0, 0.1);
+		CHECK(std::fabs(walker.getX() - (10 + STG::Walker::kRadius)) < 0.05);
+	}
+	// A wall lower than the step height is stepped over.
+	{
+		STG::LevelFile level;
+		CHECK(loadLevel(level, makeRoom(1.5).build()));
+		STG::Walker walker(level);
+		walker.place(5, 10, 0);
+		walker.move(10, 0, 0.1);
+		CHECK(std::fabs(walker.getX() - 15) < 1e-9);
+	}
+	// A wall in a zone that isn't in play is ignored.
+	{
+		STG::LevelFile level;
+		CHECK(loadLevel(level, makeRoom(12, 0, 2).build()));
+		STG::Walker walker(level);
+		walker.place(5, 10, 0);
+		CHECK(walker.getActiveZones() == 1);
+		walker.move(10, 0, 0.1);
+		CHECK(std::fabs(walker.getX() - 15) < 1e-9);
+	}
+}
+
+TEST(walker_steps_up_and_falls) {
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 10, 10, 0);
+	builder.addFloor(10, 0, 20, 10, 1.5);  // a step up
+	builder.addFloor(20, 0, 30, 10, 5);    // too high to step onto
+	builder.addFloor(0, 10, 10, 20, -10);  // a drop
+	STG::LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	STG::Walker walker(level);
+
+	walker.place(5, 5, 0);
+	walker.move(10, 0, 0.1);
+	CHECK_EQ(walker.getFloor(), 1);
+	CHECK(walker.getFeet() == 1.5);
+
+	// The higher floor can't be stepped onto. Under it there is no floor
+	// at all, so the player keeps their height and every zone opens up.
+	walker.move(10, 0, 0.1);
+	CHECK_EQ(walker.getFloor(), -1);
+	CHECK(walker.getFeet() == 1.5);
+	CHECK(walker.getActiveZones() == STG::Walker::kAllZones);
+
+	walker.place(5, 5, 0);
+	walker.move(0, 10, 0.1);
+	CHECK_EQ(walker.getFloor(), 3);
+	CHECK(walker.getFeet() < 0);
+	CHECK(walker.getFeet() > -10);
+	for (int i = 0; i < 50; i++)
+		walker.move(0, 0, 0.05);
+	CHECK(walker.getFeet() == -10);
 }

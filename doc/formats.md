@@ -253,14 +253,15 @@ make rooms over rooms.
 |--------|---------|
 | 0x14 | u32 group: flats with the same value are linked in one list (count A groups) |
 | 0x20 | height |
-| 0x3C, 0x40 | used to choose a depth-sorting bucket |
+| 0x3C | u64 zone the flat is in (one bit set); see Collision and zones |
 | 0x44, 0x48 | u offset and scale: u = x · scale + offset, in texels |
 | 0x4C, 0x50 | v offset and scale: v = y · scale + offset |
 | 0x5C | maximum drawing distance, 15000 |
 | 0x60, 0x62 | i16 u and v scroll speeds |
 | 0x64, 0x66, 0x68 | lighting: i16 light group, u16 brightness, byte light level (see Lighting) |
 | 0x69 | byte record kind: 2 on floors and 3 on ceilings |
-| 0x6C | u32 flags: 0x100 visible, 0x100000 ceiling, 0x4000 extra pass (`0x4C8120`), 0x1 not depth sorted |
+| 0x6C | u32 flags: 0x100 visible, 0x100000 ceiling, 0x4000 extra pass (`0x4C8120`), 0x1 left out of the zone lists, 0x1000 special floor (the player isn't lifted onto it) |
+| 0x74 | u64 zones in play while standing on this floor |
 | 0x7C | 16 bytes per vertex: an edge plane a, c, d (a·x + c·y + d = 0) at +0, +8 and +12; +4 receives the transformed vertex's address at load time |
 | 0xFC | animation start time (run time) |
 | 0x100, 0x102, 0x104 | u16 animation frame count, speed and current frame |
@@ -284,7 +285,9 @@ the camera is below it.
 | 0x62 | i16 v scroll speed |
 | 0x64, 0x66, 0x68 | lighting, as for flats |
 | 0x69 | byte record kind, 1 |
-| 0x6C | u32 flags: 0x100 visible, 0xC0 two-sided, 0x8 masked (has transparent texels), 0x4 unknown, 0x2000 set aside for script handling at `0x4B7DB5` |
+| 0x3C | u64 zones the wall is in |
+| 0x6C | u32 flags: 0x100 visible, 0xC0 drawn from both sides, 0x8000 blocks from both sides, 0x8 masked (has transparent texels), 0x4 unknown, 0x2000 set aside for script handling at `0x4B7DB5` |
+| 0x78 | extra thickness, added to the radius in one kind of collision test |
 | 0x7C, 0x80, 0x82, 0x84 | animation start time, speed, frame count, current frame |
 | 0x86, 0x88 | u16 vertex indices |
 | 0x8A | u16 scripted object id |
@@ -340,7 +343,50 @@ In verid1, about half the walls and flats are in light groups, at
 brightness 5120 to 20480. That leaves the caves under the ice noticeably
 darker than the open canyon.
 
+### Collision and zones
+
+The player update at `0x4B46A0` moves the player with these settings, set
+at `0x4BE150`:
+
+| Address | Value | Meaning |
+|---------|-------|---------|
+| `0x57D98C` | 6.0 | eye height above the feet |
+| `0x57D990` | 0.51 | headroom: the body reaches this far above the eye |
+| `0x57D994` | 2.0 | step height |
+| `0x57D998` | 1.2 | radius |
+
+A move goes from the previous position to the new one (`0x4B9870`):
+- **Sweep.** `0x4B9940` sweeps a circle of the player's radius and finds
+  the first wall or actor touched. Walls come from a grid along the path.
+- **Which walls count.** A wall is tested only if it is visible, in an
+  active zone, and its bottom-to-top range overlaps the player's body above
+  the step height. Walls below that are stepped over.
+- **Wall tests.** Each wall is tested as a line (`0x4BA670`) and as its two
+  end points (`0x4BA1E0`). The line only blocks from the front, the side
+  its normal points to, unless flag 0x8000 is set.
+- **On a hit.** The player stops at the wall. The result includes the wall's
+  direction, and what is left of the move slides along it. If the slide
+  hits something too, the move ends there.
+- **Script event.** A wall the player touches sends an event to the scripts,
+  with the record kind at +0x69 and the wall's +0x14.
+
+After moving, the player stands on the highest floor under them that is no
+more than the step height above the feet (`0x4B4C50`). This search uses the
+64 × 64 grid of flats built at `0x4BEDE0`, where each flat's outline is
+pushed out by 3 units. With no floor underneath the player falls; the
+original's falling physics (`0x4B4800`) is not decoded yet.
+
+**Zones** are 64 bits that partition the level. Every flat is in one zone,
+and walls and billboards are in one or more. The floor the player stands
+on lists the zones in play at 0x74 and makes them active (`0x4B68A0`).
+Only walls and floors in active zones are collided with, and only
+surfaces in active zones are drawn. That is how a level keeps rooms stacked
+above one another, or caves under a canyon, apart. With no floor
+underfoot, every zone is active. A script can add zones of its own; these
+are kept at `0x57D9AC`.
+
 Opening a `GAME.LV2` in the viewer draws its floor plan. `]` switches to a
 3D view of the level that you can walk through (arrows or WASD, PgUp/PgDn
-to look up and down, End to level the view, L to switch lighting off and on). Pressing `]` again steps
+to look up and down, End to level the view, L to switch lighting off and on,
+C to walk through walls). Pressing `]` again steps
 through the textures.

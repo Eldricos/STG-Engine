@@ -56,13 +56,18 @@ public:
 	void render(const Camera &camera, Graphics::Surface &dst, uint32 time);
 
 	/**
-	 * The highest floor under (x, y) that is no higher than maxHeight.
-	 * Returns false when there is none.
+	 * A starting point until the scripts can place the player: the middle
+	 * of the largest floor at the height with the most floor area, not
+	 * counting each height's largest piece (usually scenery around the play
+	 * area).
 	 */
-	bool findFloor(double x, double y, double maxHeight, double &height) const;
-
-	/** A starting point: standing in the middle of the largest floor. */
 	Camera getStartCamera(double eyeHeight) const;
+
+	/**
+	 * Draw only walls, flats and billboards in these zones, as the original
+	 * does (see Walker::getActiveZones()). All zones are drawn by default.
+	 */
+	void setVisibleZones(uint64 zones) { _zones = zones; }
 
 	/** Turn lighting off to see the textures' own colours. */
 	void setLightingEnabled(bool enabled) { _lighting = enabled; }
@@ -111,6 +116,7 @@ private:
 	/** The palette entry nearest the fog colour, shown where there is no sky. */
 	byte _fogIndex = 0;
 	bool _lighting = true;
+	uint64 _zones = ~(uint64)0;
 	std::map<int16, int> _groupBrightness;
 	std::vector<float> _depth;
 

@@ -26,7 +26,7 @@ The framework is in place and working:
 | `engines/stg`: `.GSF` sprite sets | Not started |
 | `engines/stg`: scripts (`GAME.BIN`): format, interpreter, disassembler | Done |
 | `engines/stg`: the ~200 game opcodes the scripts call | Stack effects known; meanings to do |
-| `engines/stg`: levels (`GAME.LV2`): geometry, textures, sky, lighting, and a software 3D renderer to walk through them | Done (no collision or actors yet) |
+| `engines/stg`: levels (`GAME.LV2`): geometry, textures, sky, lighting, collision, and a software 3D renderer to walk through them | Done (actors and scripts to do) |
 | `engines/stg`: game logic: the 3D away missions, starship combat, stellar cartography | **Not started** |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
 
@@ -116,8 +116,8 @@ In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
 In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
 archives. Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
 from the floor plan to a 3D view and then through the textures. In the 3D view, the
-arrows or WASD move, PgUp/PgDn look up and down, End levels the view, and L switches
-the lighting off and on. Home
+arrows or WASD move, PgUp/PgDn look up and down, End levels the view, L switches
+the lighting off and on, and C lets you walk through walls. Home
 returns to the starfield, F5/F7 save and load, and Esc quits.
 
 Settings and saves go in the per-user directory SDL picks for the platform:

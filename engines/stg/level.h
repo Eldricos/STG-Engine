@@ -133,7 +133,12 @@ public:
 		uint16 frames;
 		uint32 flags;
 		LightInfo light;
+		/** Zones the wall belongs to (offset 0x3C); see Sector::activeZones. */
+		uint64 zones;
 	};
+
+	/** Wall flag: blocks movement from behind as well as from the front. */
+	static const uint32 kWallSolidBothSides = 0x8000;
 
 	/**
 	 * A floor or ceiling polygon. The original stores these in the same
@@ -158,6 +163,14 @@ public:
 		uint16 texture;
 		uint16 frames;
 		LightInfo light;
+		/** The zone the flat belongs to (offset 0x3C, one bit set). */
+		uint64 zones;
+		/**
+		 * The zones in play while standing on this floor (offset 0x74).
+		 * Only walls, flats and billboards in those zones are drawn and
+		 * collided with, which keeps rooms stacked above one another apart.
+		 */
+		uint64 activeZones;
 		/** The raw 292-byte record, for the fields still being decoded. */
 		std::vector<byte> raw;
 
@@ -179,6 +192,7 @@ public:
 		uint16 frames;
 		uint32 flags;
 		LightInfo light;
+		uint64 zones;
 	};
 
 	struct Texture {

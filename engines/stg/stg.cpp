@@ -39,8 +39,6 @@ const int kTextPanelHeight = 60;
 const int kLevelPageMap = 0;
 const int kLevelPage3D = 1;
 const int kLevelPageTextures = 2;
-/** Eye height above the floor, in world units (walls are typically 12). */
-const double kEyeHeight = 6.0;
 const double kPi = 3.14159265358979323846;
 
 } // End of anonymous namespace
@@ -71,7 +69,7 @@ Common::Error STGEngine::run() {
 	info("%d images and %d sounds found", (int)_resources.getImages().size(), (int)_resources.getSounds().size());
 	info("Controls: Left/Right = image, PgUp/PgDn = archive, Up/Down = sound, Space = replay sound,");
 	info("          Home = starfield, click = test tone, F5/F7 = save/load, Alt+Enter = fullscreen, Esc = quit");
-	info("          On a level: [ ] = floor plan, 3D view, textures; in 3D, arrows/WASD move, PgUp/PgDn look, L lighting");
+	info("          On a level: [ ] = floor plan, 3D view, textures; in 3D, arrows/WASD move, PgUp/PgDn look, L lighting, C collision");
 	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";
 
 	for (int i = 0; i < kNumStars; i++)
@@ -374,6 +372,7 @@ void STGEngine::showImage(int index) {
 	_imageIndex = index;
 	const ResourceRef &ref = images[index];
 	_imageLoaded = _overlayLoaded = _spritesLoaded = false;
+	_walker.reset();
 	_levelRenderer.reset();
 	_level.reset();
 
@@ -404,10 +403,10 @@ void STGEngine::showImage(int index) {
 
 void STGEngine::showLevel(const ResourceRef &ref) {
 	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+	_walker.reset();
 	_levelRenderer.reset();
 	_level.reset(new LevelFile());
 	if (!stream || !_level->load(*stream)) {
-		_levelRenderer.reset();
 		_level.reset();
 		initPalette();
 		_status = ref.toString() + "  (could not decode)";
@@ -416,7 +415,11 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 	_levelName = ref.toString();
 	_levelTextures = _level->getTextureIds();
 	_levelRenderer.reset(new LevelRenderer(*_level));
-	_camera = _levelRenderer->getStartCamera(kEyeHeight);
+	_walker.reset(new Walker(*_level));
+	_camera = _levelRenderer->getStartCamera(Walker::kEyeHeight);
+	_walker->place(_camera.x, _camera.y, _camera.z - Walker::kEyeHeight);
+	_camera.z = _walker->getEye();
+	_levelRenderer->setVisibleZones(_walker->getActiveZones());
 	_levelTime = 0;
 	_screen->getPalette() = _level->getPalette();
 	_screen->applyPalette();
@@ -483,6 +486,12 @@ bool STGEngine::handleWalkKey(Common::KeyCode key, bool down) {
 		if (down)
 			_camera.pitch = 0;
 		return true;
+	case Common::KEYCODE_c:
+		if (down) {
+			_walker->setCollisionEnabled(!_walker->isCollisionEnabled());
+			updateWalkStatus();
+		}
+		return true;
 	case Common::KEYCODE_l:
 		if (down) {
 			_levelRenderer->setLightingEnabled(!_levelRenderer->isLightingEnabled());
@@ -497,41 +506,40 @@ bool STGEngine::handleWalkKey(Common::KeyCode key, bool down) {
 }
 
 void STGEngine::updateWalk(uint32 delta) {
-	const double kSpeed = 25.0;     // world units per second
-	const double kTurnSpeed = 2.0;  // radians per second
-	const double kLookSpeed = 0.8;  // pitch per second
-	const double kStepHeight = 4.0; // highest ledge that can be stepped onto
+	const double kSpeed = 25.0;    // world units per second
+	const double kTurnSpeed = 2.0; // radians per second
+	const double kLookSpeed = 0.8; // pitch per second
 	double seconds = std::min<uint32>(delta, 100) / 1000.0;
 
 	double forward = (_walkKeys[kWalkForward] ? 1 : 0) - (_walkKeys[kWalkBack] ? 1 : 0);
 	double strafe = (_walkKeys[kWalkStrafeRight] ? 1 : 0) - (_walkKeys[kWalkStrafeLeft] ? 1 : 0);
 	double turn = (_walkKeys[kWalkTurnLeft] ? 1 : 0) - (_walkKeys[kWalkTurnRight] ? 1 : 0);
 	double look = (_walkKeys[kWalkLookDown] ? 1 : 0) - (_walkKeys[kWalkLookUp] ? 1 : 0);
-	if (forward == 0 && strafe == 0 && turn == 0 && look == 0)
-		return;
 
 	_camera.yaw += turn * kTurnSpeed * seconds;
 	_camera.pitch = std::max(-1.0, std::min(1.0, _camera.pitch + look * kLookSpeed * seconds));
 	double step = kSpeed * seconds;
-	double x = _camera.x + (std::cos(_camera.yaw) * forward + std::sin(_camera.yaw) * strafe) * step;
-	double y = _camera.y + (std::sin(_camera.yaw) * forward - std::cos(_camera.yaw) * strafe) * step;
+	double dx = (std::cos(_camera.yaw) * forward + std::sin(_camera.yaw) * strafe) * step;
+	double dy = (std::sin(_camera.yaw) * forward - std::cos(_camera.yaw) * strafe) * step;
 
-	// Walls don't block yet; just stay on the floor below, if there is one.
-	double floor;
-	if (_levelRenderer->findFloor(x, y, _camera.z - kEyeHeight + kStepHeight, floor))
-		_camera.z = floor + kEyeHeight;
-	_camera.x = x;
-	_camera.y = y;
-	updateWalkStatus();
+	// Move every frame, so falls carry on without a key held.
+	double oldX = _camera.x, oldY = _camera.y, oldZ = _camera.z;
+	_walker->move(dx, dy, seconds);
+	_camera.x = _walker->getX();
+	_camera.y = _walker->getY();
+	_camera.z = _walker->getEye();
+	_levelRenderer->setVisibleZones(_walker->getActiveZones());
+	if (turn != 0 || look != 0 || _camera.x != oldX || _camera.y != oldY || _camera.z != oldZ)
+		updateWalkStatus();
 }
 
 void STGEngine::updateWalkStatus() {
 	double degrees = std::fmod(_camera.yaw * 180 / 3.14159265358979323846, 360.0);
 	if (degrees < 0)
 		degrees += 360;
-	_status = Common::format("3D %.0f,%.0f,%.0f %.0fdeg  Arrows/WASD PgUp/PgDn  L: lights %s",
-	                         _camera.x, _camera.y, _camera.z, degrees,
-	                         _levelRenderer->isLightingEnabled() ? "on" : "off");
+	_status = Common::format("3D %.0f,%.0f,%.0f %.0fdeg  WASD PgUp/Dn  L: light %s  C: walls %s", _camera.x,
+	                         _camera.y, _camera.z, degrees, _levelRenderer->isLightingEnabled() ? "on" : "off",
+	                         _walker->isCollisionEnabled() ? "on" : "off");
 }
 
 void STGEngine::showSprites(const ResourceRef &ref) {
@@ -610,6 +618,7 @@ void STGEngine::showStarfield() {
 	_imageLoaded = false;
 	_overlayLoaded = false;
 	_spritesLoaded = false;
+	_walker.reset();
 	_levelRenderer.reset();
 	_level.reset();
 	_imageIndex = -1;

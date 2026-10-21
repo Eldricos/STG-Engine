@@ -24,6 +24,7 @@
 #include "engines/stg/resources.h"
 #include "engines/stg/screen.h"
 #include "engines/stg/sprite.h"
+#include "engines/stg/walker.h"
 
 namespace STG {
 
@@ -107,6 +108,7 @@ private:
 	std::vector<uint16> _levelTextures;
 	int _levelPage = 0;
 	std::unique_ptr<LevelRenderer> _levelRenderer;
+	std::unique_ptr<Walker> _walker;
 	Camera _camera;
 	uint32 _levelTime = 0;
 	enum WalkKey { kWalkForward, kWalkBack, kWalkTurnLeft, kWalkTurnRight, kWalkStrafeLeft, kWalkStrafeRight,

@@ -152,6 +152,7 @@ bool LevelFile::loadTables() {
 		wall.frames = READ_LE_UINT16(r + 0x82);
 		wall.texture = READ_LE_UINT16(r + 0x96);
 		wall.light = readLight(r);
+		wall.zones = READ_LE_UINT64(r + 0x3C);
 		if (wall.vertex1 >= _vertices.size() || wall.vertex2 >= _vertices.size()) {
 			warning("LevelFile: wall %u refers to a missing vertex", i);
 			return false;
@@ -171,6 +172,8 @@ bool LevelFile::loadTables() {
 		sector.vOffset = (int32)READ_LE_UINT32(r + 0x4C);
 		sector.vScale = (int32)READ_LE_UINT32(r + 0x50);
 		sector.light = readLight(r);
+		sector.zones = READ_LE_UINT64(r + 0x3C);
+		sector.activeZones = READ_LE_UINT64(r + 0x74);
 		sector.frames = READ_LE_UINT16(r + 0x100);
 		sector.texture = READ_LE_UINT16(r + 0x11C);
 		sector.rotation = READ_LE_UINT16(r + 0x11E);
@@ -205,6 +208,7 @@ bool LevelFile::loadTables() {
 		billboard.frames = READ_LE_UINT16(r + 0x86);
 		billboard.texture = READ_LE_UINT16(r + 0x8A);
 		billboard.light = readLight(r);
+		billboard.zones = READ_LE_UINT64(r + 0x3C);
 		_billboards.push_back(billboard);
 	}
 	return true;

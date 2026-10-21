@@ -12,5 +12,6 @@ target_sources(stg_engines PRIVATE
 	sprite.cpp
 	stg.cpp
 	vm.cpp
+	walker.cpp
 )
 target_compile_definitions(stg_engines PUBLIC ENABLE_STG)
