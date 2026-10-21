@@ -12,10 +12,12 @@ add_library(stg_common STATIC
 	str.cpp
 	stream.cpp
 	system.cpp
+	zip.cpp
 	audio/audiostream.cpp
 	audio/mixer.cpp
 	audio/raw.cpp
 	audio/wave.cpp
+	compression/inflate.cpp
 	graphics/palette.cpp
 	graphics/pixelformat.cpp
 	graphics/surface.cpp

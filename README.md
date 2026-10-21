@@ -18,7 +18,10 @@ The framework is in place and working:
 | `common/`: OSystem interface, files and archives (case-insensitive), streams, config, saves, events, surfaces, palettes, BMP decoder, software mixer, PCM/WAV | Done |
 | `engines/`: Engine/MetaEngine framework, table-driven detection, launcher and command line | Done |
 | `engines/stg`: detection, resource index, screen, save/load, and a viewer for the game's BMP/WAV files | Done |
-| `engines/stg`: the game's own data formats, scripts, scenes, combat, FMV | **Not started**: needs reverse engineering |
+| `common/`: ZIP archives (stored and deflated, with our own DEFLATE decoder) | Done |
+| `engines/stg`: open the game's `.DAT`/`MUSIC.*` archives (they are ZIP files) | Done |
+| `engines/stg`: the formats inside the archives, scripts, scenes, combat | **Not started**: needs reverse engineering |
+| Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
 
 Right now, running the engine against a game directory lists what's there,
 lets you browse any `.BMP` images and play any `.WAV` sounds, and otherwise
@@ -123,14 +126,14 @@ settings file is `stg.ini` and saves go in `saves/`.
 The real work is reverse engineering the original game, then filling in
 `engines/stg`:
 
-1. **Inventory the data.** Use `--dump-files` on each release (DOS, Windows,
-   demos, localised versions), add the detection entries, and find which file
-   types are the game's own containers.
-2. **Container formats.** Write an `Common::Archive` for each one and register it
-   with `SearchMan` in `STGEngine::run()`. The rest of the engine can then open
-   resources by name with `Common::File`.
+1. **Inventory the data.** Done for the 2 CD Windows release: the `.DAT` and
+   `MUSIC.*` files are plain ZIP archives, which `common/zip.h` reads.
+   `stg --probe --path=<file>.DAT` lists an archive's members and identifies
+   or hex dumps one member of each file type.
+2. **Inner formats.** Work out the file types inside the archives, starting
+   with those in `COMMON.DAT`.
 3. **Graphics and video.** Decode the sprite, background and palette formats
-   into `Graphics::Surface`s, and write a decoder for the cutscene format.
+   into `Graphics::Surface`s, and add AVI and Cinepak decoders for the cutscenes.
 4. **Sound and music.** Add an `Audio::AudioStream` for each audio encoding the
    game uses.
 5. **Game logic.** Disassemble the executable (Ghidra or IDA) to recover the

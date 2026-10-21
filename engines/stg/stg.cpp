@@ -52,6 +52,7 @@ Common::Error STGEngine::run() {
 
 	_resources.addSearchPaths(_gameDataDir, ConfMan.get("cd1path"), ConfMan.get("cd2path"));
 	_resources.checkDataFiles();
+	_resources.openArchives();
 	_resources.scan();
 	_resources.logInventory();
 

@@ -81,8 +81,10 @@ void ResourceManager::addSearchPaths(const Common::FSNode &gameDir, const Common
 	// their plain name ("COMMON.DAT", "MOVIE/MOV_01.AVI") wherever they are.
 	// Installed files win over the CDs; both discs are searched so the game
 	// never needs a disc swap.
+	_dataDirs.clear();
+	_dataDirs.push_back(findDataDir(gameDir, "DATA"));
 	SearchMan.addDirectory("game", gameDir, 0, 1);
-	SearchMan.addDirectory("data", findDataDir(gameDir, "DATA"), 10, 1);
+	SearchMan.addDirectory("data", _dataDirs.back(), 10, 1);
 	const Common::String cdPaths[2] = { cd1Path, cd2Path };
 	for (int i = 0; i < 2; i++) {
 		if (cdPaths[i].empty())
@@ -92,7 +94,8 @@ void ResourceManager::addSearchPaths(const Common::FSNode &gameDir, const Common
 			warning("CD %d path '%s' is not a directory", i + 1, cdPaths[i].c_str());
 			continue;
 		}
-		SearchMan.addDirectory(Common::format("cd%d", i + 1), findDataDir(cd, "GENS"), 5 - i, 2);
+		_dataDirs.push_back(findDataDir(cd, "GENS"));
+		SearchMan.addDirectory(Common::format("cd%d", i + 1), _dataDirs.back(), 5 - i, 2);
 	}
 }
 
@@ -120,6 +123,46 @@ bool ResourceManager::checkDataFiles() const {
 		        (int)missing[i].size(), i + 1, missing[i][0].c_str(), i + 1);
 	}
 	return missingInstalled.empty() && missing[0].empty() && missing[1].empty();
+}
+
+void ResourceManager::openArchives() {
+	_archives.clear();
+	for (const DataFileLocation *f = kDataFiles; f->name; f++) {
+		Common::String name = f->name;
+		if (!Common::hasSuffixIgnoreCase(name, ".dat") && !Common::matchString(name, "MUSIC.?"))
+			continue;
+
+		// Installed copies first, then the discs, as in addSearchPaths().
+		Common::FSNode file;
+		for (const Common::FSNode &dir : _dataDirs) {
+			file = dir.getChild(name);
+			if (file.exists())
+				break;
+		}
+		if (!file.exists())
+			continue; // checkDataFiles() has already reported it
+		std::shared_ptr<Common::ZipArchive> zip = Common::ZipArchive::open(file);
+		if (!zip) {
+			warning("%s is not a readable ZIP archive", name.c_str());
+			continue;
+		}
+		debugC(1, "resources", "%s: %d members", name.c_str(), (int)zip->getEntries().size());
+		_archives[Common::toUpper(name)] = zip;
+	}
+
+	// Shared resources are visible to everything by name.
+	int priority = -1;
+	for (const char *name : { "COMMON.DAT", "OPTIONS.DAT" }) {
+		std::shared_ptr<Common::ZipArchive> zip = getArchive(name);
+		if (zip)
+			SearchMan.add(Common::String("zip:") + name, zip, priority--);
+	}
+	info("Opened %d data archives", (int)_archives.size());
+}
+
+std::shared_ptr<Common::ZipArchive> ResourceManager::getArchive(const Common::String &name) const {
+	auto it = _archives.find(Common::toUpper(name));
+	return it == _archives.end() ? nullptr : it->second;
 }
 
 void ResourceManager::scan() {

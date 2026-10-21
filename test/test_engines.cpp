@@ -180,6 +180,7 @@ TEST(stg_two_cd_search_paths) {
 	                            "GALORN2.DAT", "HALEE1.DAT", "QURASH.DAT", "VERID1.DAT" };
 	for (const char *name : installed)
 		install.writeFile(std::string("DATA/") + name, "installed");
+	install.writeFile("DATA/COMMON.DAT", std::vector<unsigned char>(Test::kTestZip, Test::kTestZip + Test::kTestZipSize));
 	install.writeFile("sgens.exe", makeFakeExe());
 
 	const char *disc1[] = { "COMBAT.DAT", "STELLAR.DAT", "MUSIC.1", "MOVIE/MOV_01.AVI", "MOVIE/MOV_02.AVI",
@@ -204,8 +205,15 @@ TEST(stg_two_cd_search_paths) {
 	CHECK(resources.checkDataFiles());
 
 	Common::File f;
-	CHECK(f.open("common.dat"));
+	CHECK(f.open("options.dat"));
 	CHECK_EQ(f.readFixedString(9), Common::String("installed"));
+
+	// COMMON.DAT is a ZIP: it is opened, and its members become visible by name.
+	resources.openArchives();
+	CHECK(resources.getArchive("common.dat") != nullptr);
+	CHECK(resources.getArchive("VERID1.DAT") == nullptr); // not a ZIP in this test
+	CHECK(f.open("short.txt"));
+	CHECK_EQ(f.readFixedString(12), Common::String("abcabcabcabc"));
 	CHECK(f.open("movie/mov_16.avi"));
 	CHECK_EQ(f.readFixedString(3), Common::String("cd2"));
 	CHECK(f.open("SGENS.EXE"));

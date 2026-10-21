@@ -312,7 +312,7 @@ int probeCommand(const Command &command) {
 
 	int bytes = ConfMan.getInt("probe_bytes");
 	if (!path.isDirectory()) {
-		printf("%s\n", probeFile(path, path.getName(), bytes > 0 ? bytes : 512).c_str());
+		printf("%s\n", probeFile(path, path.getName(), bytes > 0 ? bytes : 512, true).c_str());
 		return 0;
 	}
 
