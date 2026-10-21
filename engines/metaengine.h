@@ -14,6 +14,7 @@
 
 #include "common/error.h"
 #include "common/fs.h"
+#include "common/stream.h"
 #include "engines/game.h"
 
 class Engine;
@@ -36,6 +37,15 @@ public:
 
 	/** Look for supported games in a directory. */
 	virtual DetectedGames detectGames(const Common::FSNode &dir) const = 0;
+
+	/**
+	 * Describe a file in one of this engine's own formats for --probe.
+	 * verbose is set when a single file is probed. Returns false if the
+	 * file isn't one the engine knows.
+	 */
+	virtual bool describeFile(Common::SeekableReadStream &stream, bool verbose, Common::String &out) const {
+		return false;
+	}
 
 	/** Register this engine's default configuration values. */
 	virtual void registerDefaultSettings() const {}

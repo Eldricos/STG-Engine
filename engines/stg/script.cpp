@@ -9,6 +9,7 @@
 #include "engines/stg/script.h"
 
 #include "common/debug.h"
+#include "engines/stg/opcodes.h"
 
 namespace STG {
 
@@ -56,6 +57,66 @@ bool ScriptFile::load(Common::SeekableReadStream &stream) {
 	}
 	if (!name.empty())
 		_resourceNames.push_back(name);
+	return parseProgram();
+}
+
+bool ScriptFile::parseProgram() {
+	_objects.clear();
+	const size_t size = _code.size();
+	size_t p = 0;
+	auto word = [&](size_t i) -> uint16 { return i < size ? _code[i] : 0x1000; };
+
+	while (word(p) != kEndOfProgram) {
+		if (p + 2 > size) {
+			warning("ScriptFile: program runs past the end of the code");
+			return false;
+		}
+		ScriptObject object;
+		object.type = word(p);
+		object.id = word(p + 1);
+		p += 2;
+
+		while (true) {
+			uint16 header = word(p);
+			if ((header & 0xF000) != kStateMarker) {
+				warning("ScriptFile: expected a state at word %u, found %04x", (uint)p, header);
+				return false;
+			}
+			ScriptState state;
+			state.id = header & 0x0FFF;
+			p++;
+
+			while (word(p) != kEndOfState) {
+				ScriptBlock block;
+				block.event = word(p);
+				block.nextState = (int16)word(p + 1);
+				block.codeStart = (uint32)(p + 2);
+				p += 2;
+				while (word(p) != OP_END) {
+					p += getInstructionLength(word(p));
+					if (p >= size) {
+						warning("ScriptFile: block at word %u has no end", block.codeStart);
+						return false;
+					}
+				}
+				p++;
+				state.blocks.push_back(block);
+			}
+			p++;
+			object.states.push_back(std::move(state));
+
+			if (word(p) == kEndOfObject) {
+				p++;
+				break;
+			}
+		}
+		_objects.push_back(std::move(object));
+	}
+
+	if (p + 1 != size) {
+		warning("ScriptFile: program ends at word %u of %u", (uint)p + 1, (uint)size);
+		return false;
+	}
 	return true;
 }
 

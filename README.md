@@ -24,7 +24,8 @@ The framework is in place and working:
 | `engines/stg`: first-person overlay animations (`.OVR`) | Done (frame height guessed) |
 | `engines/stg`: 3D sprite sets (`.GS2`) | Done |
 | `engines/stg`: `.GSF` sprite sets | Not started |
-| `engines/stg`: scripts (`GAME.BIN`) | Container read; bytecode not decoded |
+| `engines/stg`: scripts (`GAME.BIN`): format, interpreter, disassembler | Done |
+| `engines/stg`: the ~200 game opcodes the scripts call | Stack effects known; meanings to do |
 | `engines/stg`: levels (`GAME.LV2`) | Not started |
 | `engines/stg`: the formats inside the archives, scripts, scenes, combat | **Not started**: needs reverse engineering |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
@@ -140,8 +141,8 @@ The real work is reverse engineering the original game, then filling in
    or hex dumps one member of each file type.
 2. **Inner formats.** Most are standard (BMP, WAV, TXT). The `FONT`,
    `OVERLAY` and `GS2` sprite formats are decoded. See [doc/formats.md](doc/formats.md) for
-   everything known so far, including notes on the `SGEN` script and
-   the level data, which are next.
+   everything known so far, including the `SGEN` script format and
+   its instruction set.
 3. **Graphics and video.** Decode the sprite, background and palette formats
    into `Graphics::Surface`s, and add AVI and Cinepak decoders for the cutscenes.
 4. **Sound and music.** Add an `Audio::AudioStream` for each audio encoding the

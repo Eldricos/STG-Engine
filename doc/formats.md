@@ -96,40 +96,107 @@ These start like GS2 but with version 1:
 (51 frames, with something in the third dword). They're refused by the GS2
 decoder rather than misread.
 
-## SGEN script (`GAME.BIN`): container decoded, bytecode not yet
+## SGEN script (`GAME.BIN`): decoded, `engines/stg/script.h`, `vm.h`
 
-This is the compiled script for each location. `engines/stg/script.h` reads the container:
+This is the compiled script for each location. Everything below comes from `sgens.exe`: the loader at
+`0x45F160`, the object factory and code scanner at `0x43519F`, `SendEvent` at
+`0x44F4E1`, and the interpreter at `0x44F9D4` (a 245-case switch at `0x455A28`).
+
+### Container
 
 ```
 char[4]  "SGEN"
-uint16   22 (version)
+uint16   22 (version; the loader rejects anything else)
 uint16   2
 uint32   file size - 12
-uint32   code size in bytes          (43938 in verid1)
-uint32   section sizes[6]            (8, 444, 4616, 19208, 1300, 96 in verid1)
-uint16   code[]                      starts at offset 40
+uint32   code size in bytes
+uint32   section sizes[6]
+uint16   code[]                  starts at offset 40
 uint8    sections[6][]
 char[]   resource names, NUL separated, to the end of the file
 ```
 
-The sizes account for every byte of verid1's file, and AMARGOS1's header
-adds up the same way.
+- **Section 0** is a list of `(int16, int16)` pairs ending in −1. The level
+  loader passes each pair to a game function (`0x4B5220`).
+- **Section 1** is the resource table: 12-byte records, one per name. At load
+  time the third field is overwritten with a pointer to the name (the stale
+  `0x00424A38`-style values in the file are leftovers).
+- **Sections 2 and 3** go to a level sub-object (`0x41EA4B` / `0x41EB62`).
+  Sections 4 and 5 are unexplored.
 
-What's known so far about the contents:
+### Program
 
-- **Code** is a 16-bit word stream for a stack machine. `0002 n` pushes `n`
-  (5,315 of the 21,969 words in verid1 are pushes). It starts with
-  `0001 e3e7 8000`, then `push -1, push 32, op 0x15`, then
-  `push 0, push N, op 0x19` for N = 0, 1, 2, ..., which looks like
-  initialising variables. Other instructions take operands too, so operand
-  counts can't be inferred from the data alone. The interpreter in `sgens.exe`
-  is needed.
-- **Section 1** has 12-byte records holding values like `0x00424A38`, which are
-  addresses inside `sgens.exe` (image base 0x400000).
-- **Section 2** starts with `0x12345678` and contains `0x87654321`
-  markers.
-- **Resource names** are the BMPs and OVRs the location uses (`PHASER.BMP`,
-  `KIRKHIT.OVR`, ...).
+```
+program := object* 0x1000
+object  := type param state+ 0x2000      param is the object's id
+state   := (0x8000 | id) block+ 0x3000
+block   := event next-state instruction* 0x0000
+```
+
+Object types 1, 2, 3, 4, 5, 6, 7 and 8 each create a different C++ class;
+verid1 uses types 1, 2, 4, 7 and 8 (178 objects, 658 states, 1010 blocks).
+The grammar consumes exactly all 21,969 words of verid1's code.
+
+### Execution
+
+Each object is a state machine. It starts in state −1. When an object
+receives an event, the block registered for
+`((event & 0xFF) << 8) | (state & 0xFF)` runs. If the object has no such
+block, the parent object is searched next, then built-in default behaviour.
+When the block finishes, the object switches to the state set by
+`GOTO_STATE` or `CASE`, or else to the block's next state (−1 means stay
+put). Each state change sends **event 3 (leave)** to the old state, then
+**event 2 (enter)** to the new one.
+
+A block runs on its own 16-bit stack. Event arguments are pushed last to
+first, so the first argument is on top. The block's result starts at 0 and
+is set with `SET_RESULT`.
+
+### Instruction set
+
+Every instruction is one word, except `PUSH n` (2 words), `PUSH32` (3) and
+`PUSH_BLOCK` (8). Binary operations compute **top op below**: for example,
+`PUSH 10, PUSH 3, SUB` gives −7.
+
+| Op | Name | Effect |
+|----|------|--------|
+| 00 | END | end of block |
+| 01 | NOP | |
+| 02 n | PUSH | push n |
+| 03 | POP | discard top |
+| 04 | PUSH_SELF | push this object's id |
+| 05 ×7 | PUSH_BLOCK | push the seven operand words |
+| 06 ×2 | PUSH32 | push two operand words |
+| 07 | SET_RESULT | pop into the block's result |
+| 08 | GOTO_STATE | pop the state to enter when the block ends |
+| 09 | GAME_CALL_2 | pop two values and pass them to the game |
+| 0A | CASE | pop c b a; push a; if a == c, go to state b and end the block |
+| 0B–10 | IF_EQ/NE/GT/GE/LT/LE | pop b a; push a; if the test fails, skip to the matching ELSE/ENDIF |
+| 11 | ENDIF | |
+| 12 | ELSE | skip to the matching ENDIF |
+| 13 | RETURN | end the block |
+| 14 | ALLOC_LOCALS | pop n; allocate n locals |
+| 15 | GAME_INIT | pop one value for the game |
+| 16 / 17 | GET_LOCAL / GET_GLOBAL | pop i; push the variable |
+| 18 / 19 | SET_LOCAL / SET_GLOBAL | pop i, pop v; variable[i] = v |
+| 1A / 1B | INC / DEC | |
+| 1C–1F | ADD SUB MUL DIV | top op below |
+| 20 | SIGN_DIFF | sign(top − below) |
+| 21–24 | AND OR XOR NOT | |
+| 25 / 26 | HIGH_BITS / LOW_BITS | top & 0xE000 / top & 0x1FFF (object ids look like `type << 13 | n`) |
+| 27–F4 | NATIVE_xx | calls into the game |
+
+The native opcodes' stack effects were read from each handler and are in
+`engines/stg/opcodes.cpp`, with notes on which game method each calls. Run
+through every block of verid1, those effects never underflow the stack
+except in a few blocks that take more than two event arguments.
+
+To get a full listing of a script:
+
+```sh
+stg --extract --path=DATA/VERID1.DAT --pattern='verid1/game.bin' -o out
+stg --probe --path=out/verid1/game.bin
+```
 
 ## Level data (`GAME.LV2`): unknown
 

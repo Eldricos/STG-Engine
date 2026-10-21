@@ -409,7 +409,8 @@ TEST(stg_sprite_format) {
 }
 
 TEST(stg_script_container) {
-	const uint16 code[] = { 0x0002, 5, 0x0002, 7, 0x0019 };
+	// One object with one state whose enter block does "push 5, push 7, SET_GLOBAL".
+	const uint16 code[] = { 1, 9, 0x8000, 2, 0xFFFF, 0x0002, 5, 0x0002, 7, 0x0019, 0, 0x3000, 0x2000, 0x1000 };
 	const byte sections[6][2] = { { 1, 2 }, { 3, 4 }, { 5, 6 }, { 7, 8 }, { 9, 10 }, { 11, 12 } };
 	const char names[] = "PHASER.BMP\0KIRKHIT.OVR\0";
 
@@ -436,8 +437,9 @@ TEST(stg_script_container) {
 	STG::ScriptFile script;
 	CHECK(script.load(stream));
 	CHECK_EQ(script.getVersion(), 22);
-	CHECK_EQ(script.getCode().size(), (size_t)5);
-	CHECK_EQ(script.getCode()[4], 0x19);
+	CHECK_EQ(script.getCode().size(), (size_t)14);
+	CHECK_EQ(script.getCode()[9], 0x19);
+	CHECK_EQ(script.getObjects().size(), (size_t)1);
 	CHECK_EQ(script.getSection(5)[1], 12);
 	CHECK_EQ(script.getResourceNames().size(), (size_t)2);
 	CHECK_EQ(script.getResourceNames()[1], Common::String("KIRKHIT.OVR"));
