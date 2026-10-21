@@ -256,7 +256,7 @@ void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 			poly[i].u = (i == 1 || i == 2) ? texture->width : 0;
 			poly[i].v = (i >= 2) ? texture->height : 0;
 		}
-		drawPolygon(poly, texture, billboard.fullbright ? nullptr : getShade(billboard.light), dst);
+		drawPolygon(poly, texture, billboard.fullbright ? nullptr : getShade(billboard.light), dst, false);
 	}
 }
 
@@ -296,12 +296,12 @@ void LevelRenderer::drawSprites(Graphics::Surface &dst) {
 			poly[i].u = right != sprite.mirrored ? texture->width : 0;
 			poly[i].v = i >= 2 ? texture->height : 0;
 		}
-		drawPolygon(poly, texture, sprite.fullbright ? nullptr : getShade(sprite.light), dst);
+		drawPolygon(poly, texture, sprite.fullbright ? nullptr : getShade(sprite.light), dst, false);
 	}
 }
 
 void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
-                                Graphics::Surface &dst) {
+                                Graphics::Surface &dst, bool tile) {
 	// Clip against the near plane.
 	std::vector<Vertex> clipped;
 	clipped.reserve(poly.size() + 2);
@@ -386,12 +386,19 @@ void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *textur
 			byte color = 0;
 			if (texture) {
 				double z = 1.0 / iz;
-				int u = (int)std::floor(uz * z) % texture->width;
-				int v = (int)std::floor(vz * z) % texture->height;
-				if (u < 0)
-					u += texture->width;
-				if (v < 0)
-					v += texture->height;
+				int u = (int)std::floor(uz * z), v = (int)std::floor(vz * z);
+				if (tile) {
+					u %= texture->width;
+					v %= texture->height;
+					if (u < 0)
+						u += texture->width;
+					if (v < 0)
+						v += texture->height;
+				} else {
+					// A sprite's edges would otherwise pick up the opposite edge.
+					u = std::max(0, std::min(u, texture->width - 1));
+					v = std::max(0, std::min(v, texture->height - 1));
+				}
 				color = texture->pixels[(size_t)u * texture->height + v];
 				if (color == LevelFile::kTransparent)
 					continue;

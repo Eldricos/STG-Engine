@@ -125,9 +125,12 @@ private:
 
 	/** Transform a world point into camera space (x right, y up, z ahead). */
 	void toCamera(double x, double y, double z, Vertex &out) const;
-	/** Clip a camera-space polygon to the near plane, project and fill it. */
+	/**
+	 * Clip a camera-space polygon to the near plane, project and fill it.
+	 * The texture repeats if tile is set, otherwise its edges stretch.
+	 */
 	void drawPolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
-	                 Graphics::Surface &dst);
+	                 Graphics::Surface &dst, bool tile = true);
 
 	const LevelFile &_level;
 	std::map<uint32, std::unique_ptr<Texture>> _textures;
