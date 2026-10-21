@@ -19,6 +19,7 @@
 #include "engines/detection.h"
 #include "engines/engine.h"
 #include "engines/metaengine.h"
+#include "engines/probe.h"
 
 #ifndef STG_VERSION
 #define STG_VERSION "0.1.0"
@@ -38,6 +39,7 @@ const char *const kHelpString =
 	"  --detect                 Detect games in --path (or the current directory)\n"
 	"  --add                    Detect a game in --path and add it to the config file\n"
 	"  --dump-files             Print size and detection MD5 of every file in --path\n"
+	"  --probe                  Identify the format of every file in --path (or one file)\n"
 	"\n"
 	"Options:\n"
 	"  -p, --path=PATH          Directory containing the game data\n"
@@ -48,6 +50,9 @@ const char *const kHelpString =
 	"      --filtering          Use bilinear filtering when scaling\n"
 	"      --integer-scaling    Only scale by whole multiples\n"
 	"      --savepath=PATH      Directory for saved games\n"
+	"      --probe-bytes=NUM    Bytes to hex dump per unknown file with --probe\n"
+	"      --cd1=PATH           Disc 1 (or a copy of it), for files not installed to disk\n"
+	"      --cd2=PATH           Disc 2 (or a copy of it)\n"
 	"  -c, --config=FILE        Use an alternate configuration file\n"
 	"  -d, --debuglevel=NUM     Set debug verbosity\n"
 	"      --debugflags=A,B     Enable engine debug channels (or 'all')\n"
@@ -80,6 +85,9 @@ bool parseCommandLine(int argc, char *argv[], Command &command) {
 		{ nullptr, "filtering", "filtering", false, "true" },
 		{ nullptr, "integer-scaling", "integer_scaling", false, "true" },
 		{ nullptr, "savepath", "savepath", true, nullptr },
+		{ nullptr, "probe-bytes", "probe_bytes", true, nullptr },
+		{ nullptr, "cd1", "cd1path", true, nullptr },
+		{ nullptr, "cd2", "cd2path", true, nullptr },
 		{ "c", "config", "config", true, nullptr },
 		{ "d", "debuglevel", "debuglevel", true, nullptr },
 		{ nullptr, "debugflags", "debugflags", true, nullptr },
@@ -88,7 +96,7 @@ bool parseCommandLine(int argc, char *argv[], Command &command) {
 		{ nullptr, "speech-volume", "speech_volume", true, nullptr },
 	};
 	static const char *const commands[] = {
-		"help", "version", "list-engines", "list-games", "list-targets", "detect", "add", "dump-files"
+		"help", "version", "list-engines", "list-games", "list-targets", "detect", "add", "dump-files", "probe"
 	};
 
 	for (int i = 1; i < argc; i++) {
@@ -295,6 +303,31 @@ int dumpFilesCommand(const Command &command) {
 	return 0;
 }
 
+int probeCommand(const Command &command) {
+	Common::FSNode path = getPathArgument(command);
+	if (!path.exists()) {
+		fprintf(stderr, "'%s' does not exist\n", path.getPath().c_str());
+		return 1;
+	}
+
+	int bytes = ConfMan.getInt("probe_bytes");
+	if (!path.isDirectory()) {
+		printf("%s\n", probeFile(path, path.getName(), bytes > 0 ? bytes : 512).c_str());
+		return 0;
+	}
+
+	Common::FSDirectory archive(path, 4);
+	Common::ArchiveMemberList members;
+	archive.listMembers(members);
+	for (const Common::ArchiveMemberPtr &member : members) {
+		Common::FSNode node = path;
+		for (const Common::String &part : Common::split(member->getName(), '/'))
+			node = node.getChild(part);
+		printf("%s\n", probeFile(node, member->getName(), bytes > 0 ? bytes : 128).c_str());
+	}
+	return 0;
+}
+
 /** Pick the game to run, either from a config target or by detection. */
 bool selectGame(const Command &command, DetectedGame &selected, Common::String &target) {
 	if (!command.target.empty() && ConfMan.hasDomain(command.target)) {
@@ -371,6 +404,10 @@ int addCommand(const Command &command) {
 	ConfMan.set("gameid", game.gameId, target);
 	ConfMan.set("description", game.getFullDescription(), target);
 	ConfMan.set("path", game.path.getPath(), target);
+	for (const char *key : { "cd1path", "cd2path" }) {
+		if (ConfMan.hasKey(key))
+			ConfMan.set(key, ConfMan.get(key), target);
+	}
 	if (!ConfMan.flushToDisk()) {
 		fprintf(stderr, "Could not write the configuration file\n");
 		return 1;
@@ -464,6 +501,8 @@ int stgMain(OSystem &system, int argc, char *argv[]) {
 		return dumpFilesCommand(command);
 	if (command.name == "add")
 		return addCommand(command);
+	if (command.name == "probe")
+		return probeCommand(command);
 
 	system.initBackend();
 	return runGame(system, command);

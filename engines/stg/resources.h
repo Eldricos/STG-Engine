@@ -12,6 +12,7 @@
 #include <memory>
 
 #include "common/audio/audiostream.h"
+#include "common/fs.h"
 #include "common/image/bmp.h"
 #include "common/str.h"
 
@@ -27,6 +28,16 @@ namespace STG {
  */
 class ResourceManager {
 public:
+	/**
+	 * Register the installed DATA directory and the CD data directories
+	 * with SearchMan. The 2 CD release keeps COMBAT.DAT, STELLAR.DAT, the
+	 * music and the movies on the discs.
+	 */
+	void addSearchPaths(const Common::FSNode &gameDir, const Common::String &cd1Path, const Common::String &cd2Path);
+
+	/** Warn about any known data file that can't be found. Returns true if all are present. */
+	bool checkDataFiles() const;
+
 	void scan();
 
 	const Common::StringArray &getImages() const { return _images; }
