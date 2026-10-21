@@ -26,13 +26,14 @@ The framework is in place and working:
 | `engines/stg`: `.GSF` sprite sets | Not started |
 | `engines/stg`: scripts (`GAME.BIN`): format, interpreter, disassembler | Done |
 | `engines/stg`: the ~200 game opcodes the scripts call | Stack effects known; meanings to do |
-| `engines/stg`: levels (`GAME.LV2`) | Not started |
+| `engines/stg`: levels (`GAME.LV2`): container, palette, floor plan, textures | Done (heights and 3D fields to do) |
 | `engines/stg`: game logic: the 3D away missions, starship combat, stellar cartography | **Not started** |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
 
 Right now, the engine runs as a viewer for the game's data. You can browse
 every image in its archives, and play every speech line and music track, with
-speech subtitles drawn in the game's own font. The 2 CD Windows release is in the detection table.
+speech subtitles drawn in the game's own font, and see each level's floor plan
+and textures. The 2 CD Windows release is in the detection table.
 Other versions are found by a fallback that looks for an executable mentioning
 "Generations", and reported as unknown versions.
 
@@ -114,7 +115,8 @@ recognise.
 
 In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
 In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
-archives. Up/Down steps through sounds and Space replays the current one. Home
+archives. Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
+through its textures. Home
 returns to the starfield, F5/F7 save and load, and Esc quits.
 
 Settings and saves go in the per-user directory SDL picks for the platform:
@@ -140,7 +142,7 @@ The real work is reverse engineering the original game, then filling in
    `stg --probe --path=<file>.DAT` lists an archive's members and identifies
    or hex dumps one member of each file type.
 2. **Inner formats.** Most are standard (BMP, WAV, TXT). The `FONT`,
-   `OVERLAY` and `GS2` sprite formats are decoded. See [doc/formats.md](doc/formats.md) for
+   `OVERLAY` and `GS2` sprite formats are decoded, and so is most of the `GAME.LV2` level format. See [doc/formats.md](doc/formats.md) for
    everything known so far, including the `SGEN` script format and
    its instruction set.
 3. **Graphics and video.** Decode the sprite, background and palette formats

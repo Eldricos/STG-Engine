@@ -198,8 +198,58 @@ stg --extract --path=DATA/VERID1.DAT --pattern='verid1/game.bin' -o out
 stg --probe --path=out/verid1/game.bin
 ```
 
-## Level data (`GAME.LV2`): unknown
+## Level data (`GAME.LV2`): partly decoded, `engines/stg/level.h`
 
-It starts with a table of dwords (`1, 1024, 8, 292, 152, 140, 276, 196, 64, 24, ...`)
-and contains long runs of the bytes `0x33`–`0x35` (the ASCII digits `3`–`5`). These look
-like height, light or texture maps.
+Loaded by the routine at `0x4BD130` in `sgens.exe`. All values are little endian.
+
+| Offset | Type | Meaning |
+|--------|------|---------|
+| 0 | u32 | version, 1 |
+| 4 | u32[9] | record sizes: 1024, 8, 292, 152, 140, 276, 196, 64, 24. The original refuses the file if any differs |
+| 40 | u32 | number of directory entries |
+| 44 | u32 | directory size in bytes (entries × 16) |
+| 48 | entries | u32 size, u32 file offset, u16 type, u16 id, u16 count A, u16 count B |
+
+The chunks follow the directory. In verid1's file (448 entries), every byte
+belongs to the header, the directory or exactly one chunk. The game loads a
+chunk by (type, id). The tables use id 1, and count B is the number of
+records.
+
+| Type | Record | Contents |
+|------|--------|----------|
+| 1 | 4 | palette, 256 × (R, G, B, 0) |
+| 2 | 8 | vertices: int32 x, y in 16.16 fixed point. The floor plan, y up |
+| 3 | 292 | sectors (see below) |
+| 4 | 152 | walls (see below) |
+| 5, 6, 7 | 140, 276, 196 | polygon-like records handled by the same code as sectors; unexplored |
+| 12 | – | a single 161 KB chunk; unexplored |
+| 13 | – | textures, one chunk per texture, id = texture number |
+
+**Sectors** are convex polygons that tile the floor plan. They can lie above
+one another, as rooms over rooms.
+
+| Offset | Meaning |
+|--------|---------|
+| 108 | u32 flags |
+| 124 | edge planes, 16 bytes each: a, b (always 0), c, d with a·x + c·y + d = 0 |
+| 266 | u16 vertex count, 3–8 |
+| 268 | u16 vertex indices |
+
+Fields not yet understood: +32 and +44..+56 (probably floor and ceiling
+heights), +68..+80 (plane-like, possibly slopes), +100 (an object link), +256 and +262.
+
+**Walls** join the vertices at u16 +134 and +136. Their line is
+nx·x + ny·y + d = 0, with the unit normal at +28 (x) and +36 (y) and d at +40,
+all in 16.16. +32 is unknown.
+
+**Textures** have a 20-byte header: 12 zero bytes (pointers filled in at
+run time), then u16 id, width, height and flags. Then come width × height
+pixels stored column by column (top first, as far as can be told), and 3 ×
+width bytes of per-column hints like GS2's. Palette index 255 (magenta) is
+transparent.
+
+At load time the game builds a 64 × 64 grid of 32-byte cells over the map
+(around `0x4BEE07`), presumably for collision and visibility.
+
+Opening a `GAME.LV2` in the viewer draws its floor plan. `]` and `[` step
+through its textures.

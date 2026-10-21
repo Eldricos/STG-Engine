@@ -2,6 +2,7 @@ target_sources(stg_engines PRIVATE
 	detection.cpp
 	disasm.cpp
 	font.cpp
+	level.cpp
 	opcodes.cpp
 	overlay.cpp
 	resources.cpp

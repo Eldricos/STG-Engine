@@ -18,6 +18,7 @@
 #include "engines/engine.h"
 #include "engines/game.h"
 #include "engines/stg/font.h"
+#include "engines/stg/level.h"
 #include "engines/stg/overlay.h"
 #include "engines/stg/resources.h"
 #include "engines/stg/screen.h"
@@ -66,6 +67,9 @@ private:
 	void showImage(int index);
 	void showOverlay(const ResourceRef &ref);
 	void showSprites(const ResourceRef &ref);
+	void showLevel(const ResourceRef &ref);
+	/** Page 0 is the map, page n the level's n-th texture. */
+	void showLevelPage(int page);
 	/** Jump to the first image of the next (direction 1) or previous (-1) archive. */
 	void jumpArchive(int direction);
 	void showStarfield();
@@ -92,6 +96,10 @@ private:
 	uint32 _overlayTime = 0; // also used to animate sprites
 	SpriteSet _sprites;
 	bool _spritesLoaded = false;
+	std::unique_ptr<LevelFile> _level;
+	Common::String _levelName;
+	std::vector<uint16> _levelTextures;
+	int _levelPage = 0;
 	int _imageIndex = -1;
 	int _soundIndex = -1;
 	Audio::SoundHandle _soundHandle;

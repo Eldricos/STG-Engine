@@ -170,6 +170,12 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		case Common::KEYCODE_HOME:
 			showStarfield();
 			break;
+		case Common::KEYCODE_RIGHTBRACKET:
+			showLevelPage(_levelPage + 1);
+			break;
+		case Common::KEYCODE_LEFTBRACKET:
+			showLevelPage(_levelPage - 1);
+			break;
 		case Common::KEYCODE_F5: {
 			Common::Error err = saveGameState(0, "Quick save");
 			if (err.failed())
@@ -209,7 +215,25 @@ void STGEngine::drawFrame(uint32 delta) {
 		_dirty = true;
 	}
 
-	if (_spritesLoaded) {
+	if (_level) {
+		if (!_dirty) {
+			_system->updateScreen();
+			return;
+		}
+		byte background = _screen->getPalette().findBestColor(0, 0, 0);
+		_screen->clear(background);
+		if (_levelPage == 0) {
+			Graphics::Surface map;
+			map.create(Screen::kWidth, Screen::kHeight - kTextPanelHeight, Graphics::PixelFormat::createFormatCLUT8());
+			map.fillRect(Common::Rect(map.w, map.h), background);
+			drawLevelMap(*_level, map);
+			_screen->drawImage(map, Screen::kHeight - kTextPanelHeight);
+		} else {
+			LevelFile::Texture texture;
+			if (_level->loadTexture(_levelTextures[_levelPage - 1], texture))
+				_screen->drawImage(texture.surface, Screen::kHeight - kTextPanelHeight);
+		}
+	} else if (_spritesLoaded) {
 		// Animate at about 8 frames per second, anchored bottom centre.
 		_overlayTime += delta;
 		if (_overlayTime >= 125) {
@@ -328,8 +352,11 @@ void STGEngine::showImage(int index) {
 	_imageIndex = index;
 	const ResourceRef &ref = images[index];
 	_imageLoaded = _overlayLoaded = _spritesLoaded = false;
+	_level.reset();
 
-	if (Common::hasSuffixIgnoreCase(ref.name, ".ovr")) {
+	if (Common::hasSuffixIgnoreCase(ref.name, ".lv2")) {
+		showLevel(ref);
+	} else if (Common::hasSuffixIgnoreCase(ref.name, ".ovr")) {
 		showOverlay(ref);
 	} else if (Common::hasSuffixIgnoreCase(ref.name, ".gs2")) {
 		showSprites(ref);
@@ -349,6 +376,44 @@ void STGEngine::showImage(int index) {
 
 	_status = Common::format("%d/%d  ", index + 1, count) + _status;
 	info("Image %s", _status.c_str());
+	_dirty = true;
+}
+
+void STGEngine::showLevel(const ResourceRef &ref) {
+	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+	_level.reset(new LevelFile());
+	if (!stream || !_level->load(*stream)) {
+		_level.reset();
+		initPalette();
+		_status = ref.toString() + "  (could not decode)";
+		return;
+	}
+	_levelName = ref.toString();
+	_levelTextures = _level->getTextureIds();
+	_screen->getPalette() = _level->getPalette();
+	_screen->applyPalette();
+	showLevelPage(0);
+}
+
+void STGEngine::showLevelPage(int page) {
+	if (!_level)
+		return;
+	int pages = (int)_levelTextures.size() + 1;
+	_levelPage = ((page % pages) + pages) % pages;
+
+	if (_levelPage == 0) {
+		_status = Common::format("%s  map: %d sectors, %d walls, %d vertices  ([ ] textures)", _levelName.c_str(),
+		                         (int)_level->getSectors().size(), (int)_level->getWalls().size(),
+		                         (int)_level->getVertices().size());
+	} else {
+		LevelFile::Texture texture;
+		uint16 id = _levelTextures[_levelPage - 1];
+		if (_level->loadTexture(id, texture))
+			_status = Common::format("%s  texture %d/%d (id %u) %dx%d", _levelName.c_str(), _levelPage,
+			                         (int)_levelTextures.size(), id, texture.surface.w, texture.surface.h);
+		else
+			_status = Common::format("%s  texture %u (could not decode)", _levelName.c_str(), id);
+	}
 	_dirty = true;
 }
 
@@ -428,6 +493,7 @@ void STGEngine::showStarfield() {
 	_imageLoaded = false;
 	_overlayLoaded = false;
 	_spritesLoaded = false;
+	_level.reset();
 	_imageIndex = -1;
 	initPalette();
 	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";

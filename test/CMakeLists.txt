@@ -5,6 +5,7 @@ add_executable(stg_tests
 	test_common.cpp
 	test_engines.cpp
 	test_graphics.cpp
+	test_level.cpp
 	test_script.cpp
 	test_zip.cpp
 )

@@ -8,8 +8,10 @@
 
 #include "common/graphics/surface.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace Graphics {
 
@@ -149,6 +151,38 @@ void Surface::drawLine(int x0, int y0, int x1, int y1, uint32 color) {
 		if (e2 <= dx) {
 			err += dx;
 			y0 += sy;
+		}
+	}
+}
+
+void Surface::fillPolygon(const Common::Point *points, int count, uint32 color) {
+	if (count < 3)
+		return;
+
+	int minY = points[0].y, maxY = points[0].y;
+	for (int i = 1; i < count; i++) {
+		minY = std::min<int>(minY, points[i].y);
+		maxY = std::max<int>(maxY, points[i].y);
+	}
+	minY = std::max(minY, 0);
+	maxY = std::min<int>(maxY, h - 1);
+
+	std::vector<int> crossings;
+	for (int y = minY; y <= maxY; y++) {
+		// Sample at the pixel centre; edges include their top end only.
+		double sampleY = y + 0.5;
+		crossings.clear();
+		for (int i = 0; i < count; i++) {
+			const Common::Point &a = points[i], &b = points[(i + 1) % count];
+			if ((a.y <= sampleY) == (b.y <= sampleY))
+				continue;
+			double t = (sampleY - a.y) / (double)(b.y - a.y);
+			crossings.push_back((int)(a.x + t * (b.x - a.x) + 0.5));
+		}
+		std::sort(crossings.begin(), crossings.end());
+		for (size_t i = 0; i + 1 < crossings.size(); i += 2) {
+			if (crossings[i + 1] > crossings[i])
+				hLine(crossings[i], y, crossings[i + 1] - 1, color);
 		}
 	}
 }

@@ -146,3 +146,31 @@ TEST(bmp_rejects_garbage) {
 	Image::BitmapDecoder decoder;
 	CHECK(!decoder.loadStream(s));
 }
+
+TEST(surface_fill_polygon) {
+	Graphics::Surface s;
+	s.create(10, 10, Graphics::PixelFormat::createFormatCLUT8());
+
+	// Two triangles splitting a square share their diagonal without overlap.
+	const Common::Point lower[] = { Common::Point(2, 2), Common::Point(8, 2), Common::Point(8, 8) };
+	const Common::Point upper[] = { Common::Point(2, 2), Common::Point(8, 8), Common::Point(2, 8) };
+	s.fillPolygon(lower, 3, 1);
+	s.fillPolygon(upper, 3, 2);
+	int counts[3] = { 0, 0, 0 };
+	for (int y = 0; y < 10; y++) {
+		for (int x = 0; x < 10; x++)
+			counts[s.getPixel(x, y)]++;
+	}
+	CHECK_EQ(counts[1] + counts[2], 36);
+	CHECK_EQ(counts[1], 15);
+	CHECK_EQ(s.getPixel(7, 2), 1u);
+	CHECK_EQ(s.getPixel(2, 7), 2u);
+	CHECK_EQ(s.getPixel(8, 8), 0u);
+
+	// Clipped at the surface edges.
+	const Common::Point big[] = { Common::Point(-5, -5), Common::Point(20, -5), Common::Point(20, 20),
+	                              Common::Point(-5, 20) };
+	s.fillPolygon(big, 4, 3);
+	CHECK_EQ(s.getPixel(0, 0), 3u);
+	CHECK_EQ(s.getPixel(9, 9), 3u);
+}
