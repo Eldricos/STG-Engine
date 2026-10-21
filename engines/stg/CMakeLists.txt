@@ -1,6 +1,7 @@
 target_sources(stg_engines PRIVATE
 	detection.cpp
 	font.cpp
+	overlay.cpp
 	resources.cpp
 	screen.cpp
 	stg.cpp

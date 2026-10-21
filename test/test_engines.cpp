@@ -17,6 +17,7 @@
 #include "engines/engine.h"
 #include "engines/metaengine.h"
 #include "engines/stg/font.h"
+#include "engines/stg/overlay.h"
 #include "engines/stg/resources.h"
 
 namespace {
@@ -286,4 +287,65 @@ TEST(stg_subtitles) {
 	         Common::String("RIKER: \"CAPTAIN, WE'VE GOT A SERIOUS SITUATION.\""));
 	CHECK(resources.loadSubtitle({ "", "SOUNDS/MISC0001.WAV" }).empty());
 	SearchMan.clear();
+}
+
+TEST(stg_overlay_format) {
+	// Width 4, 4 rows = two frames of 2 rows. Rows are int16 runs: negative
+	// skips transparent pixels, positive is followed by pixels padded to even.
+	std::vector<std::vector<int>> rows = {
+		{ -4 },               // all transparent
+		{ -1, 2, 7, 8, -1 },  // .78.
+		{ 3, 1, 2, 3, -1 },   // 123. (odd run, padded)
+		{ 4, 9, 9, 9, 9 },    // 9999
+	};
+	Common::MemoryWriteStreamDynamic data;
+	std::vector<uint32> offsets;
+	for (const std::vector<int> &row : rows) {
+		offsets.push_back(data.size());
+		for (size_t i = 0; i < row.size();) {
+			int n = row[i++];
+			data.writeUint16LE((uint16)(int16)n);
+			if (n > 0) {
+				for (int k = 0; k < n; k++)
+					data.writeByte((byte)row[i++]);
+				if (n & 1)
+					data.writeByte(0);
+			}
+		}
+	}
+
+	Common::MemoryWriteStreamDynamic file;
+	file.write("OVERLAY\0", 8);
+	file.writeUint32LE(4);
+	file.writeUint32LE((uint32)rows.size());
+	for (uint32 offset : offsets)
+		file.writeUint32LE(offset);
+	file.write(data.getData().data(), data.size());
+
+	Common::MemoryReadStream stream(file.getData().data(), file.size());
+	STG::Overlay overlay;
+	CHECK(overlay.load(stream));
+	CHECK_EQ(overlay.getWidth(), 4);
+	CHECK_EQ(overlay.getRowCount(), 4);
+	CHECK(!overlay.isOpaque(0, 0));
+	CHECK(!overlay.isOpaque(0, 1));
+	CHECK(overlay.isOpaque(1, 1));
+	CHECK_EQ(overlay.getSurface().getPixel(2, 1), 8u);
+	CHECK_EQ(overlay.getSurface().getPixel(2, 2), 3u);
+	CHECK(!overlay.isOpaque(3, 2));
+
+	// Frame 1 (rows 2-3) drawn over a filled surface keeps the transparent pixel.
+	Graphics::Surface dst;
+	dst.create(4, 2, Graphics::PixelFormat::createFormatCLUT8());
+	dst.fillRect(Common::Rect(4, 2), 5);
+	overlay.drawFrame(dst, 1, 2, 0, 0);
+	CHECK_EQ(dst.getPixel(0, 0), 1u);
+	CHECK_EQ(dst.getPixel(3, 0), 5u);
+	CHECK_EQ(dst.getPixel(3, 1), 9u);
+
+	// A row whose runs overflow the width is rejected.
+	std::vector<byte> bad = file.getData();
+	bad[16 + 4 * 4] = 0x7F; // first row: skip becomes a 127 pixel run
+	Common::MemoryReadStream badStream(bad.data(), (uint32)bad.size());
+	CHECK(!overlay.load(badStream));
 }

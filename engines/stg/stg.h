@@ -18,6 +18,7 @@
 #include "engines/engine.h"
 #include "engines/game.h"
 #include "engines/stg/font.h"
+#include "engines/stg/overlay.h"
 #include "engines/stg/resources.h"
 #include "engines/stg/screen.h"
 
@@ -62,6 +63,7 @@ private:
 	void drawTextPanel();
 
 	void showImage(int index);
+	void showOverlay(const ResourceRef &ref);
 	/** Jump to the first image of the next (direction 1) or previous (-1) archive. */
 	void jumpArchive(int direction);
 	void showStarfield();
@@ -79,6 +81,11 @@ private:
 	Font _font;
 	Image::BitmapDecoder _image;
 	bool _imageLoaded = false;
+	Overlay _overlay;
+	bool _overlayLoaded = false;
+	int _overlayFrameHeight = 0;
+	int _overlayFrame = 0;
+	uint32 _overlayTime = 0;
 	int _imageIndex = -1;
 	int _soundIndex = -1;
 	Audio::SoundHandle _soundHandle;

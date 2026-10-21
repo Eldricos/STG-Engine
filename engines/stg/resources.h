@@ -73,6 +73,12 @@ public:
 	std::unique_ptr<Common::SeekableReadStream> open(const ResourceRef &ref) const;
 
 	bool loadImage(const ResourceRef &ref, Image::BitmapDecoder &decoder) const;
+
+	/**
+	 * The palette of the first 8-bit image in an archive, for resources
+	 * that have none of their own (such as overlays).
+	 */
+	bool loadArchivePalette(const Common::String &archive, Graphics::Palette &palette) const;
 	std::unique_ptr<Audio::RewindableAudioStream> loadSound(const ResourceRef &ref) const;
 
 	/**

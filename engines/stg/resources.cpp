@@ -170,7 +170,7 @@ void ResourceManager::scan() {
 	_sounds.clear();
 
 	auto add = [this](const Common::String &archive, const Common::String &name) {
-		if (Common::hasSuffixIgnoreCase(name, ".bmp"))
+		if (Common::hasSuffixIgnoreCase(name, ".bmp") || Common::hasSuffixIgnoreCase(name, ".ovr"))
 			_images.push_back({ archive, name });
 		else if (Common::hasSuffixIgnoreCase(name, ".wav"))
 			_sounds.push_back({ archive, name });
@@ -234,6 +234,19 @@ bool ResourceManager::loadImage(const ResourceRef &ref, Image::BitmapDecoder &de
 		return false;
 	}
 	return true;
+}
+
+bool ResourceManager::loadArchivePalette(const Common::String &archive, Graphics::Palette &palette) const {
+	for (const ResourceRef &ref : _images) {
+		if (ref.archive != archive || !Common::hasSuffixIgnoreCase(ref.name, ".bmp"))
+			continue;
+		Image::BitmapDecoder decoder;
+		if (loadImage(ref, decoder) && decoder.hasPalette()) {
+			palette = decoder.getPalette();
+			return true;
+		}
+	}
+	return false;
 }
 
 std::unique_ptr<Audio::RewindableAudioStream> ResourceManager::loadSound(const ResourceRef &ref) const {

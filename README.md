@@ -21,7 +21,9 @@ The framework is in place and working:
 | `common/`: ZIP archives (stored and deflated, with our own DEFLATE decoder) | Done |
 | `engines/stg`: open the game's `.DAT`/`MUSIC.*` archives (they are ZIP files) | Done |
 | `engines/stg`: images (BMP), speech and music (WAV), subtitles (TXT), fonts (`.FNT`) | Done |
-| `engines/stg`: animations (`.OVR`), scripts (`GAME.BIN`), levels (`GAME.LV2`), `.GS2`/`.GSF` | Not started: format unknown |
+| `engines/stg`: first-person overlay animations (`.OVR`) | Done (frame height guessed) |
+| `engines/stg`: sprite sets (`.GS2`/`.GSF`) | Partly understood |
+| `engines/stg`: scripts (`GAME.BIN`), levels (`GAME.LV2`) | Not started |
 | `engines/stg`: the formats inside the archives, scripts, scenes, combat | **Not started**: needs reverse engineering |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
 
@@ -134,10 +136,10 @@ The real work is reverse engineering the original game, then filling in
    `MUSIC.*` files are plain ZIP archives, which `common/zip.h` reads.
    `stg --probe --path=<file>.DAT` lists an archive's members and identifies
    or hex dumps one member of each file type.
-2. **Inner formats.** Most are standard (BMP, WAV, TXT) and the `FONT` format is
-   decoded (see `engines/stg/font.h`). Still unknown: `OVERLAY` animations
-   (`.OVR`), the `SGEN` script (`GAME.BIN`), level data (`GAME.LV2`), and
-   `.GS2`/`.GSF`.
+2. **Inner formats.** Most are standard (BMP, WAV, TXT). The `FONT` and
+   `OVERLAY` formats are decoded. See [doc/formats.md](doc/formats.md) for
+   everything known so far, including partial notes on GS2 sprites, the
+   `SGEN` script and the level data.
 3. **Graphics and video.** Decode the sprite, background and palette formats
    into `Graphics::Surface`s, and add AVI and Cinepak decoders for the cutscenes.
 4. **Sound and music.** Add an `Audio::AudioStream` for each audio encoding the

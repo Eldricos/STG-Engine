@@ -203,7 +203,21 @@ void STGEngine::drawFrame(uint32 delta) {
 		_dirty = true;
 	}
 
-	if (_imageLoaded) {
+	if (_overlayLoaded) {
+		// Animate at about 12 frames per second.
+		_overlayTime += delta;
+		if (_overlayTime >= 80) {
+			_overlayTime = 0;
+			_overlayFrame = (_overlayFrame + 1) % (_overlay.getRowCount() / _overlayFrameHeight);
+		}
+		Graphics::Surface frame;
+		frame.create(_overlay.getWidth(), _overlayFrameHeight, Graphics::PixelFormat::createFormatCLUT8());
+		byte background = _screen->getPalette().findBestColor(0, 0, 0);
+		frame.fillRect(Common::Rect(frame.w, frame.h), background);
+		_overlay.drawFrame(frame, _overlayFrame, _overlayFrameHeight, 0, 0);
+		_screen->clear(background);
+		_screen->drawImage(frame, Screen::kHeight - kTextPanelHeight);
+	} else if (_imageLoaded) {
 		// Static image: only redraw when something changed.
 		if (!_dirty) {
 			_system->updateScreen();
@@ -284,21 +298,52 @@ void STGEngine::showImage(int index) {
 	index = ((index % count) + count) % count;
 	_imageIndex = index;
 	const ResourceRef &ref = images[index];
-	_imageLoaded = _resources.loadImage(ref, _image);
+	_imageLoaded = _overlayLoaded = false;
 
-	if (_imageLoaded && _image.hasPalette()) {
-		_screen->getPalette().set(_image.getPalette().data(), 0, _image.getPaletteColorCount());
+	if (Common::hasSuffixIgnoreCase(ref.name, ".ovr")) {
+		showOverlay(ref);
+	} else {
+		_imageLoaded = _resources.loadImage(ref, _image);
+		if (_imageLoaded && _image.hasPalette()) {
+			_screen->getPalette().set(_image.getPalette().data(), 0, _image.getPaletteColorCount());
+			_screen->applyPalette();
+		} else {
+			initPalette();
+		}
+		const Graphics::Surface &surf = _image.getSurface();
+		_status = Common::format("%s  %dx%d", ref.toString().c_str(), surf.w, surf.h);
+		if (!_imageLoaded)
+			_status += "  (could not decode)";
+	}
+
+	_status = Common::format("%d/%d  ", index + 1, count) + _status;
+	info("Image %s", _status.c_str());
+	_dirty = true;
+}
+
+void STGEngine::showOverlay(const ResourceRef &ref) {
+	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+	_overlayLoaded = stream && _overlay.load(*stream);
+	if (!_overlayLoaded) {
+		initPalette();
+		_status = ref.toString() + "  (could not decode)";
+		return;
+	}
+
+	// Overlays carry no palette; borrow one from an image in the same archive.
+	Graphics::Palette palette;
+	if (_resources.loadArchivePalette(ref.archive, palette)) {
+		_screen->getPalette() = palette;
 		_screen->applyPalette();
 	} else {
 		initPalette();
 	}
 
-	const Graphics::Surface &surf = _image.getSurface();
-	_status = Common::format("%d/%d  %s  %dx%d", index + 1, count, ref.toString().c_str(), surf.w, surf.h);
-	if (!_imageLoaded)
-		_status += "  (could not decode)";
-	info("Image %s", _status.c_str());
-	_dirty = true;
+	_overlayFrameHeight = _overlay.guessFrameHeight();
+	_overlayFrame = 0;
+	_overlayTime = 0;
+	_status = Common::format("%s  %dx%d, %d frames (frame height guessed)", ref.toString().c_str(), _overlay.getWidth(),
+	                         _overlayFrameHeight, _overlay.getRowCount() / _overlayFrameHeight);
 }
 
 void STGEngine::jumpArchive(int direction) {
@@ -323,6 +368,7 @@ void STGEngine::jumpArchive(int direction) {
 
 void STGEngine::showStarfield() {
 	_imageLoaded = false;
+	_overlayLoaded = false;
 	_imageIndex = -1;
 	initPalette();
 	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";
