@@ -4,6 +4,7 @@ target_sources(stg_engines PRIVATE
 	overlay.cpp
 	resources.cpp
 	screen.cpp
+	script.cpp
 	sprite.cpp
 	stg.cpp
 )

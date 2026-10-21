@@ -96,20 +96,40 @@ These start like GS2 but with version 1:
 (51 frames, with something in the third dword). They're refused by the GS2
 decoder rather than misread.
 
-## SGEN script (`GAME.BIN`): unknown
+## SGEN script (`GAME.BIN`): container decoded, bytecode not yet
+
+This is the compiled script for each location. `engines/stg/script.h` reads the container:
 
 ```
 char[4]  "SGEN"
-uint16   22      (version?)
+uint16   22 (version)
 uint16   2
 uint32   file size - 12
-uint32   ?       (43938 in verid1; the size of a code section?)
-uint32   8, 444, 4616, 19208, 1300, 96   (section sizes or counts?)
+uint32   code size in bytes          (43938 in verid1)
+uint32   section sizes[6]            (8, 444, 4616, 19208, 1300, 96 in verid1)
+uint16   code[]                      starts at offset 40
+uint8    sections[6][]
+char[]   resource names, NUL separated, to the end of the file
 ```
 
-It ends with a table of the resources the location uses (`KIRKHIT.OVR`,
-`PHASER.BMP`, `TRICRDR.BMP`, ...). The overlay frame heights are probably
-set in here.
+The sizes account for every byte of verid1's file, and AMARGOS1's header
+adds up the same way.
+
+What's known so far about the contents:
+
+- **Code** is a 16-bit word stream for a stack machine. `0002 n` pushes `n`
+  (5,315 of the 21,969 words in verid1 are pushes). It starts with
+  `0001 e3e7 8000`, then `push -1, push 32, op 0x15`, then
+  `push 0, push N, op 0x19` for N = 0, 1, 2, ..., which looks like
+  initialising variables. Other instructions take operands too, so operand
+  counts can't be inferred from the data alone. The interpreter in `sgens.exe`
+  is needed.
+- **Section 1** has 12-byte records holding values like `0x00424A38`, which are
+  addresses inside `sgens.exe` (image base 0x400000).
+- **Section 2** starts with `0x12345678` and contains `0x87654321`
+  markers.
+- **Resource names** are the BMPs and OVRs the location uses (`PHASER.BMP`,
+  `KIRKHIT.OVR`, ...).
 
 ## Level data (`GAME.LV2`): unknown
 

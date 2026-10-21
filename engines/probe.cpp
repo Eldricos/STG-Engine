@@ -198,6 +198,27 @@ void describeData(const std::vector<byte> &data, int64 fullSize, uint32 dumpByte
 		}
 		return;
 	}
+	if (has(0, "SGEN") && data.size() >= 40) {
+		// Star Trek: Generations location script; see engines/stg/script.h.
+		out += Common::format("SGEN script v%u, %u bytes of code, sections", READ_LE_UINT16(&data[4]),
+		                      READ_LE_UINT32(&data[12]));
+		uint64 namesAt = 40 + (uint64)READ_LE_UINT32(&data[12]);
+		for (int i = 0; i < 6; i++) {
+			uint32 size = READ_LE_UINT32(&data[16 + i * 4]);
+			out += Common::format(" %u", size);
+			namesAt += size;
+		}
+		if (namesAt < (uint64)fullSize && fullSize <= (int64)data.size()) {
+			out += "\n  resources:";
+			for (size_t i = (size_t)namesAt; i < data.size();) {
+				Common::String name((const char *)&data[i]);
+				if (!name.empty())
+					out += " " + name;
+				i += name.size() + 1;
+			}
+		}
+		return;
+	}
 	if (has(0, "MZ")) {
 		bool pe = false;
 		if (data.size() >= 0x40) {
@@ -340,6 +361,12 @@ Common::String probeFile(const Common::FSNode &file, const Common::String &name,
 		return out + "unreadable";
 	std::vector<byte> data(std::min<int64>(fileSize, kProbeReadSize));
 	data.resize(stream->read(data.data(), (uint32)data.size()));
+
+	// Scripts keep their resource list at the very end, so read them whole.
+	if (data.size() >= 4 && memcmp(data.data(), "SGEN", 4) == 0 && fileSize <= 4 * 1024 * 1024) {
+		stream->seek(0);
+		data = stream->readAll();
+	}
 
 	if (data.size() >= 4 && memcmp(data.data(), "PK\x03\x04", 4) == 0)
 		describeZip(file, dumpBytes, listMembers, out);

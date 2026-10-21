@@ -24,7 +24,8 @@ The framework is in place and working:
 | `engines/stg`: first-person overlay animations (`.OVR`) | Done (frame height guessed) |
 | `engines/stg`: 3D sprite sets (`.GS2`) | Done |
 | `engines/stg`: `.GSF` sprite sets | Not started |
-| `engines/stg`: scripts (`GAME.BIN`), levels (`GAME.LV2`) | Not started |
+| `engines/stg`: scripts (`GAME.BIN`) | Container read; bytecode not decoded |
+| `engines/stg`: levels (`GAME.LV2`) | Not started |
 | `engines/stg`: the formats inside the archives, scripts, scenes, combat | **Not started**: needs reverse engineering |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
 

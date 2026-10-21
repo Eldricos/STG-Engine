@@ -19,6 +19,7 @@
 #include "engines/stg/font.h"
 #include "engines/stg/overlay.h"
 #include "engines/stg/resources.h"
+#include "engines/stg/script.h"
 #include "engines/stg/sprite.h"
 
 namespace {
@@ -405,4 +406,44 @@ TEST(stg_sprite_format) {
 	// Truncated data is rejected.
 	Common::MemoryReadStream truncated(file.getData().data(), file.size() - 8);
 	CHECK(!sprites.load(truncated));
+}
+
+TEST(stg_script_container) {
+	const uint16 code[] = { 0x0002, 5, 0x0002, 7, 0x0019 };
+	const byte sections[6][2] = { { 1, 2 }, { 3, 4 }, { 5, 6 }, { 7, 8 }, { 9, 10 }, { 11, 12 } };
+	const char names[] = "PHASER.BMP\0KIRKHIT.OVR\0";
+
+	Common::MemoryWriteStreamDynamic body;
+	body.writeUint32LE(sizeof(code));
+	for (int i = 0; i < 6; i++)
+		body.writeUint32LE(2);
+	for (uint16 word : code)
+		body.writeUint16LE(word);
+	for (int i = 0; i < 6; i++)
+		body.write(sections[i], 2);
+	body.write(names, sizeof(names) - 1);
+
+	Common::MemoryWriteStreamDynamic file;
+	file.writeUint32BE(MKTAG('S', 'G', 'E', 'N'));
+	file.writeUint16LE(22);
+	file.writeUint16LE(2);
+	file.writeUint32LE(0); // file size - 12, patched below
+	file.write(body.getData().data(), body.size());
+	std::vector<byte> bytes = file.getData();
+	WRITE_LE_UINT32(&bytes[8], (uint32)bytes.size() - 12);
+
+	Common::MemoryReadStream stream(bytes.data(), (uint32)bytes.size());
+	STG::ScriptFile script;
+	CHECK(script.load(stream));
+	CHECK_EQ(script.getVersion(), 22);
+	CHECK_EQ(script.getCode().size(), (size_t)5);
+	CHECK_EQ(script.getCode()[4], 0x19);
+	CHECK_EQ(script.getSection(5)[1], 12);
+	CHECK_EQ(script.getResourceNames().size(), (size_t)2);
+	CHECK_EQ(script.getResourceNames()[1], Common::String("KIRKHIT.OVR"));
+
+	// Sizes that don't match the file are rejected.
+	WRITE_LE_UINT32(&bytes[8], 1234);
+	Common::MemoryReadStream bad(bytes.data(), (uint32)bytes.size());
+	CHECK(!script.load(bad));
 }
