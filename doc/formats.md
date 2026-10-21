@@ -482,9 +482,9 @@ the camera is below it.
 | 0x64, 0x66, 0x68 | lighting, as for flats |
 | 0x69 | byte record kind, 1 |
 | 0x3C | u64 zones the wall is in |
-| 0x6C | u32 flags: 0x100 visible; a wall faces the side its normal points to (the right of vertex 1 to vertex 2) and is drawn only from there, unless 0x8000, which also blocks from both sides (0x4000 alone: unseen from behind but hides what is past it); 0x20 mirrors the texture, and seen from behind 0x40000 mirrors it again (`0x4C9393`); 0x40, 0x80 hide what is past the wall below or above it; 0x8 masked (has transparent texels), 0x4 unknown, 0x2000 set aside for script handling at `0x4B7DB5` |
+| 0x6C | u32 flags: 0x100 visible; a wall faces the side its normal points to (the right of vertex 1 to vertex 2) and is drawn only from there, unless 0x8000, which also blocks from both sides (0x4000 alone: unseen from behind but hides what is past it); 0x20 mirrors the texture; seen from behind, u still runs from vertex 1 to vertex 2 if exactly one of 0x20 and 0x40000 is set, and the other way otherwise (`0x4C9393`; halee1's 55 rock-edge caps keep their dark edge on the end joining the rock only this way); 0x2 draws columns that are one run of texels over that run alone, so a silhouette isn't repeated above itself (`0x4C0AD0`); 0x40, 0x80 hide what is past the wall below or above it; 0x8 masked (has transparent texels), 0x4 unknown, 0x2000 set aside for script handling at `0x4B7DB5` |
 | 0x60 | i16 u scroll speed |
-| 0x70, 0x74 | u offsets of the ends for a texture running on along a strip of walls: from the front u0 − (+0x74) at vertex 1 and u0 − (+0x70) at vertex 2, added rather than taken away when mirrored; from behind +0x70 and +0x74 swap places |
+| 0x70, 0x74 | u offsets of the ends for a texture running on along a strip of walls: u0 − (+0x74) at vertex 1 and u0 − (+0x70) at vertex 2, added rather than taken away when mirrored as above |
 | 0x78 | extra thickness, added to the radius in one kind of collision test |
 | 0x7C, 0x80, 0x82, 0x84 | animation start time, speed, frame count, current frame |
 | 0x86, 0x88 | u16 vertex indices |

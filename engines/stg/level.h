@@ -157,8 +157,17 @@ public:
 	 * front. From behind, 0x4000 alone only hides what is past the wall.
 	 */
 	static const uint32 kWallTwoSided = 0x8000;
-	/** The texture runs the other way (0x4C9393); from behind, kWallMirrorBack flips it again. */
+	/**
+	 * The texture runs the other way (0x4C9393). From behind it runs the
+	 * other way again unless exactly one of these is set.
+	 */
 	static const uint32 kWallMirror = 0x20;
+	/**
+	 * Columns that are one run of texels are drawn over that run alone
+	 * (0x4C0AD0), so a silhouette such as a cliff top isn't repeated above
+	 * itself when the wall is taller than one copy of its texture.
+	 */
+	static const uint32 kWallTrimColumns = 0x2;
 	static const uint32 kWallMirrorBack = 0x40000;
 	/** Wall flag: blocks movement from behind as well as from the front. */
 	static const uint32 kWallSolidBothSides = 0x8000;

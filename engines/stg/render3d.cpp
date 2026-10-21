@@ -35,8 +35,10 @@ double fromFixed(int32 v) {
 struct LevelRenderer::Texture {
 	int width = 0;
 	int height = 0;
-	/** Column-major, as stored: pixels[u * height + v]. */
+	/** Column-major, each column top first: pixels[u * height + v]. */
 	std::vector<byte> pixels;
+	/** Has transparent texels, and each column at most one run of others. */
+	bool silhouette = false;
 };
 
 struct LevelRenderer::Vertex {
@@ -147,6 +149,19 @@ const LevelRenderer::Texture *LevelRenderer::getTexture(uint16 id, uint16 frames
 			for (int v = 0; v < texture->height; v++)
 				texture->pixels[(size_t)u * texture->height + v] = (byte)decoded.surface.getPixel(u, v);
 		}
+		bool transparent = false, oneRun = true;
+		for (int u = 0; u < texture->width && oneRun; u++) {
+			int runs = 0;
+			bool previous = false;
+			for (int v = 0; v < texture->height; v++) {
+				bool solid = texture->pixels[(size_t)u * texture->height + v] != LevelFile::kTransparent;
+				transparent |= !solid;
+				runs += solid && !previous;
+				previous = solid;
+			}
+			oneRun = runs <= 1;
+		}
+		texture->silhouette = transparent && oneRun;
 	}
 	const Texture *result = texture.get();
 	_textures[id] = std::move(texture);
@@ -180,15 +195,15 @@ void LevelRenderer::render(const Camera &camera, Graphics::Surface &dst, uint32 
 }
 
 void LevelRenderer::queuePolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
-                                 Graphics::Surface &dst, bool tile, bool translucent) {
+                                 Graphics::Surface &dst, Wrap wrap, bool translucent) {
 	if (!translucent) {
-		drawPolygon(poly, texture, shade, dst, tile);
+		drawPolygon(poly, texture, shade, dst, wrap);
 		return;
 	}
 	double depth = 0;
 	for (const Vertex &v : poly)
 		depth += v.z;
-	_translucent.push_back({ poly, texture, shade, tile, depth / poly.size() });
+	_translucent.push_back({ poly, texture, shade, wrap, depth / poly.size() });
 }
 
 void LevelRenderer::drawTranslucent(Graphics::Surface &dst) {
@@ -196,7 +211,7 @@ void LevelRenderer::drawTranslucent(Graphics::Surface &dst) {
 	std::stable_sort(_translucent.begin(), _translucent.end(),
 	                 [](const Translucent &a, const Translucent &b) { return a.depth > b.depth; });
 	for (Translucent &t : _translucent)
-		drawPolygon(t.poly, t.texture, t.shade, dst, t.tile, true);
+		drawPolygon(t.poly, t.texture, t.shade, dst, t.wrap, true);
 	_translucent.clear();
 }
 
@@ -274,16 +289,18 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 		if (!front && !(wall.flags & LevelFile::kWallTwoSided))
 			continue;
 		double top = fromFixed(wall.top), bottom = fromFixed(wall.bottom);
-		// u at vertex 1 and vertex 2, as 0x4C9393 picks them.
+		// u at vertex 1 and vertex 2, as 0x4C9393 picks them. From behind
+		// the ends swap unless 0x40000 xor 0x20 keeps them as from the
+		// front: cap walls in halee1 then keep their dark texture edge on
+		// the end that joins the rock.
 		bool mirror = (wall.flags & LevelFile::kWallMirror) != 0;
-		if (!front && (wall.flags & LevelFile::kWallMirrorBack))
-			mirror = !mirror;
+		if (!front)
+			mirror = !(mirror != ((wall.flags & LevelFile::kWallMirrorBack) != 0));
 		double u0 = fromFixed(wall.uStart), u1, u2;
 		if (wall.uEnd1 || wall.uEnd2) {
-			double e1 = fromFixed(wall.uEnd1), e2 = fromFixed(wall.uEnd2);
-			double sign = front == mirror ? 1 : -1;
-			u1 = u0 + sign * (front ? e2 : e1);
-			u2 = u0 + sign * (front ? e1 : e2);
+			double sign = mirror ? 1 : -1;
+			u1 = u0 + sign * fromFixed(wall.uEnd2);
+			u2 = u0 + sign * fromFixed(wall.uEnd1);
 		} else {
 			u1 = u0;
 			u2 = u0 + fromFixed(wall.uLength);
@@ -316,7 +333,10 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 		toCamera(x1, y1, bottom, poly[3]);
 		poly[3].u = u1;
 		poly[3].v = v2;
-		queuePolygon(poly, texture, wall.fullbright ? nullptr : getShade(wall.light), dst, true,
+		// Like the original with flag 0x2 (0x4C0AD0), a column that is one
+		// run of texels is drawn over that run only, not repeated.
+		Wrap wrap = (wall.flags & LevelFile::kWallTrimColumns) && texture && texture->silhouette ? kWrapOnceDown : kWrapTile;
+		queuePolygon(poly, texture, wall.fullbright ? nullptr : getShade(wall.light), dst, wrap,
 		             (wall.flags & LevelFile::kFlagTranslucent) != 0);
 	}
 }
@@ -344,7 +364,7 @@ void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 			poly[i].v = (i >= 2) ? texture->height : 0;
 		}
 		const uint32 seeThrough = LevelFile::kFlagTranslucent | LevelFile::kFlagColumnTests;
-		queuePolygon(poly, texture, billboard.fullbright ? nullptr : getShade(billboard.light), dst, false,
+		queuePolygon(poly, texture, billboard.fullbright ? nullptr : getShade(billboard.light), dst, kWrapStretch,
 		             (billboard.flags & seeThrough) == seeThrough);
 	}
 }
@@ -385,13 +405,13 @@ void LevelRenderer::drawSprites(Graphics::Surface &dst) {
 			poly[i].u = right != sprite.mirrored ? texture->width : 0;
 			poly[i].v = i >= 2 ? texture->height : 0;
 		}
-		queuePolygon(poly, texture, sprite.fullbright ? nullptr : getShade(sprite.light), dst, false,
+		queuePolygon(poly, texture, sprite.fullbright ? nullptr : getShade(sprite.light), dst, kWrapStretch,
 		             sprite.translucent);
 	}
 }
 
 void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
-                                Graphics::Surface &dst, bool tile, bool translucent) {
+                                Graphics::Surface &dst, Wrap wrap, bool translucent) {
 	// Clip against the near plane.
 	std::vector<Vertex> clipped;
 	clipped.reserve(poly.size() + 2);
@@ -477,7 +497,11 @@ void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *textur
 			if (texture) {
 				double z = 1.0 / iz;
 				int u = (int)std::floor(uz * z), v = (int)std::floor(vz * z);
-				if (tile) {
+				if (wrap != kWrapStretch) {
+					// Only one copy down a silhouette: v runs up from the
+					// picture's bottom row at 0 to its top at -height.
+					if (wrap == kWrapOnceDown && (v < -texture->height || v >= 0))
+						continue;
 					u %= texture->width;
 					v %= texture->height;
 					if (u < 0)

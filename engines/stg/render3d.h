@@ -138,15 +138,19 @@ private:
 
 	/** Transform a world point into camera space (x right, y up, z ahead). */
 	void toCamera(double x, double y, double z, Vertex &out) const;
-	/**
-	 * Clip a camera-space polygon to the near plane, project and fill it.
-	 * The texture repeats if tile is set, otherwise its edges stretch.
-	 */
+	/** How a texture continues past its edges. */
+	enum Wrap {
+		kWrapTile,     ///< repeats both ways
+		kWrapOnceDown, ///< repeats across; above and below its one copy there is nothing
+		kWrapStretch   ///< its edges stretch, for sprites
+	};
+
+	/** Clip a camera-space polygon to the near plane, project and fill it. */
 	void drawPolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
-	                 Graphics::Surface &dst, bool tile = true, bool translucent = false);
+	                 Graphics::Surface &dst, Wrap wrap = kWrapTile, bool translucent = false);
 	/** Draw now, or after everything solid if translucent. */
 	void queuePolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
-	                  Graphics::Surface &dst, bool tile, bool translucent);
+	                  Graphics::Surface &dst, Wrap wrap, bool translucent);
 	/** The see-through polygons queued this frame, far to near. */
 	void drawTranslucent(Graphics::Surface &dst);
 
@@ -154,7 +158,7 @@ private:
 		std::vector<Vertex> poly;
 		const Texture *texture;
 		const byte *shade;
-		bool tile;
+		Wrap wrap;
 		double depth;
 	};
 	std::vector<Translucent> _translucent;
