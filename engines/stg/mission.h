@@ -18,6 +18,7 @@
 #include "engines/stg/level.h"
 #include "engines/stg/render3d.h"
 #include "engines/stg/script.h"
+#include "engines/stg/sound.h"
 #include "engines/stg/vm.h"
 #include "engines/stg/walker.h"
 
@@ -40,8 +41,8 @@ namespace STG {
  *
  * The natives the scripts call are implemented here as far as they are
  * understood. The rest balance the stack and are counted, so their
- * effects are simply missing (sound, the HUD and panels, inventory,
- * combat, screen effects).
+ * effects are simply missing (the HUD and panels, inventory, combat,
+ * screen effects).
  */
 class Mission : public ScriptHost {
 public:
@@ -71,8 +72,12 @@ public:
 		kTypeMask = 0xE000
 	};
 
-	/** actors may be null for a level without them. */
-	Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker, Actors *actors);
+	/**
+	 * actors may be null for a level without them, and mixer null to run
+	 * silently; soundFiles opens the sound files the scripts play.
+	 */
+	Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker, Actors *actors,
+	        Audio::Mixer *mixer = nullptr, const MissionSound::FileOpener &soundFiles = nullptr);
 	~Mission() override;
 
 	/** Start the level: every object to state 0, then the start broadcast. */
@@ -94,6 +99,10 @@ public:
 	void setPlayerYaw(double yaw) { _currentYaw = yaw; }
 
 	ScriptVM &getVM() { return *_vm; }
+	MissionSound &getSound() { return *_sound; }
+
+	/** A subtitle that started since the last call, and how long to show it. */
+	bool takeSubtitle(Common::String &text, uint32 &durationMs) { return _sound->takeSubtitle(text, durationMs); }
 
 	/** Natives called that aren't implemented, by opcode, with call counts. */
 	const std::map<uint16, int> &getMissingNatives() const { return _missing; }
@@ -129,6 +138,8 @@ private:
 
 	/** Pop a 16.16 dword (high word on top). */
 	static double pop32(ScriptVM &vm);
+	/** Pop a 32-bit integer (high word on top). */
+	static uint32 popRaw32(ScriptVM &vm);
 	static void push32(ScriptVM &vm, double value);
 	static Position popPosition(ScriptVM &vm);
 	static void pushPosition(ScriptVM &vm, const Position &position);
@@ -162,6 +173,8 @@ private:
 	/** Textures as loaded, for RESET_DEFAULT. */
 	std::vector<uint16> _wallTextures, _flatTextures, _billboardTextures;
 	Actors *_actors;
+	std::unique_ptr<MissionSound> _sound;
+	std::vector<MissionSound::Finished> _soundsFinished;
 
 	int16 _health = 100;
 	int16 _maxHealth = 100;

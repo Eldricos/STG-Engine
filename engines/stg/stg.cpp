@@ -222,7 +222,12 @@ void STGEngine::handleEvent(const Common::Event &event) {
 
 void STGEngine::drawFrame(uint32 delta) {
 	// Clear the subtitle once its line has finished playing.
-	if (!_subtitle.empty() && !_mixer->isSoundHandleActive(_soundHandle)) {
+	if (_missionSubtitle) {
+		if (_levelTime >= _subtitleUntil) {
+			_subtitle.clear();
+			_missionSubtitle = false;
+		}
+	} else if (!_subtitle.empty() && !_mixer->isSoundHandleActive(_soundHandle)) {
 		_subtitle.clear();
 		_dirty = true;
 	}
@@ -457,6 +462,30 @@ void STGEngine::loadActors(const ResourceRef &levelRef) {
 	_levelRenderer->setSprites(&_actorSprites);
 }
 
+bool STGEngine::findSoundFile(const Common::String &name, const Common::String &archivePrefix, ResourceRef &ref) const {
+	// Subtitles sit next to their WAVs, so look for the WAV and swap the extension.
+	Common::String base = Common::toLower(name.substr(0, name.rfind('.')));
+	Common::String extension = name.substr(name.rfind('.'));
+	const ResourceRef *fallback = nullptr;
+	for (const ResourceRef &sound : _resources.getSounds()) {
+		size_t slash = sound.name.find_last_of("/\\");
+		Common::String file = sound.name.substr(slash == Common::String::npos ? 0 : slash + 1);
+		if (Common::toLower(file.substr(0, file.rfind('.'))) != base)
+			continue;
+		if (Common::toLower(sound.archive).compare(0, archivePrefix.size(), Common::toLower(archivePrefix)) == 0) {
+			fallback = &sound;
+			break;
+		}
+		if (!fallback)
+			fallback = &sound;
+	}
+	if (!fallback)
+		return false;
+	ref = *fallback;
+	ref.name = ref.name.substr(0, ref.name.rfind('.')) + extension;
+	return true;
+}
+
 void STGEngine::startMission(const ResourceRef &levelRef) {
 	// A level's scripts are in GAME.BIN next to its GAME.LV2.
 	ResourceRef ref = levelRef;
@@ -474,7 +503,24 @@ void STGEngine::startMission(const ResourceRef &levelRef) {
 		_levelScript.reset();
 		return;
 	}
-	_mission.reset(new Mission(*_level, *_levelScript, *_levelRenderer, *_walker, _actors.get()));
+	// Sound files: a mission's own in <mission>/sounds, the rest found by
+	// name in COMMON.DAT or the MUSIC archives.
+	Common::String folder = levelRef.name.substr(0, levelRef.name.find_last_of("/\\") + 1);
+	auto openSound = [this, levelRef, folder](const Common::String &name, MissionSound::Location where)
+		-> std::unique_ptr<Common::SeekableReadStream> {
+		if (where == MissionSound::kLocationMission) {
+			ResourceRef ref = { levelRef.archive, folder + "sounds/" + name };
+			if (std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref))
+				return stream;
+		}
+		ResourceRef ref;
+		if (!findSoundFile(name, where == MissionSound::kLocationMission ? levelRef.archive
+		                             : where == MissionSound::kLocationCommon ? "COMMON.DAT" : "MUSIC.",
+		                   ref))
+			return nullptr;
+		return _resources.open(ref);
+	};
+	_mission.reset(new Mission(*_level, *_levelScript, *_levelRenderer, *_walker, _actors.get(), _mixer, openSound));
 	_mission->start();
 	double yaw;
 	if (_mission->takePlayerYaw(yaw))
@@ -487,6 +533,8 @@ void STGEngine::showLevelPage(int page) {
 		return;
 	int pages = (int)_levelTextures.size() + kLevelPageTextures;
 	_levelPage = ((page % pages) + pages) % pages;
+	if (_mission)
+		_mission->getSound().pauseAll(_levelPage != kLevelPage3D);
 	for (bool &held : _walkKeys)
 		held = false;
 
@@ -587,6 +635,14 @@ void STGEngine::updateWalk(uint32 delta) {
 		double yaw;
 		if (_mission->takePlayerYaw(yaw))
 			_camera.yaw = yaw;
+		Common::String subtitle;
+		uint32 duration;
+		if (_mission->takeSubtitle(subtitle, duration)) {
+			_subtitle = subtitle;
+			_missionSubtitle = true;
+			_subtitleUntil = _levelTime + duration;
+			info("%s", subtitle.c_str());
+		}
 	} else if (_actors) {
 		std::vector<Actors::ScriptEvent> events;
 		_actors->update(delta, *_walker, events);

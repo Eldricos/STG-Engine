@@ -41,8 +41,21 @@ bool isObject(uint16 recordId, uint16 typeBits, uint16 id) {
 
 } // End of anonymous namespace
 
-Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker, Actors *actors)
+Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker, Actors *actors,
+                 Audio::Mixer *mixer, const MissionSound::FileOpener &soundFiles)
 	: _level(level), _script(script), _renderer(renderer), _walker(walker), _random(0x53544721), _actors(actors) {
+	// Sounds that follow a billboard (mode 2) or an actor (mode 3).
+	auto locate = [this](int mode, uint16 object, double &x, double &y, double &z) {
+		Position position;
+		uint16 id = (uint16)(object | (mode == MissionSound::kPositionActor ? kTypeActor : kTypeBillboard));
+		if (!getPosition(id, position))
+			return false;
+		x = position.x;
+		y = position.y;
+		z = position.z;
+		return true;
+	};
+	_sound.reset(new MissionSound(script, mixer, soundFiles, locate));
 	_vm.reset(new ScriptVM(script, this));
 	_array.assign(kArraySize, 0);
 	for (const LevelFile::Wall &wall : level.getWalls())
@@ -101,6 +114,12 @@ void Mission::update(uint32 ms) {
 	}
 
 	checkPlayerContacts();
+
+	MissionSound::Listener listener = { _walker.getX(), _walker.getY(), _walker.getEye(), _currentYaw };
+	_soundsFinished.clear();
+	_sound->update(ms, listener, _soundsFinished);
+	for (const MissionSound::Finished &done : _soundsFinished)
+		send(done.object, MissionSound::kEventFinished);
 }
 
 bool Mission::takePlayerYaw(double &yaw) {
@@ -225,6 +244,12 @@ double Mission::pop32(ScriptVM &vm) {
 	uint16 high = (uint16)vm.pop();
 	uint16 low = (uint16)vm.pop();
 	return fromFixed((int32)((uint32)high << 16 | low));
+}
+
+uint32 Mission::popRaw32(ScriptVM &vm) {
+	uint16 high = (uint16)vm.pop();
+	uint16 low = (uint16)vm.pop();
+	return (uint32)high << 16 | low;
 }
 
 void Mission::push32(ScriptVM &vm, double value) {
@@ -619,12 +644,85 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		_missing[op]++;
 		break;
 	}
-	case 0x68: // PLAY_SOUND: sounds aren't wired up yet, so report failure
-		vm.pop();
-		vm.pop();
-		vm.push(-1);
-		_missing[op]++;
+	case 0x68: { // PLAY_SOUND
+		int sound = vm.pop();
+		int volume = vm.pop();
+		vm.push((int16)_sound->playSound(sound, volume));
 		break;
+	}
+	case 0x69: { // PLAY_SOUND_DELAYED
+		int sound = vm.pop();
+		vm.pop();
+		uint32 delay = popRaw32(vm);
+		vm.push((int16)_sound->playDelayed(sound, delay));
+		break;
+	}
+	case 0x6A: // PRELOAD_SOUND: files are read when played
+		vm.pop();
+		break;
+	case 0x6B: // STOP_SOUND: takes a 16-bit value, which the original only matches against voices
+		_sound->stopOne((uint32)(uint16)vm.pop() << 16);
+		break;
+	case 0x8D: { // PLAY_SOUND_CUE
+		uint16 id = (uint16)vm.pop();
+		int cue = vm.pop();
+		_sound->playCue(cue, id);
+		break;
+	}
+	case 0xCF: // STOP_ONE_SOUND
+		_sound->stopOne(popRaw32(vm));
+		break;
+	case 0xD0: { // SET_SOUND_VOLUME
+		uint32 reference = popRaw32(vm);
+		_sound->setVolume(reference, vm.pop());
+		break;
+	}
+	case 0xD1: { // SET_SOUND_LOOP
+		int sound = vm.pop();
+		int32 repeats = (int32)popRaw32(vm);
+		uint32 minGap = (uint16)vm.pop();
+		uint32 maxGap = (uint16)vm.pop();
+		_sound->setLoop(sound, repeats, minGap, maxGap);
+		break;
+	}
+	case 0xD2: { // SET_SOUND_PRIORITY
+		uint32 reference = (uint16)vm.pop();
+		_sound->setPriority(reference, vm.pop());
+		break;
+	}
+	case 0xD3: { // SET_SOUND_POSITION
+		uint32 reference = popRaw32(vm);
+		double x = pop32(vm), y = pop32(vm), z = pop32(vm);
+		_sound->setPosition(reference, x, y, z);
+		break;
+	}
+	case 0xDC: { // PLAY_SOUND_FADE_IN
+		uint32 reference = popRaw32(vm);
+		uint32 ms = (uint16)vm.pop();
+		vm.push((int16)_sound->playFadeIn(reference, ms));
+		break;
+	}
+	case 0xDD: { // FADE_OUT_SOUND
+		uint32 reference = popRaw32(vm);
+		vm.push(_sound->fadeOut(reference, (uint16)vm.pop()) ? 0 : -1);
+		break;
+	}
+	case 0xDE: { // MUTE_SOUND
+		uint32 reference = popRaw32(vm);
+		_sound->setMuted(reference, vm.pop() != 0);
+		break;
+	}
+	case 0xDF:
+	case 0xE0: { // SET_SOUND_OBJECT
+		uint32 reference = popRaw32(vm);
+		_sound->setObject(reference, (uint16)vm.pop());
+		break;
+	}
+	case 0xE1: { // SET_SOUND_MAX_DISTANCE
+		uint32 reference = popRaw32(vm);
+		_sound->setRadius(reference, pop32(vm));
+		break;
+	}
 	case 0xBE: { // DISTANCE_TO_PLAYER
 		Position position;
 		int16 distance = 0;

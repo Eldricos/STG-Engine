@@ -121,8 +121,87 @@ char[]   resource names, NUL separated, to the end of the file
 - **Section 1** is the resource table: 12-byte records, one per name. At load
   time the third field is overwritten with a pointer to the name (the stale
   `0x00424A38`-style values in the file are leftovers).
-- **Sections 2 and 3** go to a level sub-object (`0x41EA4B` / `0x41EB62`).
-  Sections 4 and 5 are unexplored.
+- **Section 2** is the sound cue table and **section 3** the sound table,
+  both handed to the sound manager (`0x41EB62` / `0x41EA4B`); see Sounds
+  below.
+- **Section 4** holds 100-byte projectile records (+0x40: impact sound).
+  Section 5 is unexplored.
+
+### Sounds
+
+Everything a 3D level plays comes from its script's sound table: speech,
+effects, ambience and music. Scripts play entries by index. The engine
+plays nothing by itself; footsteps, doors and hits are all script handlers.
+
+**Section 3** has 56-byte entries and ends with a key of −1 (verid1 has 342):
+
+| Offset | Meaning |
+|--------|---------|
+| 0x00 | key: bits 0–15 a number, bits 16–23 a speaker prefix, bit 24 "in COMMON" |
+| 0x04 | volume, 0–64 (PLAY_SOUND overwrites it) |
+| 0x08 | priority |
+| 0x0C | position: 0 none, 1 the point below, 2 a billboard, 3 an actor |
+| 0x10 | the billboard or actor (& 0x1FFF) |
+| 0x14, 0x18, 0x1C | x, y, z (16.16) |
+| 0x20 | radius: silent at this distance and beyond |
+| 0x24 | start delay in ms (zeroed at load; set by scripts and cues) |
+| 0x28 | repeats: 0 or 1 once, 0x7FFFFFFF forever |
+| 0x2C, 0x30 | random pause between repeats, min and max ms (0: seamless loop) |
+| 0x34 | flags: 0x1 speech with a subtitle, 0x4 streamed, 0x8 / 0x10 hard left / right, 0x20 higher priority, 0x40 fade in, 0x80 fade out, 0x100 muted |
+
+**File names** (`0x41F8A8`): the prefix, then the number as four digits,
+then `.WAV`, or `.TXT` for the subtitle.
+- The prefixes come from the table at `0x53FDA8`: MISC PICA TROI GEOR RIKE
+  DATA WORF CRUS KIRK ROMU KLIN SORA CHOD HANU EXTR KRAU LURS BETO MUSI TEMP
+  COMP.
+- The files are in COMMON if bit 24 is set. Music (prefix MUSI) is in the
+  MUSIC.1 / MUSIC.2 archives. Everything else is in the mission's `sounds/`
+  folder.
+- For example, verid1's entry 57 is RIKE0107 and entry 136 is MUSI7501.
+
+**Section 2** holds cues, ended by −1. Each cue is:
+- `0x12345678`;
+- the cue number;
+- flags;
+- a count (0 in the file);
+- (member, used) pairs, where a member ≥ 0 is a sound and a negative member is a pause of −member ms;
+- `0x87654321`.
+
+PLAY_SOUND_CUE (`0x41F4E1`) picks members by the flags:
+- **0x20:** all of them in order (with 0x1, only the first time).
+- **0x10:** the first member, then a pick.
+- **0x4:** the first member the first time, picks after that.
+- **0x8:** the last member is kept back until the rest are used up.
+- **0x1:** never repeat.
+- **0x2:** pick at random (otherwise the first unused).
+
+The picks play one after another, with their pauses in between. Then the
+object that asked gets **event 46**.
+
+**Playback:**
+- **Channels:** there are 8. A new sound takes the channel of the lowest
+  priority, oldest sound.
+- **Overlap:** speech lines overlap rather than queue, and each shows its
+  subtitle as it starts, replacing the last one.
+- **Position:** a positional sound is recalculated every frame (`0x41E583`).
+  Its distance d is the largest axis plus a quarter of the other two.
+  - At d ≥ radius it is silent. Inside, its volume is 10 + (volume − 10) × (radius − d) / radius.
+  - It pans by the direction from the player, less so up close.
+  - A one-off positional sound out of range when it starts is dropped.
+- **Watchdog:** a sound still playing long after its length (by its length
+  again, at least 3 s) is stopped.
+- **Subtitles** are shown for the sample's length, at least 2 s. They may
+  contain `\T<RRGGBB>\` (colour), `\W<hex>\` (delay), `\B<hex>\`, and
+  `\\` for a backslash.
+
+**References.** Natives that take a 32-bit sound reference read it as follows:
+- high word 0: a sound;
+- high word 0xFFFF: every playing copy of that sound;
+- otherwise: the copy whose play call returned that value.
+
+PLAY_SOUND and the fade-in play return such a handle, or −1.
+
+`engines/stg/sound.h` implements all this.
 
 ### Program
 
@@ -291,7 +370,12 @@ heading in degrees.
 - **Actors:**
   - ACTOR_WANDER, ACTOR_APPROACH_PLAYER, ACTOR_ATTACK, ACTOR_FACE, ACTOR_STATE_1/4/5, SHOW, HIDE: set the mode (see Actors)
   - SET_ACTOR_COMBAT_STATS, SET_ACTOR_WEAPON, SET_ACTOR_TEAM, and size and reach settings
-- **Sound:** PLAY_SOUND sound, volume (0–64), PLAY_SOUND_CUE, PRELOAD_SOUND, SET_SOUND_VOLUME.
+- **Sound** (see Sounds):
+  - PLAY_SOUND sound, volume (0–64)
+  - PLAY_SOUND_DELAYED, PLAY_SOUND_FADE_IN, PLAY_SOUND_CUE
+  - STOP_SOUND, STOP_ONE_SOUND, FADE_OUT_SOUND
+  - SET_SOUND_VOLUME, SET_SOUND_LOOP, SET_SOUND_PRIORITY, SET_SOUND_POSITION, SET_SOUND_OBJECT, SET_SOUND_MAX_DISTANCE, MUTE_SOUND
+  - PRELOAD_SOUND
 - **Interface:**
   - the close-up panel (PANEL_*)
   - the automap (MAP_*)
@@ -299,8 +383,8 @@ heading in degrees.
   - screen flashes and tints, view shake
 
 `engines/stg/mission.h` runs a level's scripts. It implements the natives
-for objects, timers, the level, positions, actors' modes and settings, and
-the player's health and size. The rest balance the stack and are counted as missing; the viewer
+for objects, timers, the level, positions, actors' modes and settings,
+sound, and the player's health and size. The rest balance the stack and are counted as missing; the viewer
 logs each one once with `--debugflags=scripts`.
 
 To get a full listing of a script:

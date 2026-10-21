@@ -11,6 +11,7 @@ target_sources(stg_engines PRIVATE
 	resources.cpp
 	screen.cpp
 	script.cpp
+	sound.cpp
 	sprite.cpp
 	stg.cpp
 	vm.cpp

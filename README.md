@@ -25,7 +25,7 @@ The framework is in place and working:
 | `engines/stg`: 3D sprite sets (`.GS2`) | Done |
 | `engines/stg`: `.GSF` sprite sets | Not started |
 | `engines/stg`: scripts (`GAME.BIN`): format, interpreter, disassembler | Done |
-| `engines/stg`: the game opcodes the scripts call | Most of verid1's decoded; timers, signals, the level, the player and actors run; sound, combat and the HUD to do |
+| `engines/stg`: the game opcodes the scripts call | Most of verid1's decoded; timers, signals, the level, the player, actors, sound and subtitles run; combat and the HUD to do |
 | `engines/stg`: levels (`GAME.LV2`): geometry, textures, sky, lighting, collision, actors, and a software 3D renderer to walk through them | Done (combat to do) |
 | `engines/stg`: game logic: the 3D away missions, starship combat, stellar cartography | **Not started** |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |

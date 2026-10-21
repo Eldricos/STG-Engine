@@ -80,6 +80,11 @@ private:
 	void updateWalkStatus();
 	/** Set up the level's actors, loading their sprite sets. */
 	void loadActors(const ResourceRef &levelRef);
+	/**
+	 * Find a sound file (or the subtitle next to it) by file name,
+	 * preferring archives whose name starts with archivePrefix.
+	 */
+	bool findSoundFile(const Common::String &name, const Common::String &archivePrefix, ResourceRef &ref) const;
 	/** Load the level's GAME.BIN, if there is one, and start its mission. */
 	void startMission(const ResourceRef &levelRef);
 	/** Jump to the first image of the next (direction 1) or previous (-1) archive. */
@@ -129,6 +134,9 @@ private:
 	Audio::SoundHandle _soundHandle;
 	Common::String _status;   // first line of the text panel
 	Common::String _subtitle; // shown while the current sound plays
+	/** The subtitle is a mission's, shown until _subtitleUntil (level time). */
+	bool _missionSubtitle = false;
+	uint32 _subtitleUntil = 0;
 	bool _dirty = true;
 };
 

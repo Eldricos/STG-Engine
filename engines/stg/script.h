@@ -32,7 +32,9 @@ namespace STG {
  *   uint8    sections[6][...]       section 0: (int16, int16) pairs ending
  *                                   in -1, passed to the game at load;
  *                                   section 1: 12-byte resource records,
- *                                   one per name; others unknown
+ *                                   one per name; section 2: sound cues;
+ *                                   section 3: the sound table (see
+ *                                   sound.h); section 4: projectiles
  *   char[]   resource names, NUL separated (COMBADGE.BMP, KIRKHIT.OVR...)
  *
  * The program is a list of script objects, each a state machine. From the
