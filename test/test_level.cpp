@@ -206,8 +206,8 @@ std::vector<Chunk> makeRenderableLevel() {
 	byte *wall = chunks[3].data.data();
 	WRITE_LE_UINT32(wall + 0x2C, 0x10000);
 	WRITE_LE_UINT32(wall + 0x30, 0);
-	WRITE_LE_UINT32(wall + 0x48, 0x20000);
-	WRITE_LE_UINT32(wall + 0x50, 0x30000);
+	WRITE_LE_UINT32(wall + 0x48, 128 << 16); // the whole texture once
+	WRITE_LE_UINT32(wall + 0x50, 128 << 16);
 	WRITE_LE_UINT32(wall + 0x6C, STG::LevelFile::kFlagVisible);
 	WRITE_LE_UINT16(wall + 0x96, 9);
 	WRITE_LE_UINT32(wall + 0x3C, 1);
@@ -244,7 +244,7 @@ TEST(level_surfaces_billboards_and_sky) {
 	const STG::LevelFile::Wall &wall = level.getWalls()[0];
 	CHECK_EQ(wall.top, 0x10000);
 	CHECK_EQ(wall.bottom, 0);
-	CHECK_EQ(wall.vLength, 0x30000);
+	CHECK_EQ(wall.vLength, 128 << 16);
 	CHECK_EQ(wall.texture, 9);
 
 	CHECK_EQ(level.getBillboards().size(), (size_t)1);

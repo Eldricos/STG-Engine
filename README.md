@@ -115,7 +115,8 @@ recognise.
 
 In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
 In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
-archives. Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
+archives. Tab and Shift+Tab jump to the next and previous 3D level (`GAME.LV2`),
+whose name the 3D view shows on its status line. Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
 from the floor plan to a 3D view and then through the textures. In the 3D view, the
 arrows or WASD move, PgUp/PgDn look up and down, End levels the view, L switches
 the lighting off and on, and C lets you walk through walls. Home

@@ -476,8 +476,8 @@ the camera is below it.
 | 0x1C, 0x24, 0x28 | line nx·x + ny·y + d = 0 with a unit normal, used to cull walls facing away |
 | 0x20 | the heading of vertex 1 to vertex 2 in turns (0x10000 = 360°); scripts that turn objects rebuild the line from it (`0x4B7670`) |
 | 0x2C, 0x30 | heights of the top and bottom edges |
-| 0x44, 0x48 | u at the first vertex, and u length in texels along the wall |
-| 0x4C, 0x50 | v at the bottom edge, and v length in texels up the wall; v counts rows from the bottom of the texture. Walls stacked on one line continue each other this way (verid1 and halee1 have 17 such pairs, none the other way round) |
+| 0x44, 0x48 | u at the first vertex, and u length along the wall, in 128ths of the texture's width |
+| 0x4C, 0x50 | v at the bottom edge, and v length up the wall, in 128ths of the texture's height; v counts rows from the bottom of the texture. Walls stacked on one line continue each other this way (verid1 and halee1 have 17 such pairs, none the other way round) |
 | 0x62 | i16 v scroll speed |
 | 0x64, 0x66, 0x68 | lighting, as for flats |
 | 0x69 | byte record kind, 1 |
@@ -491,9 +491,12 @@ the camera is below it.
 | 0x8A | u16 scripted object id |
 | 0x96 | u16 texture id |
 
-The u length divided by the wall's length is always a whole texture over a
-whole number of units (12.8 texels per unit = 128 over 10, and so on), which
-confirms the u and v fields.
+Texture coordinates on walls and floors are in 128ths of the texture: a u
+or v length of 128 shows a texture once, whether it is 32, 64, 128 or 256
+texels across. 128 is by far the most common length in all four levels
+checked, for every texture size. A 256-texel texture can hold two pictures,
+one above the other, and walls pick either half; arvada1's texture 10 has a
+cliff over a misty mountain range.
 
 **Billboards** (type 5) stand at x +0x1C, z +0x20, y +0x24. They are
 2 × (+0x34) wide and +0x38 high, with the texture id at u16 +0x8A and the

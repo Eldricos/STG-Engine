@@ -71,7 +71,7 @@ Common::Error STGEngine::run() {
 	info("Controls: Left/Right = image, PgUp/PgDn = archive, Up/Down = sound, Space = replay sound,");
 	info("          Home = starfield, click = test tone, F5/F7 = save/load, Alt+Enter = fullscreen, Esc = quit");
 	info("          On a level: [ ] = floor plan, 3D view, textures; in 3D, arrows/WASD move, PgUp/PgDn look, L lighting, C collision");
-	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";
+	_status = "Left/Right: images   PgUp/PgDn: archives   Tab: levels   Up/Down: sounds   Esc: quit";
 
 	for (int i = 0; i < kNumStars; i++)
 		_stars.push_back({ (int32)_random.getRandomNumberRng(0, 2000) - 1000,
@@ -169,6 +169,9 @@ void STGEngine::handleEvent(const Common::Event &event) {
 			break;
 		case Common::KEYCODE_PAGEUP:
 			jumpArchive(-1);
+			break;
+		case Common::KEYCODE_TAB:
+			jumpLevel((event.kbd.flags & Common::KBD_SHIFT) ? -1 : 1);
 			break;
 		case Common::KEYCODE_DOWN:
 			playSound(_soundIndex + 1);
@@ -659,8 +662,13 @@ void STGEngine::updateWalkStatus() {
 	double degrees = std::fmod(_camera.yaw * 180 / 3.14159265358979323846, 360.0);
 	if (degrees < 0)
 		degrees += 360;
-	_status = Common::format("3D %.0f,%.0f,%.0f %.0fdeg  WASD PgUp/Dn  L: light %s  C: walls %s", _camera.x,
-	                         _camera.y, _camera.z, degrees, _levelRenderer->isLightingEnabled() ? "on" : "off",
+	// The archive names the level, e.g. ARVADA1.DAT:arvada1/GAME.LV2.
+	Common::String level = _levelName.substr(0, _levelName.find(':'));
+	if (Common::hasSuffixIgnoreCase(level, ".dat"))
+		level = level.substr(0, level.size() - 4);
+	_status = Common::format("%s 3D %.0f,%.0f,%.0f %.0fdeg  WASD PgUp/Dn  L: light %s  C: walls %s", level.c_str(),
+	                         _camera.x, _camera.y, _camera.z, degrees,
+	                         _levelRenderer->isLightingEnabled() ? "on" : "off",
 	                         _walker->isCollisionEnabled() ? "on" : "off");
 }
 
@@ -743,6 +751,18 @@ void STGEngine::jumpArchive(int direction) {
 		group++;
 	int n = (int)starts.size();
 	showImage(starts[((group + direction) % n + n) % n]);
+}
+
+void STGEngine::jumpLevel(int direction) {
+	const std::vector<ResourceRef> &images = _resources.getImages();
+	int count = (int)images.size();
+	for (int step = 1; step <= count; step++) {
+		int index = (((_imageIndex + direction * step) % count) + count) % count;
+		if (Common::hasSuffixIgnoreCase(images[index].name, ".lv2")) {
+			showImage(index);
+			return;
+		}
+	}
 }
 
 void STGEngine::showStarfield() {

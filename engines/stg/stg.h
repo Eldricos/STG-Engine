@@ -89,6 +89,8 @@ private:
 	void startMission(const ResourceRef &levelRef);
 	/** Jump to the first image of the next (direction 1) or previous (-1) archive. */
 	void jumpArchive(int direction);
+	/** Show the next (1) or previous (-1) 3D level, GAME.LV2. */
+	void jumpLevel(int direction);
 	void showStarfield();
 	void playSound(int index);
 	void playBeep(int frequency);

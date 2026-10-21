@@ -19,6 +19,12 @@ namespace {
 const double kFixed = 65536.0;
 const double kNear = 0.05;
 const double kPi = 3.14159265358979323846;
+/**
+ * Walls and floors give texture coordinates in these units per texture:
+ * u and v lengths of 128 show a texture once, whether it is 32, 64, 128
+ * or 256 texels across (in verid1, halee1, amargos1 and arvada1 alike).
+ */
+const double kTextureUnits = 128.0;
 
 double fromFixed(int32 v) {
 	return v / kFixed;
@@ -237,18 +243,20 @@ void LevelRenderer::drawFlats(Graphics::Surface &dst, uint32 time) {
 			s = std::sin(angle);
 		}
 
+		// Texture coordinates are in 128ths of the texture, whatever its size.
+		const Texture *texture = getTexture(flat.texture, flat.frames, flat.speed, time);
+		double uUnit = texture ? texture->width / kTextureUnits : 1, vUnit = texture ? texture->height / kTextureUnits : 1;
 		poly.clear();
 		for (uint16 index : flat.vertices) {
 			double x = fromFixed(vertices[index].x), y = fromFixed(vertices[index].y);
 			Vertex v;
 			toCamera(x, y, height, v);
-			v.u = (x * c + y * s) * uScale + uOffset;
+			v.u = ((x * c + y * s) * uScale + uOffset) * uUnit;
 			// Stored rows count up from the bottom of the picture.
-			v.v = -((y * c - x * s) * vScale + vOffset);
+			v.v = -((y * c - x * s) * vScale + vOffset) * vUnit;
 			poly.push_back(v);
 		}
-		drawPolygon(poly, getTexture(flat.texture, flat.frames, flat.speed, time),
-		            flat.fullbright ? nullptr : getShade(flat.light), dst);
+		drawPolygon(poly, texture, flat.fullbright ? nullptr : getShade(flat.light), dst);
 	}
 }
 
@@ -286,6 +294,14 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 		// texture, so walls stacked on one line carry a picture on from one
 		// to the next. Rows are stored top first: row = -v, wrapped.
 		double v1 = -fromFixed(wall.vStart) - fromFixed(wall.vLength), v2 = -fromFixed(wall.vStart);
+		// All in 128ths of the texture, whatever its size.
+		const Texture *texture = getTexture(wall.texture, wall.frames, wall.speed, time);
+		if (texture) {
+			u1 *= texture->width / kTextureUnits;
+			u2 *= texture->width / kTextureUnits;
+			v1 *= texture->height / kTextureUnits;
+			v2 *= texture->height / kTextureUnits;
+		}
 
 		poly.resize(4);
 		toCamera(x1, y1, top, poly[0]);
@@ -300,8 +316,7 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 		toCamera(x1, y1, bottom, poly[3]);
 		poly[3].u = u1;
 		poly[3].v = v2;
-		queuePolygon(poly, getTexture(wall.texture, wall.frames, wall.speed, time),
-		             wall.fullbright ? nullptr : getShade(wall.light), dst, true,
+		queuePolygon(poly, texture, wall.fullbright ? nullptr : getShade(wall.light), dst, true,
 		             (wall.flags & LevelFile::kFlagTranslucent) != 0);
 	}
 }
