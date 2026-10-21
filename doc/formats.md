@@ -521,7 +521,10 @@ light, so it is drawn wherever it lands. Flag 0x1000000 keeps its height.
 **Sky** (type 12, id 0) is a 64-byte header followed by an image stored
 row by row. The header holds the data size at +16 and the height at +24;
 the width is size / height. verid1's sky is 640 × 252 and wraps seamlessly
-from left to right. The header also holds 504 at +20, which the drawing
+from left to right. halee1's header has the same fields apart from the size,
+65536, which 252 doesn't divide: its sky is 512 × 128. Where the height
+doesn't fit, the reimplementation takes the width at which neighbouring rows
+match best. The header also holds 504 at +20, which the drawing
 routine at `0x4C2F50` uses as its row stride. That doesn't fit verid1's
 image, so this field isn't understood yet. Nor is how the sky maps to the
 view angle; the reimplementation tiles it at one sky pixel per screen pixel.

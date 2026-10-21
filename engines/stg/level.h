@@ -335,6 +335,8 @@ public:
 	 * at offset 16 and its height at offset 24; rows are stored in order.
 	 */
 	bool loadSky(Graphics::Surface &sky) const;
+	/** The rows of a sky whose header height doesn't fit its size, or 0. */
+	uint32 guessSkyHeight(const byte *pixels, uint32 size) const;
 
 	/** Ids of all texture chunks, in directory order. */
 	std::vector<uint16> getTextureIds() const;

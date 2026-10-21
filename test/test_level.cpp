@@ -255,6 +255,30 @@ TEST(level_surfaces_billboards_and_sky) {
 	CHECK_EQ(sky.getPixel(3, 1), 0x77u);
 }
 
+TEST(level_sky_size_when_the_header_does_not_fit) {
+	// A 128 x 32 sky whose header claims 252 rows, as in halee1.
+	std::vector<Chunk> chunks = makeRenderableLevel();
+	for (int i = 0; i < 256; i++) {
+		chunks[0].data[i * 4] = (byte)i;
+		chunks[0].data[i * 4 + 1] = (byte)i;
+		chunks[0].data[i * 4 + 2] = (byte)i;
+	}
+	Chunk &sky = chunks.back();
+	sky.data.assign(64 + 128 * 32, 0);
+	WRITE_LE_UINT32(&sky.data[16], 128 * 32);
+	WRITE_LE_UINT32(&sky.data[24], 252);
+	for (int y = 0; y < 32; y++) {
+		for (int x = 0; x < 128; x++)
+			sky.data[64 + y * 128 + x] = (byte)((x + 3 * y) % 128);
+	}
+	STG::LevelFile level;
+	CHECK(loadLevel(level, makeLevelFile(chunks)));
+	Graphics::Surface image;
+	CHECK(level.loadSky(image));
+	CHECK_EQ(image.w, 128);
+	CHECK_EQ(image.h, 32);
+}
+
 TEST(level_renderer_draws_floor_wall_and_sky) {
 	STG::LevelFile level;
 	CHECK(loadLevel(level, makeLevelFile(makeRenderableLevel())));

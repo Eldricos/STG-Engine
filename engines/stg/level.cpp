@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <climits>
+#include <cstdlib>
+#include <map>
 
 #include "common/debug.h"
 #include "common/endian.h"
@@ -267,6 +269,42 @@ bool LevelFile::loadTables() {
 	return true;
 }
 
+uint32 LevelFile::guessSkyHeight(const byte *pixels, uint32 size) const {
+	// The header's height doesn't always fit (halee1: 252 for a 512 x 128
+	// sky), so take the width at which neighbouring rows match best. Twice
+	// the true width matches nearly as well, two rows side by side, so a
+	// width whose half does about as well gives way to the half.
+	std::map<uint32, double> costs;
+	for (uint32 width = 64; width <= 4096; width++) {
+		if (size % width != 0 || size / width < 16)
+			continue;
+		uint32 height = size / width;
+		double cost = 0;
+		int samples = 0;
+		for (uint32 y = 0; y + 1 < height; y += std::max<uint32>(1, height / 32)) {
+			for (uint32 x = 0; x < width; x += std::max<uint32>(1, width / 64)) {
+				byte r1, g1, b1, r2, g2, b2;
+				_palette.get(pixels[y * width + x], r1, g1, b1);
+				_palette.get(pixels[(y + 1) * width + x], r2, g2, b2);
+				cost += std::abs(r1 - r2) + std::abs(g1 - g2) + std::abs(b1 - b2);
+				samples++;
+			}
+		}
+		costs[width] = cost / samples;
+	}
+	uint32 best = 0;
+	for (const auto &c : costs) {
+		if (!best || c.second < costs[best])
+			best = c.first;
+	}
+	if (!best)
+		return 0;
+	for (auto half = costs.find(best / 2); best % 2 == 0 && half != costs.end() && half->second <= costs[best] * 1.1;
+	     half = costs.find(best / 2))
+		best /= 2;
+	return size / best;
+}
+
 bool LevelFile::loadSky(Graphics::Surface &sky) const {
 	const uint32 headerSize = 64;
 	const ChunkEntry *entry = nullptr;
@@ -282,7 +320,13 @@ bool LevelFile::loadSky(Graphics::Surface &sky) const {
 	const byte *p = &_data[entry->offset];
 	uint32 size = READ_LE_UINT32(p + 16);
 	uint32 height = READ_LE_UINT32(p + 24);
-	if (height == 0 || size % height != 0 || headerSize + (uint64)size > entry->size || size / height > 4096) {
+	if (size == 0 || headerSize + (uint64)size > entry->size) {
+		warning("LevelFile: sky has a bad size");
+		return false;
+	}
+	if (height == 0 || size % height != 0 || size / height > 4096)
+		height = guessSkyHeight(p + headerSize, size);
+	if (height == 0) {
 		warning("LevelFile: sky has a bad size");
 		return false;
 	}
