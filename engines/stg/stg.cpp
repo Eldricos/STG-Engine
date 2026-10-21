@@ -8,6 +8,7 @@
 
 #include "engines/stg/stg.h"
 
+#include <cctype>
 #include <cmath>
 
 #include "common/audio/raw.h"
@@ -372,6 +373,7 @@ void STGEngine::showImage(int index) {
 	_imageIndex = index;
 	const ResourceRef &ref = images[index];
 	_imageLoaded = _overlayLoaded = _spritesLoaded = false;
+	_mission.reset();
 	_walker.reset();
 	_levelRenderer.reset();
 	_level.reset();
@@ -403,6 +405,7 @@ void STGEngine::showImage(int index) {
 
 void STGEngine::showLevel(const ResourceRef &ref) {
 	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+	_mission.reset();
 	_walker.reset();
 	_levelRenderer.reset();
 	_level.reset(new LevelFile());
@@ -418,12 +421,40 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 	_walker.reset(new Walker(*_level));
 	_camera = _levelRenderer->getStartCamera(Walker::kEyeHeight);
 	_walker->place(_camera.x, _camera.y, _camera.z - Walker::kEyeHeight);
+	startMission(ref);
+	_camera.x = _walker->getX();
+	_camera.y = _walker->getY();
 	_camera.z = _walker->getEye();
 	_levelRenderer->setVisibleZones(_walker->getActiveZones());
 	_levelTime = 0;
 	_screen->getPalette() = _level->getPalette();
 	_screen->applyPalette();
 	showLevelPage(0);
+}
+
+void STGEngine::startMission(const ResourceRef &levelRef) {
+	// A level's scripts are in GAME.BIN next to its GAME.LV2.
+	ResourceRef ref = levelRef;
+	size_t dot = ref.name.rfind('.');
+	if (dot == Common::String::npos)
+		return;
+	bool upper = dot + 1 < ref.name.size() && std::isupper((unsigned char)ref.name[dot + 1]);
+	ref.name = ref.name.substr(0, dot) + (upper ? ".BIN" : ".bin");
+	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+	if (!stream)
+		return;
+	_levelScript.reset(new ScriptFile());
+	if (!_levelScript->load(*stream)) {
+		warning("Could not decode %s; the level will run without its scripts", ref.toString().c_str());
+		_levelScript.reset();
+		return;
+	}
+	_mission.reset(new Mission(*_level, *_levelScript, *_levelRenderer, *_walker));
+	_mission->start();
+	double yaw;
+	if (_mission->takePlayerYaw(yaw))
+		_camera.yaw = yaw;
+	info("Running %s: %d script objects", ref.toString().c_str(), _mission->getVM().getInstanceCount());
 }
 
 void STGEngine::showLevelPage(int page) {
@@ -525,6 +556,13 @@ void STGEngine::updateWalk(uint32 delta) {
 	// Move every frame, so falls carry on without a key held.
 	double oldX = _camera.x, oldY = _camera.y, oldZ = _camera.z;
 	_walker->move(dx, dy, seconds);
+	if (_mission) {
+		_mission->setPlayerYaw(_camera.yaw);
+		_mission->update(delta);
+		double yaw;
+		if (_mission->takePlayerYaw(yaw))
+			_camera.yaw = yaw;
+	}
 	_camera.x = _walker->getX();
 	_camera.y = _walker->getY();
 	_camera.z = _walker->getEye();
@@ -618,6 +656,7 @@ void STGEngine::showStarfield() {
 	_imageLoaded = false;
 	_overlayLoaded = false;
 	_spritesLoaded = false;
+	_mission.reset();
 	_walker.reset();
 	_levelRenderer.reset();
 	_level.reset();

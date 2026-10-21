@@ -19,8 +19,6 @@ namespace {
 const double kFixed = 65536.0;
 const double kNear = 0.05;
 const double kPi = 3.14159265358979323846;
-/** How long each frame of an animated texture shows, in ms. */
-const uint32 kFrameTime = 125;
 
 double fromFixed(int32 v) {
 	return v / kFixed;
@@ -98,9 +96,10 @@ const byte *LevelRenderer::getShade(const LevelFile::LightInfo &light) const {
 
 LevelRenderer::~LevelRenderer() {}
 
-const LevelRenderer::Texture *LevelRenderer::getTexture(uint16 id, uint16 frames, uint32 time) {
-	if (frames > 1)
-		id = (uint16)(id + (time / kFrameTime) % frames);
+const LevelRenderer::Texture *LevelRenderer::getTexture(uint16 id, uint16 frames, uint16 speed, uint32 time) {
+	// As the original: the frame advances by speed / 65536 per ms.
+	if (frames > 1 && speed)
+		id = (uint16)(id + ((uint64)time * speed >> 16) % frames);
 
 	auto it = _textures.find(id);
 	if (it != _textures.end())
@@ -148,7 +147,7 @@ void LevelRenderer::render(const Camera &camera, Graphics::Surface &dst, uint32 
 }
 
 void LevelRenderer::drawSky(const Camera &camera, Graphics::Surface &dst) {
-	if (!_hasSky) {
+	if (!_hasSky || !_skyEnabled) {
 		dst.fillRect(Common::Rect(dst.w, dst.h), _fogIndex);
 		return;
 	}
@@ -174,7 +173,7 @@ void LevelRenderer::drawFlats(Graphics::Surface &dst, uint32 time) {
 	const std::vector<LevelFile::Vertex> &vertices = _level.getVertices();
 	std::vector<Vertex> poly;
 	for (const LevelFile::Sector &flat : _level.getSectors()) {
-		if (!(flat.flags & LevelFile::kFlagVisible) || !(flat.zones & _zones))
+		if (!(flat.flags & LevelFile::kFlagVisible) || (flat.flags & LevelFile::kFlagNotDrawn) || !(flat.zones & _zones))
 			continue;
 		double height = fromFixed(flat.height);
 		// Floors are only seen from above and ceilings from below.
@@ -199,7 +198,8 @@ void LevelRenderer::drawFlats(Graphics::Surface &dst, uint32 time) {
 			v.v = (y * c - x * s) * vScale + vOffset;
 			poly.push_back(v);
 		}
-		drawPolygon(poly, getTexture(flat.texture, flat.frames, time), getShade(flat.light), dst);
+		drawPolygon(poly, getTexture(flat.texture, flat.frames, flat.speed, time),
+		            flat.fullbright ? nullptr : getShade(flat.light), dst);
 	}
 }
 
@@ -207,7 +207,7 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 	const std::vector<LevelFile::Vertex> &vertices = _level.getVertices();
 	std::vector<Vertex> poly(4);
 	for (const LevelFile::Wall &wall : _level.getWalls()) {
-		if (!(wall.flags & LevelFile::kFlagVisible) || !(wall.zones & _zones))
+		if (!(wall.flags & LevelFile::kFlagVisible) || (wall.flags & LevelFile::kFlagNotDrawn) || !(wall.zones & _zones))
 			continue;
 		double x1 = fromFixed(vertices[wall.vertex1].x), y1 = fromFixed(vertices[wall.vertex1].y);
 		double x2 = fromFixed(vertices[wall.vertex2].x), y2 = fromFixed(vertices[wall.vertex2].y);
@@ -228,16 +228,17 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 		toCamera(x1, y1, bottom, poly[3]);
 		poly[3].u = u1;
 		poly[3].v = v2;
-		drawPolygon(poly, getTexture(wall.texture, wall.frames, time), getShade(wall.light), dst);
+		drawPolygon(poly, getTexture(wall.texture, wall.frames, wall.speed, time),
+		            wall.fullbright ? nullptr : getShade(wall.light), dst);
 	}
 }
 
 void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 	std::vector<Vertex> poly(4);
 	for (const LevelFile::Billboard &billboard : _level.getBillboards()) {
-		if (!(billboard.zones & _zones))
+		if (billboard.hidden || !(billboard.zones & _zones))
 			continue;
-		const Texture *texture = getTexture(billboard.texture, billboard.frames, time);
+		const Texture *texture = getTexture(billboard.texture, billboard.frames, billboard.speed, time);
 		if (!texture)
 			continue;
 		Vertex centre;
@@ -254,7 +255,7 @@ void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 			poly[i].u = (i == 1 || i == 2) ? texture->width : 0;
 			poly[i].v = (i >= 2) ? texture->height : 0;
 		}
-		drawPolygon(poly, texture, getShade(billboard.light), dst);
+		drawPolygon(poly, texture, billboard.fullbright ? nullptr : getShade(billboard.light), dst);
 	}
 }
 

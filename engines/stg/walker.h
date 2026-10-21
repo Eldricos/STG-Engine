@@ -36,6 +36,7 @@ namespace STG {
  */
 class Walker {
 public:
+	/** The original's defaults (0x4BE150); scripts can change them. */
 	static constexpr double kEyeHeight = 6.0;
 	static constexpr double kHeadroom = 0.51;
 	static constexpr double kStepHeight = 2.0;
@@ -60,7 +61,19 @@ public:
 	double getX() const { return _x; }
 	double getY() const { return _y; }
 	double getFeet() const { return _feet; }
-	double getEye() const { return _feet + kEyeHeight; }
+	double getEye() const { return _feet + _eyeHeight; }
+
+	void setEyeHeight(double height) { _eyeHeight = height; }
+	void setStepHeight(double height) { _stepHeight = height; }
+	void setHeadroom(double height) { _headroom = height; }
+	void setRadius(double radius) { _radius = radius; }
+	double getRadius() const { return _radius; }
+
+	/**
+	 * The wall (index into the level's walls) the last move ran into, or
+	 * -1. Like the original, standing still touches nothing.
+	 */
+	int getContactWall() const { return _contactWall; }
 	uint64 getActiveZones() const { return _zones; }
 	/** Index of the flat underfoot, or -1. */
 	int getFloor() const { return _floor; }
@@ -76,6 +89,7 @@ public:
 		double t;
 		/** Unit direction along the obstacle, to slide along. */
 		double slideX, slideY;
+		/** Index into the level's walls. */
 		int wall;
 	};
 
@@ -92,6 +106,7 @@ private:
 		double top, bottom;
 		uint64 zones;
 		bool bothSides;
+		int index;
 	};
 
 	void collideAndSlide(double dx, double dy);
@@ -102,6 +117,11 @@ private:
 	double _x = 0, _y = 0, _feet = 0;
 	double _fallSpeed = 0;
 	int _floor = -1;
+	int _contactWall = -1;
+	double _eyeHeight = kEyeHeight;
+	double _stepHeight = kStepHeight;
+	double _headroom = kHeadroom;
+	double _radius = kRadius;
 	uint64 _zones = kAllZones;
 	bool _collision = true;
 };

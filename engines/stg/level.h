@@ -57,6 +57,7 @@ public:
 		kChunkSectors = 3,
 		kChunkWalls = 4,
 		kChunkBillboards = 5,
+		kChunkActors = 6,
 		kChunkSky = 12,
 		kChunkTexture = 13
 	};
@@ -131,10 +132,16 @@ public:
 		uint16 texture;
 		/** Animation frames: textures texture .. texture + frames - 1. */
 		uint16 frames;
+		/** Animation speed: each frame shows for 65536 / speed ms. */
+		uint16 speed;
 		uint32 flags;
 		LightInfo light;
 		/** Zones the wall belongs to (offset 0x3C); see Sector::activeZones. */
 		uint64 zones;
+		/** Script object (id | 0x4000) told when the player touches it, from offset 0x14. */
+		uint16 objectId;
+		/** Drawn at full brightness, as set by a script. */
+		bool fullbright = false;
 	};
 
 	/** Wall flag: blocks movement from behind as well as from the front. */
@@ -162,7 +169,11 @@ public:
 		uint16 rotation;
 		uint16 texture;
 		uint16 frames;
+		uint16 speed;
 		LightInfo light;
+		/** Script object (id | 0xC000) told when the player steps on it, from offset 0x14. */
+		uint16 objectId;
+		bool fullbright = false;
 		/** The zone the flat belongs to (offset 0x3C, one bit set). */
 		uint64 zones;
 		/**
@@ -178,6 +189,11 @@ public:
 	};
 
 	static const uint32 kFlagVisible = 0x100;
+	/**
+	 * Left out of the zone draw lists (0x4BF79E), so never drawn: used for
+	 * invisible floors the player stands on.
+	 */
+	static const uint32 kFlagNotDrawn = 0x1;
 	static const uint32 kFlagCeiling = 0x100000;
 
 	/** A camera-facing sprite, standing on (x, y, z). */
@@ -190,9 +206,29 @@ public:
 		int32 height;
 		uint16 texture;
 		uint16 frames;
+		uint16 speed;
 		uint32 flags;
 		LightInfo light;
 		uint64 zones;
+		/** The box around (x, y) that fires proximity events, and its height. */
+		int32 radius;
+		int32 boxHeight;
+		/** Script object (id | 0x2000), from offset 0x14. */
+		uint16 objectId;
+		bool hidden = false;
+		bool fullbright = false;
+	};
+
+	/**
+	 * An actor (type 6): a character or object the scripts control, drawn
+	 * with a sprite set. Only its placement is decoded so far.
+	 */
+	struct Actor {
+		/** Script object (id | 0xA000), from offset 0x14. */
+		uint16 objectId;
+		int32 x;
+		int32 y;
+		int32 z;
 	};
 
 	struct Texture {
@@ -214,6 +250,12 @@ public:
 	const std::vector<Wall> &getWalls() const { return _walls; }
 	const std::vector<Sector> &getSectors() const { return _sectors; }
 	const std::vector<Billboard> &getBillboards() const { return _billboards; }
+	const std::vector<Actor> &getActors() const { return _actors; }
+
+	/** Writable tables, for the scripts to change the level as it is played. */
+	std::vector<Wall> &getWalls() { return _walls; }
+	std::vector<Sector> &getSectors() { return _sectors; }
+	std::vector<Billboard> &getBillboards() { return _billboards; }
 
 	/**
 	 * The sky image, if the level has one. The header holds the image size
@@ -235,6 +277,7 @@ private:
 	std::vector<Wall> _walls;
 	std::vector<Sector> _sectors;
 	std::vector<Billboard> _billboards;
+	std::vector<Actor> _actors;
 };
 
 /**

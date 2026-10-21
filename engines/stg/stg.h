@@ -19,6 +19,7 @@
 #include "engines/game.h"
 #include "engines/stg/font.h"
 #include "engines/stg/level.h"
+#include "engines/stg/mission.h"
 #include "engines/stg/overlay.h"
 #include "engines/stg/render3d.h"
 #include "engines/stg/resources.h"
@@ -77,6 +78,8 @@ private:
 	/** Move the camera by the keys held, over delta ms, keeping it on the floor. */
 	void updateWalk(uint32 delta);
 	void updateWalkStatus();
+	/** Load the level's GAME.BIN, if there is one, and start its mission. */
+	void startMission(const ResourceRef &levelRef);
 	/** Jump to the first image of the next (direction 1) or previous (-1) archive. */
 	void jumpArchive(int direction);
 	void showStarfield();
@@ -109,6 +112,9 @@ private:
 	int _levelPage = 0;
 	std::unique_ptr<LevelRenderer> _levelRenderer;
 	std::unique_ptr<Walker> _walker;
+	std::unique_ptr<ScriptFile> _levelScript;
+	/** Declared last of the level's parts, so it goes first. */
+	std::unique_ptr<Mission> _mission;
 	Camera _camera;
 	uint32 _levelTime = 0;
 	enum WalkKey { kWalkForward, kWalkBack, kWalkTurnLeft, kWalkTurnRight, kWalkStrafeLeft, kWalkStrafeRight,

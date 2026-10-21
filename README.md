@@ -25,14 +25,15 @@ The framework is in place and working:
 | `engines/stg`: 3D sprite sets (`.GS2`) | Done |
 | `engines/stg`: `.GSF` sprite sets | Not started |
 | `engines/stg`: scripts (`GAME.BIN`): format, interpreter, disassembler | Done |
-| `engines/stg`: the ~200 game opcodes the scripts call | Stack effects known; meanings to do |
+| `engines/stg`: the game opcodes the scripts call | Most of verid1's decoded; timers, signals, the level and the player run, actors, sound and the HUD to do |
 | `engines/stg`: levels (`GAME.LV2`): geometry, textures, sky, lighting, collision, and a software 3D renderer to walk through them | Done (actors and scripts to do) |
 | `engines/stg`: game logic: the 3D away missions, starship combat, stellar cartography | **Not started** |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
 
 Right now, the engine runs as a viewer for the game's data. You can browse
 every image in its archives, and play every speech line and music track, with
-speech subtitles drawn in the game's own font, and walk through each level in 3D. The 2 CD Windows release is in the detection table.
+speech subtitles drawn in the game's own font, and walk through each level in 3D
+with its scripts running. The 2 CD Windows release is in the detection table.
 Other versions are found by a fallback that looks for an executable mentioning
 "Generations", and reported as unknown versions.
 

@@ -1,0 +1,575 @@
+/* STG-Engine - a reimplementation of the Star Trek Generations engine
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+#include "engines/stg/mission.h"
+
+#include <algorithm>
+#include <cmath>
+
+#include "common/debug.h"
+#include "engines/stg/opcodes.h"
+
+namespace STG {
+
+namespace {
+
+const char *const kDebugChannel = "scripts";
+const double kPi = 3.14159265358979323846;
+const double kFixed = 65536.0;
+/** Size of the second word array (F2/F3); the original's bound isn't known. */
+const int kArraySize = 4096;
+/** Most timer firings handled for one timer in one update, after a long pause. */
+const int kMaxTimerCatchUp = 4;
+
+double fromFixed(int32 v) {
+	return v / kFixed;
+}
+
+int32 toFixed(double v) {
+	return (int32)std::lround(v * kFixed);
+}
+
+/** Whether a record whose id field is recordId belongs to script object id. */
+bool isObject(uint16 recordId, uint16 typeBits, uint16 id) {
+	return recordId != 0 && (uint16)(recordId | typeBits) == id;
+}
+
+} // End of anonymous namespace
+
+Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker)
+	: _level(level), _script(script), _renderer(renderer), _walker(walker), _random(0x53544721) {
+	_vm.reset(new ScriptVM(script, this));
+	_array.assign(kArraySize, 0);
+	for (const LevelFile::Wall &wall : level.getWalls())
+		_wallTextures.push_back(wall.texture);
+	for (const LevelFile::Sector &flat : level.getSectors())
+		_flatTextures.push_back(flat.texture);
+	for (const LevelFile::Billboard &billboard : level.getBillboards())
+		_billboardTextures.push_back(billboard.texture);
+	for (const LevelFile::Actor &actor : level.getActors()) {
+		Position position = { fromFixed(actor.x), fromFixed(actor.y), fromFixed(actor.z), 0 };
+		_actors[(uint16)(actor.objectId | kTypeActor)] = position;
+	}
+}
+
+Mission::~Mission() {}
+
+std::vector<int> Mission::getStartOrder() const {
+	// The original keeps its objects in an MFC CMap with 17 buckets and the
+	// default hash (key >> 4), inserting at the head of each bucket, and
+	// visits buckets in order (0x4356FF).
+	std::vector<int> order;
+	for (int i = 0; i < _vm->getInstanceCount(); i++)
+		order.push_back(i);
+	std::stable_sort(order.begin(), order.end(), [this](int a, int b) {
+		uint16 ida = _vm->getInstance(a).object->id, idb = _vm->getInstance(b).object->id;
+		int ba = (ida >> 4) % 17, bb = (idb >> 4) % 17;
+		return ba != bb ? ba < bb : a > b;
+	});
+	return order;
+}
+
+void Mission::start() {
+	_listeners.clear();
+	for (int index : getStartOrder())
+		_vm->setState(_vm->getInstance(index), 0);
+	// The original broadcasts event 6 from its mission object's method
+	// 0x43E742, which also marks the mission as begun. verid1 places the
+	// player at the start when it arrives, so it is sent once here.
+	broadcast(kEventStart);
+	checkPlayerContacts();
+}
+
+void Mission::update(uint32 ms) {
+	// The original clamps its frame time the same way (0x4309C5).
+	_time += std::max<uint32>(8, std::min<uint32>(ms, 1000));
+	runTimers();
+
+	while (!_effects.empty() && _effects.begin()->first <= _time) {
+		uint16 id = _effects.begin()->second;
+		_effects.erase(_effects.begin());
+		send(id, kEventEffectDone);
+	}
+
+	checkPlayerContacts();
+}
+
+bool Mission::takePlayerYaw(double &yaw) {
+	if (!_hasYaw)
+		return false;
+	yaw = _yaw;
+	_hasYaw = false;
+	return true;
+}
+
+int16 Mission::send(uint16 id, uint16 event, const std::vector<int16> &args) {
+	int index = _vm->findInstance(id);
+	if (index < 0)
+		return 0;
+	debugC(2, kDebugChannel, "event %u to %04X", event, id);
+	return _vm->sendEvent(_vm->getInstance(index), event, args);
+}
+
+void Mission::broadcast(uint16 event, const std::vector<int16> &args) {
+	// Copied: handlers may subscribe or unsubscribe.
+	std::vector<uint16> listeners = _listeners;
+	for (uint16 id : listeners)
+		send(id, event, args);
+}
+
+void Mission::setTimer(uint16 id, uint32 ms) {
+	Timer timer;
+	timer.period = std::max<uint32>(ms, 1);
+	timer.due = _time + timer.period;
+	_timers[id] = timer;
+}
+
+void Mission::runTimers() {
+	for (int round = 0; round < kMaxTimerCatchUp; round++) {
+		std::vector<std::pair<uint32, uint16>> due;
+		for (const auto &timer : _timers) {
+			if (timer.second.due <= _time)
+				due.push_back({ timer.second.due, timer.first });
+		}
+		if (due.empty())
+			return;
+		std::sort(due.begin(), due.end());
+		for (const auto &entry : due) {
+			auto it = _timers.find(entry.second);
+			if (it == _timers.end() || it->second.due > _time)
+				continue;
+			// Periodic until killed, as with the original's Windows timers.
+			it->second.due += it->second.period;
+			if (_vm->findInstance(entry.second) < 0) {
+				_timers.erase(it);
+				continue;
+			}
+			send(entry.second, kEventTimer);
+		}
+	}
+	// Still behind (a long pause): drop the missed firings.
+	for (auto &timer : _timers) {
+		if (timer.second.due <= _time)
+			timer.second.due = _time + timer.second.period;
+	}
+}
+
+void Mission::checkPlayerContacts() {
+	// The engine reports only changes (0x4B46A0, 0x435CD8): the old thing
+	// gets "untouch" and the new one "touch".
+	int wall = _walker.getContactWall();
+	if (wall != _touchedWall) {
+		if (_touchedWall >= 0)
+			send((uint16)(_level.getWalls()[_touchedWall].objectId | kTypeWall), kEventUntouch);
+		_touchedWall = wall;
+		if (wall >= 0)
+			send((uint16)(_level.getWalls()[wall].objectId | kTypeWall), kEventTouch);
+	}
+
+	int flat = _walker.getFloor();
+	if (flat != _standingFlat) {
+		if (_standingFlat >= 0) {
+			uint16 id = (uint16)(_level.getSectors()[_standingFlat].objectId | kTypeFlat);
+			send(id, kEventUntouch);
+			send(id, kEventFloorLeft);
+		}
+		_standingFlat = flat;
+		if (flat >= 0) {
+			uint16 id = (uint16)(_level.getSectors()[flat].objectId | kTypeFlat);
+			send(id, kEventFloorEntered);
+			send(id, kEventTouch);
+		}
+	}
+
+	// Billboards fire when the player enters the box around them (0x4B9940).
+	int inside = -1;
+	const std::vector<LevelFile::Billboard> &billboards = _level.getBillboards();
+	double feet = _walker.getFeet(), head = _walker.getEye() + Walker::kHeadroom;
+	for (size_t i = 0; i < billboards.size() && inside < 0; i++) {
+		const LevelFile::Billboard &b = billboards[i];
+		if (b.radius <= 0 || b.hidden || !(b.zones & _walker.getActiveZones()))
+			continue;
+		double r = fromFixed(b.radius), z = fromFixed(b.z);
+		if (std::fabs(_walker.getX() - fromFixed(b.x)) <= r && std::fabs(_walker.getY() - fromFixed(b.y)) <= r &&
+		    z <= head && z + fromFixed(b.boxHeight) >= feet + Walker::kStepHeight)
+			inside = (int)i;
+	}
+	if (inside != _billboard) {
+		if (_billboard >= 0)
+			send((uint16)(billboards[_billboard].objectId | kTypeBillboard), kEventUntouch);
+		_billboard = inside;
+		if (inside >= 0)
+			send((uint16)(billboards[inside].objectId | kTypeBillboard), kEventTouch);
+	}
+}
+
+double Mission::pop32(ScriptVM &vm) {
+	uint16 high = (uint16)vm.pop();
+	uint16 low = (uint16)vm.pop();
+	return fromFixed((int32)((uint32)high << 16 | low));
+}
+
+void Mission::push32(ScriptVM &vm, double value) {
+	uint32 v = (uint32)toFixed(value);
+	vm.push((int16)(v & 0xFFFF));
+	vm.push((int16)(v >> 16));
+}
+
+Mission::Position Mission::popPosition(ScriptVM &vm) {
+	Position position;
+	position.x = pop32(vm);
+	position.y = pop32(vm);
+	position.z = pop32(vm);
+	position.heading = vm.pop();
+	return position;
+}
+
+void Mission::pushPosition(ScriptVM &vm, const Position &position) {
+	vm.push(position.heading);
+	push32(vm, position.z);
+	push32(vm, position.y);
+	push32(vm, position.x);
+}
+
+bool Mission::getPosition(uint16 id, Position &position) const {
+	if (id == 0) {
+		position.x = _walker.getX();
+		position.y = _walker.getY();
+		position.z = _walker.getFeet();
+		double degrees = std::fmod(90 - _currentYaw * 180 / kPi, 360.0);
+		position.heading = (int16)std::lround(degrees < 0 ? degrees + 360 : degrees);
+		return true;
+	}
+	auto actor = _actors.find(id);
+	if (actor != _actors.end()) {
+		position = actor->second;
+		return true;
+	}
+	for (const LevelFile::Billboard &b : _level.getBillboards()) {
+		if (isObject(b.objectId, kTypeBillboard, id)) {
+			position = { fromFixed(b.x), fromFixed(b.y), fromFixed(b.z), 0 };
+			return true;
+		}
+	}
+	return false;
+}
+
+void Mission::setPosition(uint16 id, const Position &position) {
+	auto actor = _actors.find(id);
+	if (actor != _actors.end())
+		actor->second = position;
+	for (LevelFile::Billboard &b : _level.getBillboards()) {
+		if (isObject(b.objectId, kTypeBillboard, id)) {
+			b.x = toFixed(position.x);
+			b.y = toFixed(position.y);
+			b.z = toFixed(position.z);
+		}
+	}
+}
+
+void Mission::setVisible(uint16 id, bool visible) {
+	for (LevelFile::Wall &wall : _level.getWalls()) {
+		if (isObject(wall.objectId, kTypeWall, id))
+			wall.flags = visible ? wall.flags | LevelFile::kFlagVisible : wall.flags & ~LevelFile::kFlagVisible;
+	}
+	for (LevelFile::Sector &flat : _level.getSectors()) {
+		if (isObject(flat.objectId, kTypeFlat, id))
+			flat.flags = visible ? flat.flags | LevelFile::kFlagVisible : flat.flags & ~LevelFile::kFlagVisible;
+	}
+	for (LevelFile::Billboard &b : _level.getBillboards()) {
+		if (isObject(b.objectId, kTypeBillboard, id))
+			b.hidden = !visible;
+	}
+}
+
+void Mission::setTexture(uint16 id, uint16 texture, uint16 frames, uint16 speed) {
+	for (LevelFile::Wall &wall : _level.getWalls()) {
+		if (isObject(wall.objectId, kTypeWall, id)) {
+			wall.texture = texture;
+			wall.frames = frames;
+			wall.speed = speed;
+		}
+	}
+	for (LevelFile::Sector &flat : _level.getSectors()) {
+		if (isObject(flat.objectId, kTypeFlat, id)) {
+			flat.texture = texture;
+			flat.frames = frames;
+			flat.speed = speed;
+		}
+	}
+	for (LevelFile::Billboard &b : _level.getBillboards()) {
+		if (isObject(b.objectId, kTypeBillboard, id)) {
+			b.texture = texture;
+			b.frames = frames;
+			b.speed = speed;
+		}
+	}
+}
+
+void Mission::restoreTexture(uint16 id) {
+	std::vector<LevelFile::Wall> &walls = _level.getWalls();
+	for (size_t i = 0; i < walls.size(); i++) {
+		if (isObject(walls[i].objectId, kTypeWall, id))
+			walls[i].texture = _wallTextures[i];
+	}
+	std::vector<LevelFile::Sector> &flats = _level.getSectors();
+	for (size_t i = 0; i < flats.size(); i++) {
+		if (isObject(flats[i].objectId, kTypeFlat, id))
+			flats[i].texture = _flatTextures[i];
+	}
+	std::vector<LevelFile::Billboard> &billboards = _level.getBillboards();
+	for (size_t i = 0; i < billboards.size(); i++) {
+		if (isObject(billboards[i].objectId, kTypeBillboard, id))
+			billboards[i].texture = _billboardTextures[i];
+	}
+}
+
+void Mission::setFullbright(uint16 id, bool on) {
+	for (LevelFile::Wall &wall : _level.getWalls()) {
+		if (isObject(wall.objectId, kTypeWall, id))
+			wall.fullbright = on;
+	}
+	for (LevelFile::Sector &flat : _level.getSectors()) {
+		if (isObject(flat.objectId, kTypeFlat, id))
+			flat.fullbright = on;
+	}
+	for (LevelFile::Billboard &b : _level.getBillboards()) {
+		if (isObject(b.objectId, kTypeBillboard, id))
+			b.fullbright = on;
+	}
+}
+
+void Mission::setPlayerHeading(int16 degrees) {
+	// The original looks along (sin h, cos h) on the floor plan; the
+	// renderer's yaw is measured from +x.
+	_yaw = kPi / 2 - degrees * kPi / 180;
+	_hasYaw = true;
+}
+
+void Mission::skipNative(ScriptVM &vm, uint16 op) {
+	const OpcodeInfo *info = getOpcodeInfo(op);
+	if (info) {
+		for (int i = 0; i < info->pops; i++)
+			vm.pop();
+		for (int i = 0; i < info->pushes; i++)
+			vm.push(0);
+	}
+	if (_missing[op]++ == 0)
+		debugC(1, kDebugChannel, "native %02X (%s) is not implemented", op, info ? info->name : "?");
+}
+
+void Mission::unhandledEvent(ScriptVM &vm, ScriptInstance &self, uint16 event) {}
+
+void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
+	switch (op) {
+	case OP_SEND_SIGNAL: {
+		uint16 id = (uint16)vm.pop();
+		int16 value = vm.pop();
+		send(id, kEventSignal, { value });
+		break;
+	}
+	case 0x2B: { // RANDOM
+		int16 n = vm.pop();
+		vm.push(n > 0 ? (int16)_random.getRandomNumber((uint32)n - 1) : 0);
+		break;
+	}
+	case 0x2C: { // SEND_SET_VALUE
+		uint16 id = (uint16)vm.pop();
+		int16 value = vm.pop();
+		send(id, kEventSetValue, { value });
+		break;
+	}
+	case 0x2D: // RESET_DEFAULT
+		restoreTexture((uint16)vm.pop());
+		break;
+	case 0x2E: // DISABLE_OBJECT
+	case 0x2F: { // ENABLE_OBJECT
+		int index = _vm->findInstance((uint16)vm.pop());
+		if (index >= 0)
+			_vm->getInstance(index).enabled = op == 0x2F;
+		break;
+	}
+	case 0x30: { // UNSUBSCRIBE
+		uint16 id = (uint16)vm.pop();
+		_listeners.erase(std::remove(_listeners.begin(), _listeners.end(), id), _listeners.end());
+		break;
+	}
+	case 0x31: { // SUBSCRIBE
+		uint16 id = (uint16)vm.pop();
+		if (std::find(_listeners.begin(), _listeners.end(), id) == _listeners.end())
+			_listeners.insert(_listeners.begin(), id);
+		break;
+	}
+	case 0x32: { // SET_TIMER_MS
+		uint16 id = (uint16)vm.pop();
+		setTimer(id, (uint16)vm.pop());
+		break;
+	}
+	case 0x33: { // SET_TIMER_SECONDS
+		uint16 id = (uint16)vm.pop();
+		setTimer(id, (uint32)(uint16)vm.pop() * 1000);
+		break;
+	}
+	case 0x34: { // SET_TIMER_RANDOM
+		uint16 id = (uint16)vm.pop();
+		int min = vm.pop(), max = vm.pop();
+		int span = std::max(1, max - min + 1);
+		setTimer(id, (uint32)std::max(0, min + (int)_random.getRandomNumber((uint32)span - 1)) * 100);
+		break;
+	}
+	case 0x35: // KILL_TIMER
+		_timers.erase((uint16)vm.pop());
+		break;
+	case 0x36: { // SET_SURFACE_TEXTURE
+		uint16 id = (uint16)vm.pop();
+		uint16 texture = (uint16)vm.pop();
+		uint16 frames = (uint16)vm.pop();
+		int16 period = vm.pop();
+		setTexture(id, texture, frames, period > 0 ? (uint16)(0x4000 / period) : 0);
+		break;
+	}
+	case 0x46: // HIDE
+		setVisible((uint16)vm.pop(), false);
+		break;
+	case 0x47: // SHOW
+		setVisible((uint16)vm.pop(), true);
+		break;
+	case 0x4D: { // SET_POSITION
+		uint16 id = (uint16)vm.pop();
+		setPosition(id, popPosition(vm));
+		break;
+	}
+	case 0x59: { // SET_HEADING
+		uint16 id = (uint16)vm.pop();
+		int16 heading = vm.pop();
+		auto actor = _actors.find(id);
+		if (actor != _actors.end())
+			actor->second.heading = heading;
+		break;
+	}
+	case 0x70: { // HIDE_ACTOR
+		uint16 id = (uint16)vm.pop();
+		vm.pop();
+		setVisible(id, false);
+		break;
+	}
+	case 0x71: { // DROP_AT
+		uint16 id = (uint16)vm.pop();
+		uint16 where = (uint16)vm.pop();
+		Position position;
+		if (getPosition(where, position))
+			setPosition(id, position);
+		setVisible(id, true);
+		break;
+	}
+	case 0x72: // TRIGGER
+		send((uint16)vm.pop(), kEventActivate);
+		break;
+	case 0x75: { // TELEPORT_PLAYER
+		Position position = popPosition(vm);
+		debugC(1, kDebugChannel, "player to (%.1f, %.1f, %.1f) heading %d", position.x, position.y, position.z,
+		       position.heading);
+		_walker.place(position.x, position.y, position.z);
+		setPlayerHeading(position.heading);
+		break;
+	}
+	case 0x87: { // DAMAGE_PLAYER
+		int16 amount = vm.pop();
+		int16 type = vm.pop();
+		_health = (int16)std::max(1, _health - std::max<int>(amount, 0));
+		broadcast(kEventPlayerDamaged, { (int16)self.object->id, amount, amount, type });
+		break;
+	}
+	case 0x89: { // ADD_HEALTH
+		int16 amount = vm.pop();
+		_health = (int16)std::max(1, std::min<int>(_maxHealth, _health + amount));
+		broadcast(kEventPlayerHealed, { _health });
+		break;
+	}
+	case 0xA2: { // SET_STEP_HEADROOM
+		_walker.setHeadroom(pop32(vm));
+		_walker.setStepHeight(pop32(vm));
+		break;
+	}
+	case 0xB1: { // SET_PARENT
+		int index = _vm->findInstance((uint16)vm.pop());
+		self.parent = index >= 0 ? &_vm->getInstance(index) : nullptr;
+		break;
+	}
+	case 0xB3: // SET_EYE_HEIGHT
+		_walker.setEyeHeight(pop32(vm));
+		break;
+	case 0xB7: // SET_SKY_ENABLED
+		_renderer.setSkyEnabled(vm.pop() != 0);
+		break;
+	case 0xBA: { // SCREEN_FLASH_NOTIFY: only its notification is implemented
+		uint16 notify = (uint16)vm.pop();
+		for (int i = 0; i < 4; i++)
+			vm.pop(); // red, green, blue, percent
+		uint32 total = 0;
+		for (int i = 0; i < 3; i++) {
+			uint16 high = (uint16)vm.pop(), low = (uint16)vm.pop();
+			total += (uint32)high << 16 | low;
+		}
+		_effects.insert({ _time + total, notify });
+		_missing[op]++;
+		break;
+	}
+	case 0x68: // PLAY_SOUND: sounds aren't wired up yet, so report failure
+		vm.pop();
+		vm.pop();
+		vm.push(-1);
+		_missing[op]++;
+		break;
+	case 0xBE: { // DISTANCE_TO_PLAYER
+		Position position;
+		int16 distance = 0;
+		if (getPosition((uint16)vm.pop(), position)) {
+			double dx = position.x - _walker.getX(), dy = position.y - _walker.getY();
+			double dz = position.z - _walker.getFeet();
+			distance = (int16)std::min<long>(32767, std::lround(std::sqrt(dx * dx + dy * dy + dz * dz)));
+		}
+		vm.push(distance);
+		break;
+	}
+	case 0xC6: // GET_HEALTH
+		vm.push(_health);
+		break;
+	case 0xD9: // SET_PLAYER_WIDTH
+		_walker.setRadius(pop32(vm) / 2);
+		break;
+	case 0xDB: { // GET_POSITION
+		Position position = { 0, 0, 0, 0 };
+		getPosition((uint16)vm.pop(), position);
+		pushPosition(vm, position);
+		break;
+	}
+	case 0xEC: { // SET_FULLBRIGHT
+		uint16 id = (uint16)vm.pop();
+		setFullbright(id, vm.pop() != 0);
+		break;
+	}
+	case 0xF2: { // GET_ARRAY
+		int16 index = vm.pop();
+		vm.push(index >= 0 && index < kArraySize ? _array[index] : 0);
+		break;
+	}
+	case 0xF3: { // SET_ARRAY
+		int16 index = vm.pop();
+		int16 value = vm.pop();
+		if (index >= 0 && index < kArraySize)
+			_array[index] = value;
+		break;
+	}
+	default:
+		skipNative(vm, op);
+		break;
+	}
+}
+
+} // End of namespace STG

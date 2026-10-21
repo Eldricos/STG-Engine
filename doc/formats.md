@@ -169,7 +169,7 @@ Every instruction is one word, except `PUSH n` (2 words), `PUSH32` (3) and
 | 06 ×2 | PUSH32 | push two operand words |
 | 07 | SET_RESULT | pop into the block's result |
 | 08 | GOTO_STATE | pop the state to enter when the block ends |
-| 09 | GAME_CALL_2 | pop two values and pass them to the game |
+| 09 | SEND_SIGNAL | pop id, pop v; send event 4 with v to object id |
 | 0A | CASE | pop c b a; push a; if a == c, go to state b and end the block |
 | 0B–10 | IF_EQ/NE/GT/GE/LT/LE | pop b a; push a; if the test fails, skip to the matching ELSE/ENDIF |
 | 11 | ENDIF | |
@@ -184,12 +184,124 @@ Every instruction is one word, except `PUSH n` (2 words), `PUSH32` (3) and
 | 20 | SIGN_DIFF | sign(top − below) |
 | 21–24 | AND OR XOR NOT | |
 | 25 / 26 | HIGH_BITS / LOW_BITS | top & 0xE000 / top & 0x1FFF (object ids look like `type << 13 | n`) |
-| 27–F4 | NATIVE_xx | calls into the game |
+| 27–F4 | natives | calls into the game (see below) |
 
-The native opcodes' stack effects were read from each handler and are in
-`engines/stg/opcodes.cpp`, with notes on which game method each calls. Run
-through every block of verid1, those effects never underflow the stack
-except in a few blocks that take more than two event arguments.
+The natives' stack effects are in `engines/stg/opcodes.cpp`. They were
+computed from the stack pointer adjustments in each handler of the
+interpreter, where a 32-bit argument takes two slots: the low word is
+pushed first, so the high word is on top. Run through every block of
+verid1, they never underflow the stack, except in a few blocks that take
+more event arguments than the test supplied.
+
+### Objects and the world
+
+The SGEN loader's object factory (`0x43519F`) makes one C++ object per
+script object, its class chosen by the object's type. The top three bits
+of an object's id give its type, and for objects that stand for parts of
+the level, the rest is the id in the level records' offset 0x14:
+
+| Id bits | Type | Stands for |
+|---------|------|------------|
+| 0xE000 | 1 | logic: no level record; also behaviour templates other objects inherit from |
+| 0x4000 | 2 | walls with that id |
+| 0xA000 | 4 | the actor (`GAME.LV2` type 6) with that id |
+| 0xC000 | 7 | flats with that id |
+| 0x2000 | 8 | billboards with that id |
+
+A native that takes an object id calls the object's own method if the id
+is the running object's, and otherwise looks the id up in the mission
+object (`0x545EA8`, vtable `0x531768`) and calls the same method on it.
+The original doesn't check that the object exists.
+
+### Events
+
+**Delivery.** Events are delivered at once, nested inside the block that
+sends them (`0x44F4E1`). An object disabled with `DISABLE_OBJECT`, or still
+in state −1, gets no script blocks. Events from the engine are queued
+during an engine tick and delivered at its end (`0x4B8120`, `0x4B80D0`).
+
+| Event | Sent when |
+|-------|-----------|
+| 1 | timer tick (`SET_TIMER_*`); repeats until `KILL_TIMER` |
+| 2 / 3 | state entered / left |
+| 4 | `SEND_SIGNAL`, with one value |
+| 5 | `SEND_SET_VALUE`, with one value |
+| 6 | broadcast when the mission begins (`0x43E742`); verid1 places the player then |
+| 9 / 10 | broadcast: the player was hurt / healed |
+| 14 / 15 | the player started / stopped touching a wall, a billboard's area, an actor, or the floor stood on |
+| 16 | the object was hit by the player's attack |
+| 22–25 | a door or lift starts opening, is open, starts closing, is closed |
+| 36 / 37 | an actor arrived or finished turning / finished an animation cycle |
+| 38–42 | an actor was hit: lesser hits, hurt, stunned, dead |
+| 45 | `TRIGGER`, or the player used an item |
+| 51 / 52, 53 / 54 | the ceiling / floor above or under the player changed: new / old |
+| 55 | a screen effect finished |
+| 59, 61 | broadcast: hit report; the player left or landed on the ground |
+
+Broadcasts go only to objects that subscribed with `SUBSCRIBE`. Contacts are
+reported on change only: the old thing gets 15 and the new one 14.
+
+**Level start** (`0x4336F0`, `0x4356FF`):
+1. Every object is created in state −1.
+2. Each object is set to state 0, so it receives event 2.
+   - The order is the original's hash map order: bucket `(id >> 4) % 17`
+     ascending, and within a bucket the last object in the file first.
+   - Events sent to objects that haven't been visited yet reach only the
+     built-in defaults.
+3. Nothing is sent every frame without a reason. Scripts run on timers,
+   contacts and each other's signals.
+
+**Frame time.** The mission clock advances by the frame time, clamped to
+8–1000 ms.
+
+### Natives
+
+Natives that verid1 uses, by purpose. Arguments are listed as popped, top
+of the stack first. A *position* is x, y, z (32-bit 16.16 each) and a
+heading in degrees.
+
+- **Objects:**
+  - DISABLE_OBJECT, ENABLE_OBJECT
+  - SUBSCRIBE, UNSUBSCRIBE
+  - SET_PARENT: inherit another object's handlers; they run with SELF unchanged
+  - TRIGGER (event 45)
+  - SEND_SET_VALUE
+  - RANDOM n (0 to n−1)
+  - GET_ARRAY, SET_ARRAY: a second array of words that persists across missions
+- **Timers:** SET_TIMER_MS, SET_TIMER_SECONDS, SET_TIMER_RANDOM, KILL_TIMER.
+- **The level:**
+  - HIDE, SHOW: clear or set flag 0x100, which also stops a wall blocking
+  - SET_SURFACE_TEXTURE id, texture, frames, period: a frame lasts 4 × period ms
+  - RESET_DEFAULT: back to the original texture
+  - SET_FULLBRIGHT
+  - SET_SKY_ENABLED
+  - SET_ZONE_ON_MAP
+- **Positions:**
+  - SET_POSITION id, position
+  - GET_POSITION id (0 = the player)
+  - SET_HEADING
+  - DISTANCE_TO_PLAYER
+  - DROP_AT
+  - TELEPORT_PLAYER position
+  - PUSH_PLAYER
+- **The player:**
+  - GET_HEALTH, ADD_HEALTH, DAMAGE_PLAYER
+  - SET_EYE_HEIGHT, SET_STEP_HEADROOM, SET_PLAYER_WIDTH, SET_PLAYER_MOTION
+  - SET_PLAYER_CONTROLS, LOW_GRAVITY
+- **Actors:**
+  - ACTOR_WANDER, ACTOR_APPROACH_PLAYER, ACTOR_ATTACK, ACTOR_FACE: AI modes 6, 7, 3 and 2
+  - SET_ACTOR_COMBAT_STATS, SET_ACTOR_WEAPON, SET_ACTOR_TEAM, and size and reach settings
+- **Sound:** PLAY_SOUND sound, volume (0–64), PLAY_SOUND_CUE, PRELOAD_SOUND, SET_SOUND_VOLUME.
+- **Interface:**
+  - the close-up panel (PANEL_*)
+  - the automap (MAP_*)
+  - the inventory and items (INVENTORY_*, ATTACH_ITEM_BEHAVIOUR, ...)
+  - screen flashes and tints, view shake
+
+`engines/stg/mission.h` runs a level's scripts. It implements the natives
+for objects, timers, the level, positions and the player's health and
+size. The rest balance the stack and are counted as missing; the viewer
+logs each one once with `--debugflags=scripts`.
 
 To get a full listing of a script:
 

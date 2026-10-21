@@ -101,6 +101,7 @@ bool LevelFile::loadTables() {
 	_walls.clear();
 	_sectors.clear();
 	_billboards.clear();
+	_actors.clear();
 
 	// Each table's record count is in count B; check it against the size.
 	auto table = [this](uint16 type, uint32 recordSize, const byte *&data, uint32 &count) {
@@ -149,7 +150,9 @@ bool LevelFile::loadTables() {
 		wall.vStart = (int32)READ_LE_UINT32(r + 0x4C);
 		wall.vLength = (int32)READ_LE_UINT32(r + 0x50);
 		wall.flags = READ_LE_UINT32(r + 0x6C);
+		wall.speed = READ_LE_UINT16(r + 0x80);
 		wall.frames = READ_LE_UINT16(r + 0x82);
+		wall.objectId = READ_LE_UINT16(r + 0x14);
 		wall.texture = READ_LE_UINT16(r + 0x96);
 		wall.light = readLight(r);
 		wall.zones = READ_LE_UINT64(r + 0x3C);
@@ -175,6 +178,8 @@ bool LevelFile::loadTables() {
 		sector.zones = READ_LE_UINT64(r + 0x3C);
 		sector.activeZones = READ_LE_UINT64(r + 0x74);
 		sector.frames = READ_LE_UINT16(r + 0x100);
+		sector.speed = READ_LE_UINT16(r + 0x102);
+		sector.objectId = READ_LE_UINT16(r + 0x14);
 		sector.texture = READ_LE_UINT16(r + 0x11C);
 		sector.rotation = READ_LE_UINT16(r + 0x11E);
 		uint16 n = READ_LE_UINT16(r + 266);
@@ -205,11 +210,27 @@ bool LevelFile::loadTables() {
 		billboard.halfWidth = (int32)READ_LE_UINT32(r + 0x34);
 		billboard.height = (int32)READ_LE_UINT32(r + 0x38);
 		billboard.flags = READ_LE_UINT32(r + 0x6C);
+		billboard.speed = READ_LE_UINT16(r + 0x84);
 		billboard.frames = READ_LE_UINT16(r + 0x86);
+		billboard.radius = (int32)READ_LE_UINT32(r + 0x54);
+		billboard.boxHeight = (int32)READ_LE_UINT32(r + 0x58);
+		billboard.objectId = READ_LE_UINT16(r + 0x14);
 		billboard.texture = READ_LE_UINT16(r + 0x8A);
 		billboard.light = readLight(r);
 		billboard.zones = READ_LE_UINT64(r + 0x3C);
 		_billboards.push_back(billboard);
+	}
+
+	if (!table(kChunkActors, kRecordSizes[5], p, count))
+		return false;
+	for (uint32 i = 0; i < count; i++) {
+		const byte *r = p + i * kRecordSizes[5];
+		Actor actor;
+		actor.objectId = READ_LE_UINT16(r + 0x14);
+		actor.x = (int32)READ_LE_UINT32(r + 0x1C);
+		actor.z = (int32)READ_LE_UINT32(r + 0x20);
+		actor.y = (int32)READ_LE_UINT32(r + 0x24);
+		_actors.push_back(actor);
 	}
 	return true;
 }

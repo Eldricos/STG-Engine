@@ -69,6 +69,9 @@ public:
 	 */
 	void setVisibleZones(uint64 zones) { _zones = zones; }
 
+	/** Without the sky, the background is the fog colour. */
+	void setSkyEnabled(bool enabled) { _skyEnabled = enabled; }
+
 	/** Turn lighting off to see the textures' own colours. */
 	void setLightingEnabled(bool enabled) { _lighting = enabled; }
 	bool isLightingEnabled() const { return _lighting; }
@@ -94,7 +97,7 @@ private:
 	struct Texture;
 	struct Vertex;
 
-	const Texture *getTexture(uint16 id, uint16 frames, uint32 time);
+	const Texture *getTexture(uint16 id, uint16 frames, uint16 speed, uint32 time);
 	/** The shade table for a surface, or null to draw it unshaded. */
 	const byte *getShade(const LevelFile::LightInfo &light) const;
 	void drawSky(const Camera &camera, Graphics::Surface &dst);
@@ -112,6 +115,7 @@ private:
 	std::map<uint32, std::unique_ptr<Texture>> _textures;
 	Graphics::Surface _sky;
 	bool _hasSky = false;
+	bool _skyEnabled = true;
 	byte _shades[LevelFile::kLightLevels][256];
 	/** The palette entry nearest the fog colour, shown where there is no sky. */
 	byte _fogIndex = 0;

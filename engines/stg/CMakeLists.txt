@@ -3,6 +3,7 @@ target_sources(stg_engines PRIVATE
 	disasm.cpp
 	font.cpp
 	level.cpp
+	mission.cpp
 	opcodes.cpp
 	overlay.cpp
 	render3d.cpp

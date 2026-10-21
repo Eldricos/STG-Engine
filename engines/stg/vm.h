@@ -29,6 +29,8 @@ enum ScriptEvent {
 struct ScriptInstance {
 	const ScriptObject *object = nullptr;
 	int16 state = -1;
+	/** Cleared by DISABLE_OBJECT; a disabled object ignores events. */
+	bool enabled = true;
 	/** Set by GOTO_STATE and CASE; applied when the current block ends. */
 	int16 pendingState = -1;
 	std::vector<int16> locals;
@@ -41,7 +43,7 @@ struct ScriptInstance {
 /**
  * The game side of the interpreter: everything the scripts do to the world
  * goes through here. Opcodes at or above OP_FIRST_NATIVE, plus
- * GAME_CALL_2 and GAME_INIT, are forwarded to callNative().
+ * SEND_SIGNAL and GAME_INIT, are forwarded to callNative().
  */
 class ScriptHost {
 public:

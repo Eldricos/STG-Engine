@@ -13,6 +13,8 @@
 #include "common/endian.h"
 #include "common/stream.h"
 #include "engines/stg/level.h"
+#include "engines/stg/mission.h"
+#include "engines/stg/opcodes.h"
 #include "engines/stg/render3d.h"
 #include "engines/stg/walker.h"
 
@@ -381,8 +383,9 @@ struct LevelBuilder {
 
 	/** A wall from (x0, y0) to (x1, y1), solid on its left as seen walking along it. */
 	void addWall(double x0, double y0, double x1, double y1, double bottom, double top, uint32 flags = 0,
-	             uint32 zone = 1) {
+	             uint32 zone = 1, uint16 objectId = 0) {
 		std::vector<byte> r(152);
+		WRITE_LE_UINT16(&r[0x14], objectId);
 		double dx = x1 - x0, dy = y1 - y0, length = std::sqrt(dx * dx + dy * dy);
 		double nx = -dy / length, ny = dx / length, d = -(nx * x0 + ny * y0);
 		WRITE_LE_UINT32(&r[0x1C], (uint32)(int32)(nx * 65536));
@@ -527,4 +530,88 @@ TEST(walker_steps_up_and_falls) {
 	for (int i = 0; i < 50; i++)
 		walker.move(0, 0, 0.05);
 	CHECK(walker.getFeet() == -10);
+}
+
+namespace {
+
+/** Wrap program words in an SGEN file with empty sections. */
+std::vector<byte> makeScriptFile(const std::vector<uint16> &program) {
+	std::vector<byte> file(40);
+	WRITE_BE_UINT32(&file[0], MKTAG('S', 'G', 'E', 'N'));
+	WRITE_LE_UINT16(&file[4], 22);
+	WRITE_LE_UINT16(&file[6], 2);
+	WRITE_LE_UINT32(&file[12], (uint32)program.size() * 2);
+	for (uint16 word : program) {
+		file.push_back((byte)word);
+		file.push_back((byte)(word >> 8));
+	}
+	WRITE_LE_UINT32(&file[8], (uint32)file.size() - 12);
+	return file;
+}
+
+} // End of anonymous namespace
+
+TEST(mission_runs_level_scripts) {
+	using namespace STG;
+	const uint16 P = OP_PUSH;
+	std::vector<uint16> program = {
+		// A logic object: subscribes to broadcasts and starts a 100 ms timer
+		// on entering state 0, counts timer ticks in global 0, stores signals
+		// in global 1, and puts the player at (5, 10) facing +x on the start
+		// broadcast.
+		1, 0xE001,
+		0x8000,
+		kEventEnterState, 0xFFFF, OP_PUSH_SELF, 0x31, P, 100, OP_PUSH_SELF, 0x32, OP_END,
+		Mission::kEventStart, 0xFFFF, OP_PUSH_BLOCK, 90, 0, 0, 0, 10, 0, 5, 0x75, OP_END,
+		Mission::kEventTimer, 0xFFFF, P, 0, OP_GET_GLOBAL, OP_INC, P, 0, OP_SET_GLOBAL, OP_END,
+		Mission::kEventSignal, 0xFFFF, P, 1, OP_SET_GLOBAL, OP_END,
+		0x3000,
+		0x2000,
+		// The wall with id 5: when touched, sets global 2, signals 77 to the
+		// logic object and hides itself.
+		2, 0x4005,
+		0x8000,
+		Mission::kEventTouch, 0xFFFF, P, 1, P, 2, OP_SET_GLOBAL, P, 77, P, 0xE001, OP_SEND_SIGNAL, OP_PUSH_SELF,
+		0x46, OP_END,
+		0x3000,
+		0x2000,
+		0x1000
+	};
+	std::vector<byte> scriptBytes = makeScriptFile(program);
+	Common::MemoryReadStream scriptStream(scriptBytes.data(), (uint32)scriptBytes.size());
+	ScriptFile script;
+	CHECK(script.load(scriptStream));
+
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 20, 20, 0);
+	builder.addWall(10, 0, 10, 20, 0, 12, 0, 1, 5);
+	LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	LevelRenderer renderer(level);
+	Walker walker(level);
+	walker.place(2, 2, 0);
+
+	Mission mission(level, script, renderer, walker);
+	mission.start();
+	CHECK(walker.getX() == 5);
+	CHECK(walker.getY() == 10);
+	double yaw = 1;
+	CHECK(mission.takePlayerYaw(yaw));
+	CHECK(std::fabs(yaw) < 1e-9);
+
+	mission.update(250);
+	CHECK_EQ(mission.getVM().getGlobal(0), 2);
+
+	// Walking into the wall tells its object, which hides it.
+	walker.move(10, 0, 0.01);
+	CHECK(walker.getX() < 10);
+	CHECK_EQ(walker.getContactWall(), 0);
+	mission.update(10);
+	CHECK_EQ(mission.getVM().getGlobal(2), 1);
+	CHECK_EQ(mission.getVM().getGlobal(1), 77);
+	CHECK(!(level.getWalls()[0].flags & LevelFile::kFlagVisible));
+
+	walker.move(10, 0, 0.01);
+	CHECK(walker.getX() > 15);
+	CHECK(mission.getMissingNatives().empty());
 }

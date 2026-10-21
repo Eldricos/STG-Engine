@@ -23,7 +23,7 @@ enum Opcode {
 	OP_PUSH32 = 0x06,
 	OP_SET_RESULT = 0x07,
 	OP_GOTO_STATE = 0x08,
-	OP_GAME_CALL_2 = 0x09,
+	OP_SEND_SIGNAL = 0x09,
 	OP_CASE = 0x0A,
 	OP_IF_EQ = 0x0B,
 	OP_IF_NE = 0x0C,

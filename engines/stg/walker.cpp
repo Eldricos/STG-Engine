@@ -40,11 +40,11 @@ bool containsPoint(const std::vector<LevelFile::Vertex> &vertices, const LevelFi
 
 Walker::Walker(const LevelFile &level) : _level(level) {
 	const std::vector<LevelFile::Vertex> &vertices = level.getVertices();
-	for (const LevelFile::Wall &wall : level.getWalls()) {
-		// Like the original, only walls that are drawn get in the way.
-		if (!(wall.flags & LevelFile::kFlagVisible))
-			continue;
+	const std::vector<LevelFile::Wall> &walls = level.getWalls();
+	for (size_t i = 0; i < walls.size(); i++) {
+		const LevelFile::Wall &wall = walls[i];
 		WallLine line;
+		line.index = (int)i;
 		line.x1 = fromFixed(vertices[wall.vertex1].x);
 		line.y1 = fromFixed(vertices[wall.vertex1].y);
 		line.x2 = fromFixed(vertices[wall.vertex2].x);
@@ -66,7 +66,8 @@ void Walker::place(double x, double y, double feet) {
 	_feet = feet;
 	_fallSpeed = 0;
 	_zones = kAllZones;
-	_floor = findFloor(x, y, feet + kStepHeight, _zones);
+	_contactWall = -1;
+	_floor = findFloor(x, y, feet + _stepHeight, _zones);
 	if (_floor >= 0) {
 		const LevelFile::Sector &flat = _level.getSectors()[_floor];
 		_feet = fromFixed(flat.height);
@@ -75,6 +76,7 @@ void Walker::place(double x, double y, double feet) {
 }
 
 void Walker::move(double dx, double dy, double seconds) {
+	_contactWall = -1;
 	if (dx != 0 || dy != 0)
 		collideAndSlide(dx, dy);
 	followFloor(seconds);
@@ -105,9 +107,13 @@ bool Walker::sweep(double x, double y, double dx, double dy, Hit &hit) const {
 		return false;
 
 	hit.t = 2;
-	double low = _feet + kStepHeight, high = _feet + kEyeHeight + kHeadroom;
-	for (size_t i = 0; i < _walls.size(); i++) {
-		const WallLine &w = _walls[i];
+	double low = _feet + _stepHeight, high = _feet + _eyeHeight + _headroom;
+	const std::vector<LevelFile::Wall> &walls = _level.getWalls();
+	for (const WallLine &w : _walls) {
+		// Like the original, only walls that are drawn get in the way, and
+		// scripts can hide them.
+		if (!(walls[w.index].flags & LevelFile::kFlagVisible))
+			continue;
 		if (!(w.zones & _zones) || w.bottom > high || w.top < low)
 			continue;
 
@@ -127,7 +133,7 @@ bool Walker::sweep(double x, double y, double dx, double dy, Hit &hit) const {
 		}
 		if (facing) {
 			// Already closer than the radius: let the player move away.
-			double r = std::min(kRadius, side0);
+			double r = std::min(_radius, side0);
 			double side1 = nx * (x + dx) + ny * (y + dy) + d;
 			if (side1 < r && side0 > side1) {
 				double t = std::max(0.0, (side0 - r) / (side0 - side1));
@@ -140,7 +146,7 @@ bool Walker::sweep(double x, double y, double dx, double dy, Hit &hit) const {
 					hit.t = t;
 					hit.slideX = wx / wl;
 					hit.slideY = wy / wl;
-					hit.wall = (int)i;
+					hit.wall = w.index;
 				}
 			}
 		}
@@ -150,7 +156,7 @@ bool Walker::sweep(double x, double y, double dx, double dy, Hit &hit) const {
 		for (const auto &end : ends) {
 			double px = x - end[0], py = y - end[1];
 			double b = 2 * (dx * px + dy * py);
-			double c = px * px + py * py - kRadius * kRadius;
+			double c = px * px + py * py - _radius * _radius;
 			if (b >= 0)
 				continue; // moving away
 			double t;
@@ -171,7 +177,7 @@ bool Walker::sweep(double x, double y, double dx, double dy, Hit &hit) const {
 			hit.t = t;
 			hit.slideX = -cy / cl;
 			hit.slideY = cx / cl;
-			hit.wall = (int)i;
+			hit.wall = w.index;
 		}
 	}
 	return hit.t <= 1;
@@ -190,6 +196,7 @@ void Walker::collideAndSlide(double dx, double dy) {
 		_y += dy;
 		return;
 	}
+	_contactWall = hit.wall;
 
 	// Stop just short of the wall, then slide along it with the rest.
 	double length = std::sqrt(dx * dx + dy * dy);
@@ -213,7 +220,7 @@ void Walker::collideAndSlide(double dx, double dy) {
 }
 
 void Walker::followFloor(double seconds) {
-	double maxHeight = _feet + kStepHeight;
+	double maxHeight = _feet + _stepHeight;
 	int floor = findFloor(_x, _y, maxHeight, _zones);
 	if (floor < 0 && _zones != kAllZones)
 		floor = findFloor(_x, _y, maxHeight, kAllZones);

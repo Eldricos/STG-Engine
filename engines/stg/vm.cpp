@@ -89,6 +89,8 @@ uint16 ScriptVM::word(uint32 ip) const {
 }
 
 int16 ScriptVM::sendEvent(ScriptInstance &self, uint16 event, const std::vector<int16> &args) {
+	if (!self.enabled)
+		return 0;
 	if (_depth >= kMaxEventDepth) {
 		warning("Script: event %u to object %u nested too deeply", event, self.object->id);
 		return 0;
