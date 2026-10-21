@@ -195,6 +195,8 @@ public:
 	 */
 	static const uint32 kFlagNotDrawn = 0x1;
 	static const uint32 kFlagCeiling = 0x100000;
+	/** Floors actors don't stand on (0x4B6AB0); the player still does. */
+	static const uint32 kFlagNoActors = 0x1000;
 
 	/** A camera-facing sprite, standing on (x, y, z). */
 	struct Billboard {
@@ -218,6 +220,15 @@ public:
 		bool hidden = false;
 		bool fullbright = false;
 	};
+
+	/**
+	 * Billboard flags. Items rest on the floor below them: the original
+	 * drops them at the start (0x4BDD70) and wherever scripts put them, and
+	 * they take the floor's zones and light.
+	 */
+	static const uint32 kBillboardItem = 0x400000;
+	/** Keeps its height when dropped, as actors with the same flag do. */
+	static const uint32 kBillboardFlyer = 0x1000000;
 
 	/** One of an actor's animations (8 bytes at 0xC4 + 8 * entry). */
 	struct Animation {

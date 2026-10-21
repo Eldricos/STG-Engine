@@ -362,7 +362,21 @@ namespace {
 /** Builds levels of rectangular floors and straight walls for the walker. */
 struct LevelBuilder {
 	std::vector<std::pair<int32, int32>> vertices;
-	std::vector<std::vector<byte>> flats, walls, actors;
+	std::vector<std::vector<byte>> flats, walls, actors, billboards;
+
+	/** A 2 x 4 billboard standing at (x, y, z). */
+	void addBillboard(uint16 id, double x, double y, double z, uint32 flags, uint32 zones) {
+		std::vector<byte> r(140);
+		WRITE_LE_UINT16(&r[0x14], id);
+		WRITE_LE_UINT32(&r[0x1C], (uint32)(int32)(x * 65536));
+		WRITE_LE_UINT32(&r[0x20], (uint32)(int32)(z * 65536));
+		WRITE_LE_UINT32(&r[0x24], (uint32)(int32)(y * 65536));
+		WRITE_LE_UINT32(&r[0x34], 1 << 16);
+		WRITE_LE_UINT32(&r[0x38], 4 << 16);
+		WRITE_LE_UINT32(&r[0x3C], zones);
+		WRITE_LE_UINT32(&r[0x6C], flags);
+		billboards.push_back(r);
+	}
 
 	/**
 	 * An actor of sprite set 1 standing at (x, y, z). Animation 0 (stand)
@@ -398,9 +412,10 @@ struct LevelBuilder {
 		return (uint16)(vertices.size() - 1);
 	}
 
-	void addFloor(double x0, double y0, double x1, double y1, double height, uint32 zone = 1, uint32 active = 1) {
+	void addFloor(double x0, double y0, double x1, double y1, double height, uint32 zone = 1, uint32 active = 1,
+	              uint32 flags = 0) {
 		std::vector<byte> r(292);
-		WRITE_LE_UINT32(&r[108], STG::LevelFile::kFlagVisible);
+		WRITE_LE_UINT32(&r[108], STG::LevelFile::kFlagVisible | flags);
 		WRITE_LE_UINT32(&r[0x20], (uint32)(int32)(height * 65536));
 		WRITE_LE_UINT32(&r[0x3C], zone);
 		WRITE_LE_UINT32(&r[0x74], active);
@@ -450,6 +465,10 @@ struct LevelBuilder {
 		for (const auto &r : walls)
 			w.data.insert(w.data.end(), r.begin(), r.end());
 		chunks.push_back(w);
+		Chunk b = { STG::LevelFile::kChunkBillboards, 1, (uint16)billboards.size(), {} };
+		for (const auto &r : billboards)
+			b.data.insert(b.data.end(), r.begin(), r.end());
+		chunks.push_back(b);
 		Chunk a = { STG::LevelFile::kChunkActors, 1, (uint16)actors.size(), {} };
 		for (const auto &r : actors)
 			a.data.insert(a.data.end(), r.begin(), r.end());
@@ -648,6 +667,58 @@ TEST(mission_runs_level_scripts) {
 
 	walker.move(10, 0, 0.01);
 	CHECK(walker.getX() > 15);
+	CHECK(mission.getMissingNatives().empty());
+}
+
+TEST(mission_items_rest_on_floors) {
+	using namespace STG;
+	const uint16 P = OP_PUSH;
+	// On the start broadcast: item 8 is dropped at the player, and item 7
+	// is told to move, which items ignore.
+	std::vector<uint16> program = {
+		1, 0xE001,
+		0x8000,
+		kEventEnterState, 0xFFFF, OP_PUSH_SELF, 0x31, OP_END,
+		Mission::kEventStart, 0xFFFF, P, 0, P, 0x2008, 0x71,
+		OP_PUSH_BLOCK, 0, 0, 0, 35, 0, 35, P, 0x2007, 0x4D, OP_END,
+		0x3000,
+		0x2000,
+		0x1000
+	};
+	std::vector<byte> scriptBytes = makeScriptFile(program);
+	Common::MemoryReadStream scriptStream(scriptBytes.data(), (uint32)scriptBytes.size());
+	ScriptFile script;
+	CHECK(script.load(scriptStream));
+
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 20, 20, 0, 1, 1);
+	builder.addFloor(20, 0, 40, 40, 3, 2, 2);
+	builder.addFloor(0, 0, 10, 10, 1, 1, 1, LevelFile::kFlagNoActors);
+	// Items wait in a storage zone until they are placed.
+	const uint32 item = LevelFile::kBillboardItem | LevelFile::kFlagVisible;
+	builder.addBillboard(7, 5, 5, 1.5, item, 0x80);
+	builder.addBillboard(8, 100, 100, 0, item, 0x80);
+	LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	LevelRenderer renderer(level);
+	Walker walker(level);
+	walker.place(30, 30, 3);
+
+	Mission mission(level, script, renderer, walker, nullptr);
+	// At the start: item 7 settles past the floor actors don't use onto
+	// the one below, and takes its zones. Item 8 has no floor under it.
+	const LevelFile::Billboard &seven = level.getBillboards()[0], &eight = level.getBillboards()[1];
+	CHECK(seven.z == 0);
+	CHECK_EQ(seven.zones, (uint64)1);
+	CHECK(eight.z == 0);
+	CHECK_EQ(eight.zones, (uint64)0x80);
+
+	mission.start();
+	CHECK(eight.x == 30 << 16);
+	CHECK(eight.y == 30 << 16);
+	CHECK(eight.z == 3 << 16);
+	CHECK_EQ(eight.zones, (uint64)2);
+	CHECK(seven.x == 5 << 16);
 	CHECK(mission.getMissingNatives().empty());
 }
 

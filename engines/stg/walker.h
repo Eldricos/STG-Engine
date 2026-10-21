@@ -75,6 +75,9 @@ public:
 	/** Without falling, the walker drops straight onto lower floors, as actors do. */
 	void setFalls(bool falls) { _falls = falls; }
 
+	/** Floors with any of these flags are ignored, e.g. LevelFile::kFlagNoActors. */
+	void setIgnoredFloors(uint32 flags) { _ignoredFloors = flags; }
+
 	/** With collision off the player walks through walls but keeps to floors. */
 	void setCollisionEnabled(bool enabled) { _collision = enabled; }
 	bool isCollisionEnabled() const { return _collision; }
@@ -107,7 +110,11 @@ public:
 	 * The highest floor under (x, y) in the given zones that is no higher
 	 * than maxHeight, or -1.
 	 */
-	int findFloor(double x, double y, double maxHeight, uint64 zones) const;
+	int findFloor(double x, double y, double maxHeight, uint64 zones) const {
+		return findFloor(x, y, maxHeight, zones, _ignoredFloors);
+	}
+	/** The same, skipping floors with any of ignoredFlags instead of setIgnoredFloors()'s. */
+	int findFloor(double x, double y, double maxHeight, uint64 zones, uint32 ignoredFlags) const;
 
 	struct Hit {
 		/** Fraction of the move before touching. */
@@ -149,6 +156,7 @@ private:
 	const std::vector<Obstacle> *_obstacles = nullptr;
 	int _ignoredObstacle = -1;
 	bool _falls = true;
+	uint32 _ignoredFloors = 0;
 	double _eyeHeight = kEyeHeight;
 	double _stepHeight = kStepHeight;
 	double _headroom = kHeadroom;

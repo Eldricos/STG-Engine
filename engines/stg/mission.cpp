@@ -62,8 +62,11 @@ Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &rend
 		_wallTextures.push_back(wall.texture);
 	for (const LevelFile::Sector &flat : level.getSectors())
 		_flatTextures.push_back(flat.texture);
-	for (const LevelFile::Billboard &billboard : level.getBillboards())
+	for (LevelFile::Billboard &billboard : level.getBillboards()) {
 		_billboardTextures.push_back(billboard.texture);
+		if (billboard.flags & LevelFile::kBillboardItem)
+			dropBillboard(billboard);
+	}
 }
 
 Mission::~Mission() {}
@@ -300,13 +303,39 @@ bool Mission::getPosition(uint16 id, Position &position) const {
 void Mission::setPosition(uint16 id, const Position &position) {
 	if (_actors && _actors->isActor(id))
 		_actors->setPosition(id, position.x, position.y, position.z, (uint16)(position.heading * 65536 / 360));
+	// Billboards ignore the position (0x4586D0): items just settle onto the
+	// floor again.
+	for (LevelFile::Billboard &b : _level.getBillboards()) {
+		if (isObject(b.objectId, kTypeBillboard, id) && (b.flags & LevelFile::kBillboardItem))
+			dropBillboard(b);
+	}
+}
+
+void Mission::dropAt(uint16 id, const Position &position) {
+	if (_actors && _actors->isActor(id))
+		_actors->setPosition(id, position.x, position.y, position.z, (uint16)(position.heading * 65536 / 360));
 	for (LevelFile::Billboard &b : _level.getBillboards()) {
 		if (isObject(b.objectId, kTypeBillboard, id)) {
 			b.x = toFixed(position.x);
 			b.y = toFixed(position.y);
 			b.z = toFixed(position.z);
+			dropBillboard(b);
 		}
 	}
+}
+
+void Mission::dropBillboard(LevelFile::Billboard &b) {
+	// 0x4B7AA0: the highest floor no more than 2 units above the
+	// billboard's base, passing over floors actors don't use either.
+	double z = fromFixed(b.z);
+	int floor = _walker.findFloor(fromFixed(b.x), fromFixed(b.y), z + 2, Walker::kAllZones, LevelFile::kFlagNoActors);
+	if (floor < 0)
+		return;
+	const LevelFile::Sector &flat = _level.getSectors()[floor];
+	b.zones = flat.zones;
+	b.light = flat.light;
+	if (!(b.flags & LevelFile::kBillboardFlyer))
+		b.z = flat.height;
 }
 
 void Mission::setVisible(uint16 id, bool visible) {
@@ -586,9 +615,9 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		uint16 id = (uint16)vm.pop();
 		uint16 where = (uint16)vm.pop();
 		Position position;
-		if (getPosition(where, position))
-			setPosition(id, position);
 		setVisible(id, true);
+		if (getPosition(where, position))
+			dropAt(id, position);
 		break;
 	}
 	case 0x72: // TRIGGER

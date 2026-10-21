@@ -356,11 +356,11 @@ heading in degrees.
   - SET_SKY_ENABLED
   - SET_ZONE_ON_MAP
 - **Positions:**
-  - SET_POSITION id, position
+  - SET_POSITION id, position: moves actors; billboards ignore it (`0x4586D0`), and items just settle again
   - GET_POSITION id (0 = the player)
   - SET_HEADING
   - DISTANCE_TO_PLAYER
-  - DROP_AT
+  - DROP_AT id, where: shows the object and moves it to the player (0) or an actor, items onto the floor there
   - TELEPORT_PLAYER position
   - PUSH_PLAYER
 - **The player:**
@@ -456,7 +456,7 @@ make rooms over rooms.
 | 0x60, 0x62 | i16 u and v scroll speeds |
 | 0x64, 0x66, 0x68 | lighting: i16 light group, u16 brightness, byte light level (see Lighting) |
 | 0x69 | byte record kind: 2 on floors and 3 on ceilings |
-| 0x6C | u32 flags: 0x100 visible, 0x100000 ceiling, 0x4000 extra pass (`0x4C8120`), 0x1 left out of the zone lists, 0x1000 special floor (the player isn't lifted onto it) |
+| 0x6C | u32 flags: 0x100 visible, 0x100000 ceiling, 0x4000 extra pass (`0x4C8120`), 0x1 left out of the zone lists, 0x1000 not a floor for actors and items: their ground searches (`0x4B6AB0` callers `0x4C3AC0`, `0x4B7AA0`) pass over it |
 | 0x74 | u64 zones in play while standing on this floor |
 | 0x7C | 16 bytes per vertex: an edge plane a, c, d (a·x + c·y + d = 0) at +0, +8 and +12; +4 receives the transformed vertex's address at load time |
 | 0xFC | animation start time (run time) |
@@ -496,6 +496,13 @@ confirms the u and v fields.
 **Billboards** (type 5) stand at x +0x1C, z +0x20, y +0x24. They are
 2 × (+0x34) wide and +0x38 high, with the texture id at u16 +0x8A and the
 frame count at +0x86. Lighting is at +0x64..+0x68, as for flats (record kind 4 or 5).
+
+Billboards with flag 0x400000 are **items** (record kind 5). The level keeps
+the ones not yet in play in a storage room off the map, in a zone of their
+own. At the start (`0x4BDD70`) and whenever a script puts one somewhere,
+`0x4B7AA0` drops it onto the highest floor no more than 2 units above its
+base, passing over floors with flag 0x1000. It takes that floor's zones and
+light, so it is drawn wherever it lands. Flag 0x1000000 keeps its height.
 
 **Sky** (type 12, id 0) is a 64-byte header followed by an image stored
 row by row. The header holds the data size at +16 and the height at +24;

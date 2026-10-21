@@ -86,13 +86,13 @@ void Walker::move(double dx, double dy, double seconds) {
 	followFloor(seconds);
 }
 
-int Walker::findFloor(double x, double y, double maxHeight, uint64 zones) const {
+int Walker::findFloor(double x, double y, double maxHeight, uint64 zones, uint32 ignoredFlags) const {
 	int best = -1;
 	double bestHeight = 0;
 	const std::vector<LevelFile::Sector> &flats = _level.getSectors();
 	for (size_t i = 0; i < flats.size(); i++) {
 		const LevelFile::Sector &flat = flats[i];
-		if (flat.isCeiling() || flat.vertices.size() < 3 || !(flat.zones & zones))
+		if (flat.isCeiling() || flat.vertices.size() < 3 || !(flat.zones & zones) || (flat.flags & ignoredFlags))
 			continue;
 		double h = fromFixed(flat.height);
 		if (h > maxHeight || (best >= 0 && h <= bestHeight))

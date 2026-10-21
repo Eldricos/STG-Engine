@@ -145,7 +145,11 @@ private:
 	static void pushPosition(ScriptVM &vm, const Position &position);
 
 	bool getPosition(uint16 id, Position &position) const;
+	/** SET_POSITION: actors move; billboards stay put (items settle onto the floor). */
 	void setPosition(uint16 id, const Position &position);
+	/** DROP_AT: move an actor or billboard to a position, billboards onto the floor there. */
+	void dropAt(uint16 id, const Position &position);
+	void dropBillboard(LevelFile::Billboard &billboard);
 	void setVisible(uint16 id, bool visible);
 	void setTexture(uint16 id, uint16 texture, uint16 frames, uint16 speed);
 	void restoreTexture(uint16 id);

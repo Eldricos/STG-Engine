@@ -91,13 +91,15 @@ Actors::Actors(const LevelFile &level, const Walker &prototype, const SpriteLoad
 		actor->mode = data.mode;
 		actor->homeX = actor->x = fromFixed(data.x);
 		actor->homeY = actor->y = fromFixed(data.y);
-		actor->z = fromFixed(data.z);
+		// The file's z includes the draw offset (0x4BE361).
+		actor->z = fromFixed(data.z) - fromFixed(data.drawOffset);
 		Walker &walker = actor->walker;
 		walker.setRadius(fromFixed(data.radius));
 		walker.setStepHeight(fromFixed(data.stepHeight));
 		walker.setEyeHeight(fromFixed(data.bodyHeight));
 		walker.setHeadroom(0);
 		walker.setFalls(false);
+		walker.setIgnoredFloors(LevelFile::kFlagNoActors);
 		walker.setObstacles(&_obstacles, (int)_actors.size());
 		walker.place(actor->x, actor->y, actor->z);
 		if (!(data.flags & kFlagFlyer) && walker.getFloor() >= 0)
