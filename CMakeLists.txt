@@ -12,7 +12,8 @@ endif()
 
 option(STG_ENABLE_STG "Build the Star Trek: Generations engine" ON)
 option(STG_BUILD_TESTS "Build the unit tests" ON)
-option(STG_VENDORED_SDL "Download and build SDL3 instead of using an installed copy" OFF)
+option(STG_VENDORED_SDL "Always download and build SDL3, even if an installed copy exists" OFF)
+option(STG_DOWNLOAD_SDL "Download and build SDL3 if no installed copy is found" ON)
 
 if(MSVC)
 	add_compile_options(/W4 /wd4100 /wd4244 /wd4267 /D_CRT_SECURE_NO_WARNINGS)
