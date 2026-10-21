@@ -147,9 +147,10 @@ TEST(level_texture_is_column_major) {
 	CHECK_EQ(texture.flags, 0x40);
 	CHECK_EQ(texture.surface.w, 2);
 	CHECK_EQ(texture.surface.h, 3);
-	CHECK_EQ(texture.surface.getPixel(0, 0), 10u);
-	CHECK_EQ(texture.surface.getPixel(0, 2), 12u);
-	CHECK_EQ(texture.surface.getPixel(1, 0), 13u);
+	// Each column is stored bottom first.
+	CHECK_EQ(texture.surface.getPixel(0, 2), 10u);
+	CHECK_EQ(texture.surface.getPixel(0, 0), 12u);
+	CHECK_EQ(texture.surface.getPixel(1, 2), 13u);
 	CHECK(!level.loadTexture(8, texture));
 }
 

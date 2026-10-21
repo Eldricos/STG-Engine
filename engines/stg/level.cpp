@@ -353,7 +353,8 @@ bool LevelFile::loadTexture(uint16 id, Texture &texture) const {
 		return false;
 
 	// 12 bytes reserved for pointers, then id, width, height and flags;
-	// pixels are column-major, followed by 3 bytes of hints per column.
+	// pixels are column-major, each column bottom first, followed by 3
+	// bytes of hints per column.
 	const byte *p = &_data[entry->offset];
 	uint16 width = READ_LE_UINT16(p + 14);
 	uint16 height = READ_LE_UINT16(p + 16);
@@ -368,7 +369,7 @@ bool LevelFile::loadTexture(uint16 id, Texture &texture) const {
 	const byte *pixels = p + kTextureHeaderSize;
 	for (int x = 0; x < width; x++) {
 		for (int y = 0; y < height; y++)
-			texture.surface.setPixel(x, y, pixels[x * height + y]);
+			texture.surface.setPixel(x, height - 1 - y, pixels[x * height + y]);
 	}
 	return true;
 }

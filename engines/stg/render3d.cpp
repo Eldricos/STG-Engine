@@ -243,7 +243,8 @@ void LevelRenderer::drawFlats(Graphics::Surface &dst, uint32 time) {
 			Vertex v;
 			toCamera(x, y, height, v);
 			v.u = (x * c + y * s) * uScale + uOffset;
-			v.v = (y * c - x * s) * vScale + vOffset;
+			// Stored rows count up from the bottom of the picture.
+			v.v = -((y * c - x * s) * vScale + vOffset);
 			poly.push_back(v);
 		}
 		drawPolygon(poly, getTexture(flat.texture, flat.frames, flat.speed, time),
@@ -281,7 +282,10 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 			if (mirror)
 				std::swap(u1, u2);
 		}
-		double v1 = fromFixed(wall.vStart), v2 = v1 + fromFixed(wall.vLength);
+		// v counts up from the bottom edge and from the bottom row of the
+		// texture, so walls stacked on one line carry a picture on from one
+		// to the next. Rows are stored top first: row = -v, wrapped.
+		double v1 = -fromFixed(wall.vStart) - fromFixed(wall.vLength), v2 = -fromFixed(wall.vStart);
 
 		poly.resize(4);
 		toCamera(x1, y1, top, poly[0]);

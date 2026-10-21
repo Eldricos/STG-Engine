@@ -122,8 +122,9 @@ public:
 		int32 bottom;
 		/**
 		 * Texture coordinates in texels (16.16): u runs from uStart at
-		 * vertex1 to uStart + uLength at vertex2, v from vStart at the top
-		 * to vStart + vLength at the bottom.
+		 * vertex1 to uStart + uLength at vertex2, v from vStart at the
+		 * bottom edge up to vStart + vLength at the top, counting rows from
+		 * the bottom of the texture.
 		 */
 		int32 uStart;
 		int32 uLength;

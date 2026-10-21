@@ -477,7 +477,7 @@ the camera is below it.
 | 0x20 | the heading of vertex 1 to vertex 2 in turns (0x10000 = 360°); scripts that turn objects rebuild the line from it (`0x4B7670`) |
 | 0x2C, 0x30 | heights of the top and bottom edges |
 | 0x44, 0x48 | u at the first vertex, and u length in texels along the wall |
-| 0x4C, 0x50 | v at the top, and v length in texels down the wall |
+| 0x4C, 0x50 | v at the bottom edge, and v length in texels up the wall; v counts rows from the bottom of the texture. Walls stacked on one line continue each other this way (verid1 and halee1 have 17 such pairs, none the other way round) |
 | 0x62 | i16 v scroll speed |
 | 0x64, 0x66, 0x68 | lighting, as for flats |
 | 0x69 | byte record kind, 1 |
@@ -533,7 +533,7 @@ view angle; the reimplementation tiles it at one sky pixel per screen pixel.
 
 **Textures** have a 20-byte header: 12 zero bytes (pointers filled in at
 run time), then u16 id, width, height and flags. Then come width × height
-pixels stored column by column, each column top first, and 3 × width bytes
+pixels stored column by column, each column bottom first (billboard pictures that stand on the ground fill the first stored row; in verid1, halee1, amargos1 and arvada1, 85 do and 11 fill the last instead), and 3 × width bytes
 of per-column hints like GS2's. Flag 1 means the texture has no hints. Palette index 255
 (magenta) is transparent.
 
