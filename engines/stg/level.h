@@ -112,7 +112,7 @@ public:
 		/**
 		 * Line equation: normalX * x + normalY * y + distance = 0, with a unit
 		 * normal (16.16), from offsets 28, 36 and 40. The renderer uses it
-		 * to cull walls facing away unless flag 0xC0 (two-sided) is set.
+		 * to cull walls facing away unless kWallTwoSided is set.
 		 */
 		int32 normalX;
 		int32 normalY;
@@ -127,6 +127,13 @@ public:
 		 */
 		int32 uStart;
 		int32 uLength;
+		/**
+		 * u offsets from uStart for the ends, when either is non-zero (0x70,
+		 * 0x74), for a texture that runs on along a strip of walls. The
+		 * renderer works out which end gets which.
+		 */
+		int32 uEnd1 = 0;
+		int32 uEnd2 = 0;
 		int32 vStart;
 		int32 vLength;
 		uint16 texture;
@@ -144,6 +151,14 @@ public:
 		bool fullbright = false;
 	};
 
+	/**
+	 * Wall flag: drawn from behind too (0x4C936A); otherwise only from the
+	 * front. From behind, 0x4000 alone only hides what is past the wall.
+	 */
+	static const uint32 kWallTwoSided = 0x8000;
+	/** The texture runs the other way (0x4C9393); from behind, kWallMirrorBack flips it again. */
+	static const uint32 kWallMirror = 0x20;
+	static const uint32 kWallMirrorBack = 0x40000;
 	/** Wall flag: blocks movement from behind as well as from the front. */
 	static const uint32 kWallSolidBothSides = 0x8000;
 

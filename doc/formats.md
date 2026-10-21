@@ -474,7 +474,7 @@ the camera is below it.
 | Offset | Meaning |
 |--------|---------|
 | 0x1C, 0x24, 0x28 | line nx·x + ny·y + d = 0 with a unit normal, used to cull walls facing away |
-| 0x20 | unknown, 0 to 0.87 |
+| 0x20 | the heading of vertex 1 to vertex 2 in turns (0x10000 = 360°); scripts that turn objects rebuild the line from it (`0x4B7670`) |
 | 0x2C, 0x30 | heights of the top and bottom edges |
 | 0x44, 0x48 | u at the first vertex, and u length in texels along the wall |
 | 0x4C, 0x50 | v at the top, and v length in texels down the wall |
@@ -482,7 +482,9 @@ the camera is below it.
 | 0x64, 0x66, 0x68 | lighting, as for flats |
 | 0x69 | byte record kind, 1 |
 | 0x3C | u64 zones the wall is in |
-| 0x6C | u32 flags: 0x100 visible, 0xC0 drawn from both sides, 0x8000 blocks from both sides, 0x8 masked (has transparent texels), 0x4 unknown, 0x2000 set aside for script handling at `0x4B7DB5` |
+| 0x6C | u32 flags: 0x100 visible; a wall faces the side its normal points to (the right of vertex 1 to vertex 2) and is drawn only from there, unless 0x8000, which also blocks from both sides (0x4000 alone: unseen from behind but hides what is past it); 0x20 mirrors the texture, and seen from behind 0x40000 mirrors it again (`0x4C9393`); 0x40, 0x80 hide what is past the wall below or above it; 0x8 masked (has transparent texels), 0x4 unknown, 0x2000 set aside for script handling at `0x4B7DB5` |
+| 0x60 | i16 u scroll speed |
+| 0x70, 0x74 | u offsets of the ends for a texture running on along a strip of walls: from the front u0 − (+0x74) at vertex 1 and u0 − (+0x70) at vertex 2, added rather than taken away when mirrored; from behind +0x70 and +0x74 swap places |
 | 0x78 | extra thickness, added to the radius in one kind of collision test |
 | 0x7C, 0x80, 0x82, 0x84 | animation start time, speed, frame count, current frame |
 | 0x86, 0x88 | u16 vertex indices |

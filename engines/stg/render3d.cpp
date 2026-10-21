@@ -259,8 +259,28 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 			continue;
 		double x1 = fromFixed(vertices[wall.vertex1].x), y1 = fromFixed(vertices[wall.vertex1].y);
 		double x2 = fromFixed(vertices[wall.vertex2].x), y2 = fromFixed(vertices[wall.vertex2].y);
+		// Walls face the side their normal points to and, like the
+		// original, are only seen from there unless two-sided.
+		bool front = fromFixed(wall.normalX) * _camX + fromFixed(wall.normalY) * _camY + fromFixed(wall.distance) >= 0;
+		if (!front && !(wall.flags & LevelFile::kWallTwoSided))
+			continue;
 		double top = fromFixed(wall.top), bottom = fromFixed(wall.bottom);
-		double u1 = fromFixed(wall.uStart), u2 = u1 + fromFixed(wall.uLength);
+		// u at vertex 1 and vertex 2, as 0x4C9393 picks them.
+		bool mirror = (wall.flags & LevelFile::kWallMirror) != 0;
+		if (!front && (wall.flags & LevelFile::kWallMirrorBack))
+			mirror = !mirror;
+		double u0 = fromFixed(wall.uStart), u1, u2;
+		if (wall.uEnd1 || wall.uEnd2) {
+			double e1 = fromFixed(wall.uEnd1), e2 = fromFixed(wall.uEnd2);
+			double sign = front == mirror ? 1 : -1;
+			u1 = u0 + sign * (front ? e2 : e1);
+			u2 = u0 + sign * (front ? e1 : e2);
+		} else {
+			u1 = u0;
+			u2 = u0 + fromFixed(wall.uLength);
+			if (mirror)
+				std::swap(u1, u2);
+		}
 		double v1 = fromFixed(wall.vStart), v2 = v1 + fromFixed(wall.vLength);
 
 		poly.resize(4);

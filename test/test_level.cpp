@@ -75,11 +75,13 @@ std::vector<Chunk> makeSquareLevel() {
 	chunks.push_back(sectors);
 
 	Chunk walls = { STG::LevelFile::kChunkWalls, 1, 1, std::vector<byte>(152) };
-	WRITE_LE_UINT32(&walls.data[28], 0x10000);
+	// x = 2 from (2, 2) to (2, 0), facing into the square: the normal is
+	// on the right of vertex 1 to vertex 2, as in the game's levels.
+	WRITE_LE_UINT32(&walls.data[28], (uint32)-0x10000);
 	WRITE_LE_UINT32(&walls.data[36], 0);
-	WRITE_LE_UINT32(&walls.data[40], (uint32)-0x20000);
-	WRITE_LE_UINT16(&walls.data[134], 1);
-	WRITE_LE_UINT16(&walls.data[136], 2);
+	WRITE_LE_UINT32(&walls.data[40], 0x20000);
+	WRITE_LE_UINT16(&walls.data[134], 2);
+	WRITE_LE_UINT16(&walls.data[136], 1);
 	chunks.push_back(walls);
 
 	// A 2x3 texture, stored column by column.
@@ -123,10 +125,10 @@ TEST(level_tables) {
 
 	CHECK_EQ(level.getWalls().size(), (size_t)1);
 	const STG::LevelFile::Wall &wall = level.getWalls()[0];
-	CHECK_EQ(wall.vertex1, 1);
-	CHECK_EQ(wall.vertex2, 2);
-	CHECK_EQ(wall.normalX, 0x10000);
-	CHECK_EQ(wall.distance, -0x20000);
+	CHECK_EQ(wall.vertex1, 2);
+	CHECK_EQ(wall.vertex2, 1);
+	CHECK_EQ(wall.normalX, -0x10000);
+	CHECK_EQ(wall.distance, 0x20000);
 
 	CHECK(level.getChunkData(STG::LevelFile::kChunkWalls, 1).size() == 152);
 	CHECK(level.getChunkData(STG::LevelFile::kChunkWalls, 2).empty());
@@ -300,6 +302,38 @@ TEST(level_renderer_draws_floor_wall_and_sky) {
 	CHECK(isTexel(view.getPixel(57, 13)));
 	CHECK_EQ(view.getPixel(57, 4), 0x77u);
 	CHECK_EQ(view.getPixel(32, 0), 0x77u); // sky above the wall
+}
+
+TEST(level_renderer_wall_sides_and_mirroring) {
+	auto render = [](uint32 wallFlags, double x, double yaw, int px, int py) {
+		std::vector<Chunk> chunks = makeRenderableLevel();
+		WRITE_LE_UINT32(&chunks[3].data[0x6C], STG::LevelFile::kFlagVisible | wallFlags);
+		STG::LevelFile level;
+		loadLevel(level, makeLevelFile(chunks));
+		STG::LevelRenderer renderer(level);
+		STG::Camera camera;
+		camera.x = x;
+		camera.y = 1;
+		camera.z = 0.25;
+		camera.yaw = yaw;
+		Graphics::Surface view;
+		view.create(64, 32, Graphics::PixelFormat::createFormatCLUT8());
+		renderer.render(camera, view, 0);
+		return view.getPixel(px, py);
+	};
+	const double kPi = 3.14159265358979323846;
+	auto inColumn = [](uint32 c, int column) { return c >= 10u + column * 3 && c <= 12u + column * 3; };
+
+	// From the front, u runs from vertex 1 (on the left) to vertex 2;
+	// flag 0x20 turns it round.
+	CHECK(inColumn(render(0, 0.2, 0, 20, 17), 0));
+	CHECK(inColumn(render(0, 0.2, 0, 44, 17), 1));
+	CHECK(inColumn(render(STG::LevelFile::kWallMirror, 0.2, 0, 20, 17), 1));
+	CHECK(inColumn(render(STG::LevelFile::kWallMirror, 0.2, 0, 44, 17), 0));
+
+	// From behind only two-sided walls show; the sky is seen through others.
+	CHECK_EQ(render(0, 3.8, kPi, 32, 12), 0x77u);
+	CHECK(render(STG::LevelFile::kWallTwoSided, 3.8, kPi, 32, 12) != 0x77u);
 }
 
 TEST(level_light_levels) {

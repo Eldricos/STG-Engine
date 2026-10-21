@@ -149,6 +149,8 @@ bool LevelFile::loadTables() {
 		wall.bottom = (int32)READ_LE_UINT32(r + 0x30);
 		wall.uStart = (int32)READ_LE_UINT32(r + 0x44);
 		wall.uLength = (int32)READ_LE_UINT32(r + 0x48);
+		wall.uEnd1 = (int32)READ_LE_UINT32(r + 0x70);
+		wall.uEnd2 = (int32)READ_LE_UINT32(r + 0x74);
 		wall.vStart = (int32)READ_LE_UINT32(r + 0x4C);
 		wall.vLength = (int32)READ_LE_UINT32(r + 0x50);
 		wall.flags = READ_LE_UINT32(r + 0x6C);
