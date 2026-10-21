@@ -169,62 +169,100 @@ void ResourceManager::scan() {
 	_images.clear();
 	_sounds.clear();
 
-	Common::ArchiveMemberList members;
-	SearchMan.listMembers(members);
-	for (const Common::ArchiveMemberPtr &member : members) {
-		const Common::String &name = member->getName();
+	auto add = [this](const Common::String &archive, const Common::String &name) {
 		if (Common::hasSuffixIgnoreCase(name, ".bmp"))
-			_images.push_back(name);
+			_images.push_back({ archive, name });
 		else if (Common::hasSuffixIgnoreCase(name, ".wav"))
-			_sounds.push_back(name);
+			_sounds.push_back({ archive, name });
+	};
+
+	// Archives in name order, members in archive order.
+	for (const auto &entry : _archives) {
+		for (const Common::ZipArchive::Entry &member : entry.second->getEntries())
+			add(entry.first, member.name);
+	}
+
+	// Loose files in the data directories, if any.
+	for (const Common::FSNode &dir : _dataDirs) {
+		Common::FSDirectory files(dir, 2);
+		Common::ArchiveMemberList members;
+		files.listMembers(members);
+		for (const Common::ArchiveMemberPtr &member : members)
+			add("", member->getName());
 	}
 
 	debugC(1, "resources", "Found %d images and %d sounds", (int)_images.size(), (int)_sounds.size());
 }
 
 void ResourceManager::logInventory() const {
-	std::map<Common::String, std::pair<int, int64>> byExtension;
-
-	Common::ArchiveMemberList members;
-	SearchMan.listMembers(members);
-	for (const Common::ArchiveMemberPtr &member : members) {
-		Common::String name = member->getName();
-		size_t dot = name.rfind('.');
-		size_t slash = name.rfind('/');
-		Common::String ext = dot == Common::String::npos || (slash != Common::String::npos && dot < slash)
-		                         ? "(none)"
-		                         : Common::toUpper(name.substr(dot + 1));
-		std::unique_ptr<Common::SeekableReadStream> stream = member->createReadStream();
-		auto &entry = byExtension[ext];
-		entry.first++;
-		entry.second += stream ? stream->size() : 0;
+	for (const auto &entry : _archives) {
+		std::map<Common::String, int> byExtension;
+		for (const Common::ZipArchive::Entry &member : entry.second->getEntries()) {
+			size_t dot = member.name.rfind('.');
+			byExtension[dot == Common::String::npos ? "?" : Common::toUpper(member.name.substr(dot + 1))]++;
+		}
+		Common::String summary;
+		for (const auto &ext : byExtension)
+			summary += Common::format(" %d %s,", ext.second, ext.first.c_str());
+		summary.pop_back();
+		info("  %-12s%s", entry.first.c_str(), summary.c_str());
 	}
-
-	info("Game directory contains %d files:", (int)members.size());
-	for (const auto &entry : byExtension)
-		info("  %-8s %5d files %12lld bytes", entry.first.c_str(), entry.second.first, (long long)entry.second.second);
 }
 
-bool ResourceManager::loadImage(const Common::String &name, Image::BitmapDecoder &decoder) const {
-	Common::File file;
-	if (!file.open(name)) {
-		warning("Could not open image %s", name.c_str());
+bool ResourceManager::hasResource(const ResourceRef &ref) const {
+	if (ref.archive.empty())
+		return SearchMan.hasFile(ref.name);
+	std::shared_ptr<Common::ZipArchive> zip = getArchive(ref.archive);
+	return zip && zip->hasFile(ref.name);
+}
+
+std::unique_ptr<Common::SeekableReadStream> ResourceManager::open(const ResourceRef &ref) const {
+	if (ref.archive.empty())
+		return SearchMan.createReadStreamForMember(ref.name);
+	std::shared_ptr<Common::ZipArchive> zip = getArchive(ref.archive);
+	return zip ? zip->createReadStreamForMember(ref.name) : nullptr;
+}
+
+bool ResourceManager::loadImage(const ResourceRef &ref, Image::BitmapDecoder &decoder) const {
+	std::unique_ptr<Common::SeekableReadStream> stream = open(ref);
+	if (!stream) {
+		warning("Could not open image %s", ref.toString().c_str());
 		return false;
 	}
-	if (!decoder.loadStream(file)) {
-		warning("Could not decode image %s", name.c_str());
+	if (!decoder.loadStream(*stream)) {
+		warning("Could not decode image %s", ref.toString().c_str());
 		return false;
 	}
 	return true;
 }
 
-std::unique_ptr<Audio::RewindableAudioStream> ResourceManager::loadSound(const Common::String &name) const {
-	Common::File file;
-	if (!file.open(name)) {
-		warning("Could not open sound %s", name.c_str());
+std::unique_ptr<Audio::RewindableAudioStream> ResourceManager::loadSound(const ResourceRef &ref) const {
+	std::unique_ptr<Common::SeekableReadStream> stream = open(ref);
+	if (!stream) {
+		warning("Could not open sound %s", ref.toString().c_str());
 		return nullptr;
 	}
-	return Audio::makeWAVStream(file);
+	return Audio::makeWAVStream(*stream);
+}
+
+Common::String ResourceManager::loadSubtitle(const ResourceRef &soundRef) const {
+	size_t dot = soundRef.name.rfind('.');
+	if (dot == Common::String::npos)
+		return Common::String();
+	// Archive lookups ignore case, so ".TXT" matches either spelling.
+	Common::String base = soundRef.name.substr(0, dot);
+	ResourceRef textRef = { soundRef.archive, base + ".TXT" };
+	std::unique_ptr<Common::SeekableReadStream> stream = open(textRef);
+	if (!stream)
+		return Common::String();
+
+	Common::String text;
+	while (!stream->eos()) {
+		Common::String line = Common::trim(stream->readLine());
+		if (!line.empty())
+			text += (text.empty() ? "" : " ") + line;
+	}
+	return text;
 }
 
 } // End of namespace STG

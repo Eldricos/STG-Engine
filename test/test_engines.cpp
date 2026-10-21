@@ -16,6 +16,7 @@
 #include "engines/detection.h"
 #include "engines/engine.h"
 #include "engines/metaengine.h"
+#include "engines/stg/font.h"
 #include "engines/stg/resources.h"
 
 namespace {
@@ -163,7 +164,8 @@ TEST(stg_engine_runs_headless) {
 
 	// The image from the game directory is shown centred, with its palette
 	// loaded over the viewer's own (which keeps orange in entry 254).
-	CHECK_EQ(system.getScreen().getPixel(320, 240), 1u);
+	// A 2x2 image is enlarged 3x and centred above the 60 pixel text panel.
+	CHECK_EQ(system.getScreen().getPixel(320, 210), 1u);
 	CHECK_EQ(system.getScreen().getPixel(8, 100), 0u);
 	CHECK_EQ(system.getPalette()[1 * 3 + 1], 128);
 	CHECK_EQ(system.getPalette()[254 * 3], 255);
@@ -218,5 +220,70 @@ TEST(stg_two_cd_search_paths) {
 	CHECK_EQ(f.readFixedString(3), Common::String("cd2"));
 	CHECK(f.open("SGENS.EXE"));
 
+	SearchMan.clear();
+}
+
+TEST(stg_font_format) {
+	// Built to the layout seen in COMMON.DAT:FONTS/ACTION.FNT: header, then
+	// glyphs of code, size (w*h+2), width, height and pixels.
+	Common::MemoryWriteStreamDynamic glyphs;
+	auto addGlyph = [&](uint16 code, byte w, byte h, std::vector<byte> pixels) {
+		glyphs.writeUint16LE(code);
+		glyphs.writeUint16LE((uint16)(w * h + 2));
+		glyphs.writeByte(w);
+		glyphs.writeByte(h);
+		glyphs.write(pixels.data(), (uint32)pixels.size());
+	};
+	addGlyph(' ', 2, 3, { 0, 0, 0, 0, 0, 0 });
+	addGlyph('A', 2, 2, { 5, 0, 0, 6 });
+
+	Common::MemoryWriteStreamDynamic file;
+	file.writeUint32BE(MKTAG('F', 'O', 'N', 'T'));
+	file.writeUint32LE(8 + glyphs.size());
+	file.writeUint16LE(2);
+	file.writeByte(0); // transparent
+	file.writeByte(3); // height
+	file.writeUint32LE(0);
+	file.write(glyphs.getData().data(), glyphs.size());
+
+	Common::MemoryReadStream stream(file.getData().data(), file.size());
+	STG::Font font;
+	CHECK(font.load(stream));
+	CHECK_EQ(font.getGlyphCount(), 2);
+	CHECK_EQ(font.getHeight(), 3);
+	CHECK_EQ(font.getStringWidth("A A"), 6);
+	CHECK_EQ(font.getCharWidth('a'), 2); // falls back to upper case
+
+	Graphics::Surface s;
+	s.create(8, 4, Graphics::PixelFormat::createFormatCLUT8());
+	s.fillRect(Common::Rect(8, 4), 9);
+	font.drawString(s, " A", 0, 0);
+	CHECK_EQ(s.getPixel(0, 0), 9u); // space is transparent
+	CHECK_EQ(s.getPixel(2, 0), 5u);
+	CHECK_EQ(s.getPixel(3, 0), 9u);
+	CHECK_EQ(s.getPixel(3, 1), 6u);
+	font.drawString(s, "A", 4, 0, 1);
+	CHECK_EQ(s.getPixel(4, 0), 1u); // colour override
+
+	CHECK_EQ(font.wordWrap("A A A A", 7).size(), (size_t)2);
+
+	// A glyph whose size field disagrees with its dimensions is rejected.
+	std::vector<byte> bad = file.getData();
+	bad[20] = 99;
+	Common::MemoryReadStream badStream(bad.data(), (uint32)bad.size());
+	CHECK(!font.load(badStream));
+}
+
+TEST(stg_subtitles) {
+	Test::TempDir dir;
+	dir.writeFile("SOUNDS/RIKE0107.WAV", "RIFF");
+	dir.writeFile("SOUNDS/rike0107.txt", "RIKER: \"CAPTAIN, WE'VE GOT\r\nA SERIOUS SITUATION.\"\r\n");
+	SearchMan.clear();
+	SearchMan.addDirectory("data", dir.node(), 0, 2);
+
+	STG::ResourceManager resources;
+	CHECK_EQ(resources.loadSubtitle({ "", "SOUNDS/RIKE0107.WAV" }),
+	         Common::String("RIKER: \"CAPTAIN, WE'VE GOT A SERIOUS SITUATION.\""));
+	CHECK(resources.loadSubtitle({ "", "SOUNDS/MISC0001.WAV" }).empty());
 	SearchMan.clear();
 }

@@ -11,6 +11,7 @@
 
 #include <map>
 #include <memory>
+#include <vector>
 
 #include "common/audio/audiostream.h"
 #include "common/fs.h"
@@ -25,9 +26,18 @@ namespace STG {
  *
  * The game's data lives in ZIP archives (*.DAT, MUSIC.1/2) in the
  * installed DATA folder and on the CDs. Decoders for the formats inside
- * them belong here as they are reverse engineered. The viewer currently
- * only understands standard Windows formats (BMP, WAV).
+ * them belong here as they are reverse engineered. Images are 8-bit BMPs,
+ * speech and music are PCM WAVs, and each speech sample has a .TXT
+ * subtitle beside it.
  */
+/** A resource inside a data archive, or a loose file if archive is empty. */
+struct ResourceRef {
+	Common::String archive;
+	Common::String name;
+
+	Common::String toString() const { return archive.empty() ? name : archive + ":" + name; }
+};
+
 class ResourceManager {
 public:
 	/**
@@ -50,23 +60,33 @@ public:
 	/** A data archive by file name, e.g. "VERID1.DAT", or nullptr if missing. */
 	std::shared_ptr<Common::ZipArchive> getArchive(const Common::String &name) const;
 
+	/** Index every image and sound, in the archives and as loose files. */
 	void scan();
 
-	const Common::StringArray &getImages() const { return _images; }
-	const Common::StringArray &getSounds() const { return _sounds; }
+	const std::vector<ResourceRef> &getImages() const { return _images; }
+	const std::vector<ResourceRef> &getSounds() const { return _sounds; }
 
-	/** Log a summary of what the game directory contains, by extension. */
+	/** Log a summary of each archive's contents by file type. */
 	void logInventory() const;
 
-	bool loadImage(const Common::String &name, Image::BitmapDecoder &decoder) const;
-	std::unique_ptr<Audio::RewindableAudioStream> loadSound(const Common::String &name) const;
+	bool hasResource(const ResourceRef &ref) const;
+	std::unique_ptr<Common::SeekableReadStream> open(const ResourceRef &ref) const;
+
+	bool loadImage(const ResourceRef &ref, Image::BitmapDecoder &decoder) const;
+	std::unique_ptr<Audio::RewindableAudioStream> loadSound(const ResourceRef &ref) const;
+
+	/**
+	 * The subtitle for a speech sample: the text of the .TXT file next to
+	 * it (e.g. SOUNDS/RIKE0107.TXT for SOUNDS/RIKE0107.WAV), or empty.
+	 */
+	Common::String loadSubtitle(const ResourceRef &soundRef) const;
 
 private:
 	/** Installed DATA folder, then each disc's GENS folder. */
 	std::vector<Common::FSNode> _dataDirs;
 	std::map<Common::String, std::shared_ptr<Common::ZipArchive>> _archives;
-	Common::StringArray _images;
-	Common::StringArray _sounds;
+	std::vector<ResourceRef> _images;
+	std::vector<ResourceRef> _sounds;
 };
 
 } // End of namespace STG

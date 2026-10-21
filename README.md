@@ -20,12 +20,14 @@ The framework is in place and working:
 | `engines/stg`: detection, resource index, screen, save/load, and a viewer for the game's BMP/WAV files | Done |
 | `common/`: ZIP archives (stored and deflated, with our own DEFLATE decoder) | Done |
 | `engines/stg`: open the game's `.DAT`/`MUSIC.*` archives (they are ZIP files) | Done |
+| `engines/stg`: images (BMP), speech and music (WAV), subtitles (TXT), fonts (`.FNT`) | Done |
+| `engines/stg`: animations (`.OVR`), scripts (`GAME.BIN`), levels (`GAME.LV2`), `.GS2`/`.GSF` | Not started: format unknown |
 | `engines/stg`: the formats inside the archives, scripts, scenes, combat | **Not started**: needs reverse engineering |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
 
-Right now, running the engine against a game directory lists what's there,
-lets you browse any `.BMP` images and play any `.WAV` sounds, and otherwise
-shows a test pattern. The 2 CD Windows release is in the detection table.
+Right now, the engine runs as a viewer for the game's data. You can browse
+every image in its archives, and play every speech line and music track, with
+speech subtitles drawn in the game's own font. The 2 CD Windows release is in the detection table.
 Other versions are found by a fallback that looks for an executable mentioning
 "Generations", and reported as unknown versions.
 
@@ -96,6 +98,7 @@ stg stg-win                      # run a remembered target
 stg --detect --path=...          # only report what is detected
 stg --dump-files --path=...      # file sizes and detection checksums
 stg --probe --path=...           # identify each file's format; hex dump unknown ones
+stg --extract --path=X.DAT --pattern='*.OVR' -o DIR   # extract files from an archive
 stg --help                       # every option
 ```
 
@@ -105,8 +108,9 @@ Useful options: `-f` for fullscreen, `--filtering`, `--integer-scaling`,
 recognise.
 
 In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
-The current viewer also uses Left/Right to browse images, Space to play the next
-sound, click for a test tone, F5/F7 to save/load, and Esc to quit.
+In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
+archives. Up/Down steps through sounds and Space replays the current one. Home
+returns to the starfield, F5/F7 save and load, and Esc quits.
 
 Settings and saves go in the per-user directory SDL picks for the platform:
 `~/.local/share/STG-Engine/stg/` on Linux, `%APPDATA%\STG-Engine\stg\` on
@@ -130,8 +134,10 @@ The real work is reverse engineering the original game, then filling in
    `MUSIC.*` files are plain ZIP archives, which `common/zip.h` reads.
    `stg --probe --path=<file>.DAT` lists an archive's members and identifies
    or hex dumps one member of each file type.
-2. **Inner formats.** Work out the file types inside the archives, starting
-   with those in `COMMON.DAT`.
+2. **Inner formats.** Most are standard (BMP, WAV, TXT) and the `FONT` format is
+   decoded (see `engines/stg/font.h`). Still unknown: `OVERLAY` animations
+   (`.OVR`), the `SGEN` script (`GAME.BIN`), level data (`GAME.LV2`), and
+   `.GS2`/`.GSF`.
 3. **Graphics and video.** Decode the sprite, background and palette formats
    into `Graphics::Surface`s, and add AVI and Cinepak decoders for the cutscenes.
 4. **Sound and music.** Add an `Audio::AudioStream` for each audio encoding the

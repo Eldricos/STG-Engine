@@ -33,6 +33,7 @@ const byte kColorWhite = 255;
 const byte kColorFrame = 254;
 
 const int kNumStars = 400;
+const int kTextPanelHeight = 60;
 const double kPi = 3.14159265358979323846;
 
 } // End of anonymous namespace
@@ -55,12 +56,15 @@ Common::Error STGEngine::run() {
 	_resources.openArchives();
 	_resources.scan();
 	_resources.logInventory();
+	loadFont();
 
 	if (_game.unknownVariant)
 		warning("This version of %s is not known; only the resource viewer is available", _game.description.c_str());
 
-	info("Controls: Left/Right = browse images, Space = play next sound, click = test tone,");
-	info("          F5 = save, F7 = load, Alt+Enter = fullscreen, Esc = quit");
+	info("%d images and %d sounds found", (int)_resources.getImages().size(), (int)_resources.getSounds().size());
+	info("Controls: Left/Right = image, PgUp/PgDn = archive, Up/Down = sound, Space = replay sound,");
+	info("          Home = starfield, click = test tone, F5/F7 = save/load, Alt+Enter = fullscreen, Esc = quit");
+	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";
 
 	for (int i = 0; i < kNumStars; i++)
 		_stars.push_back({ (int32)_random.getRandomNumberRng(0, 2000) - 1000,
@@ -122,6 +126,13 @@ void STGEngine::initCursor() {
 	_system->showMouse(true);
 }
 
+void STGEngine::loadFont() {
+	ResourceRef ref = { "COMMON.DAT", "FONTS/ACTION.FNT" };
+	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+	if (!stream || !_font.load(*stream))
+		warning("Could not load %s; text will not be shown", ref.toString().c_str());
+}
+
 void STGEngine::handleEvent(const Common::Event &event) {
 	switch (event.type) {
 	case Common::EVENT_KEYDOWN:
@@ -135,8 +146,23 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		case Common::KEYCODE_LEFT:
 			showImage(_imageIndex - 1);
 			break;
-		case Common::KEYCODE_SPACE:
+		case Common::KEYCODE_PAGEDOWN:
+			jumpArchive(1);
+			break;
+		case Common::KEYCODE_PAGEUP:
+			jumpArchive(-1);
+			break;
+		case Common::KEYCODE_DOWN:
 			playSound(_soundIndex + 1);
+			break;
+		case Common::KEYCODE_UP:
+			playSound(_soundIndex - 1);
+			break;
+		case Common::KEYCODE_SPACE:
+			playSound(std::max(_soundIndex, 0));
+			break;
+		case Common::KEYCODE_HOME:
+			showStarfield();
 			break;
 		case Common::KEYCODE_F5: {
 			Common::Error err = saveGameState(0, "Quick save");
@@ -171,27 +197,58 @@ void STGEngine::handleEvent(const Common::Event &event) {
 }
 
 void STGEngine::drawFrame(uint32 delta) {
+	// Clear the subtitle once its line has finished playing.
+	if (!_subtitle.empty() && !_mixer->isSoundHandleActive(_soundHandle)) {
+		_subtitle.clear();
+		_dirty = true;
+	}
+
 	if (_imageLoaded) {
 		// Static image: only redraw when something changed.
 		if (!_dirty) {
 			_system->updateScreen();
 			return;
 		}
-		_screen->clear(kColorBlack);
-		if (_image.hasPalette()) {
-			_screen->getPalette().set(_image.getPalette().data(), 0, _image.getPaletteColorCount());
-			_screen->applyPalette();
-		}
-		_screen->drawCentered(_image.getSurface());
+		_screen->clear(_screen->getPalette().findBestColor(0, 0, 0));
+		_screen->drawImage(_image.getSurface(), Screen::kHeight - kTextPanelHeight);
 	} else {
 		_screen->clear(kColorBlack);
 		drawStarfield(delta);
 		Graphics::Surface &s = _screen->getSurface();
-		s.frameRect(Common::Rect(8, 8, Screen::kWidth - 8, Screen::kHeight - 8), kColorFrame);
+		s.frameRect(Common::Rect(8, 8, Screen::kWidth - 8, Screen::kHeight - kTextPanelHeight - 8), kColorFrame);
 	}
 
+	drawTextPanel();
 	_screen->update();
 	_dirty = false;
+}
+
+void STGEngine::drawTextPanel() {
+	if (!_font.isLoaded())
+		return;
+
+	// Colours from whatever palette is current, so text stays readable
+	// over every image.
+	const Graphics::Palette &pal = _screen->getPalette();
+	byte background = pal.findBestColor(0, 0, 0);
+	byte highlight = pal.findBestColor(255, 153, 0);
+	byte text = pal.findBestColor(255, 255, 255);
+
+	Graphics::Surface &s = _screen->getSurface();
+	int top = Screen::kHeight - kTextPanelHeight;
+	s.fillRect(Common::Rect(0, top, Screen::kWidth, Screen::kHeight), background);
+	s.hLine(0, top, Screen::kWidth - 1, highlight);
+
+	const int margin = 8;
+	int y = top + 4;
+	_font.drawString(s, _status, margin, y, highlight);
+	y += _font.getHeight();
+	for (const Common::String &line : _font.wordWrap(_subtitle, Screen::kWidth - 2 * margin)) {
+		if (y + _font.getHeight() > Screen::kHeight)
+			break;
+		_font.drawString(s, line, margin, y, text);
+		y += _font.getHeight();
+	}
 }
 
 void STGEngine::drawStarfield(uint32 delta) {
@@ -219,27 +276,61 @@ void STGEngine::drawStarfield(uint32 delta) {
 }
 
 void STGEngine::showImage(int index) {
-	const Common::StringArray &images = _resources.getImages();
+	const std::vector<ResourceRef> &images = _resources.getImages();
 	if (images.empty())
 		return;
 
 	int count = (int)images.size();
 	index = ((index % count) + count) % count;
 	_imageIndex = index;
-	_imageLoaded = _resources.loadImage(images[index], _image);
-	if (!_imageLoaded) {
-		// Back to the test pattern, which needs its own palette.
-		initPalette();
-	} else if (!_image.hasPalette()) {
+	const ResourceRef &ref = images[index];
+	_imageLoaded = _resources.loadImage(ref, _image);
+
+	if (_imageLoaded && _image.hasPalette()) {
+		_screen->getPalette().set(_image.getPalette().data(), 0, _image.getPaletteColorCount());
+		_screen->applyPalette();
+	} else {
 		initPalette();
 	}
-	info("Image %d/%d: %s (%dx%d %s)", index + 1, count, images[index].c_str(), _image.getSurface().w,
-	     _image.getSurface().h, _image.getSurface().format.toString().c_str());
+
+	const Graphics::Surface &surf = _image.getSurface();
+	_status = Common::format("%d/%d  %s  %dx%d", index + 1, count, ref.toString().c_str(), surf.w, surf.h);
+	if (!_imageLoaded)
+		_status += "  (could not decode)";
+	info("Image %s", _status.c_str());
+	_dirty = true;
+}
+
+void STGEngine::jumpArchive(int direction) {
+	const std::vector<ResourceRef> &images = _resources.getImages();
+	if (images.empty())
+		return;
+
+	// Index of the first image of each archive.
+	std::vector<int> starts;
+	for (int i = 0; i < (int)images.size(); i++) {
+		if (i == 0 || images[i].archive != images[i - 1].archive)
+			starts.push_back(i);
+	}
+
+	int current = std::max(_imageIndex, 0);
+	int group = 0;
+	while (group + 1 < (int)starts.size() && starts[group + 1] <= current)
+		group++;
+	int n = (int)starts.size();
+	showImage(starts[((group + direction) % n + n) % n]);
+}
+
+void STGEngine::showStarfield() {
+	_imageLoaded = false;
+	_imageIndex = -1;
+	initPalette();
+	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";
 	_dirty = true;
 }
 
 void STGEngine::playSound(int index) {
-	const Common::StringArray &sounds = _resources.getSounds();
+	const std::vector<ResourceRef> &sounds = _resources.getSounds();
 	if (sounds.empty()) {
 		playBeep(440);
 		return;
@@ -248,14 +339,23 @@ void STGEngine::playSound(int index) {
 	int count = (int)sounds.size();
 	index = ((index % count) + count) % count;
 	_soundIndex = index;
+	const ResourceRef &ref = sounds[index];
 
-	std::unique_ptr<Audio::RewindableAudioStream> stream = _resources.loadSound(sounds[index]);
+	std::unique_ptr<Audio::RewindableAudioStream> stream = _resources.loadSound(ref);
 	if (!stream)
 		return;
-	info("Sound %d/%d: %s (%d Hz, %s)", index + 1, count, sounds[index].c_str(), stream->getRate(),
-	     stream->isStereo() ? "stereo" : "mono");
+
+	bool music = Common::matchString(ref.archive, "MUSIC.*");
+	_subtitle = music ? Common::String() : _resources.loadSubtitle(ref);
+	Common::String desc = Common::format("Sound %d/%d: %s", index + 1, count, ref.toString().c_str());
+	info("%s%s%s", desc.c_str(), _subtitle.empty() ? "" : " - ", _subtitle.c_str());
+	if (_subtitle.empty())
+		_subtitle = desc;
+
 	_mixer->stopHandle(_soundHandle);
-	_mixer->playStream(Audio::Mixer::kSFXSoundType, &_soundHandle, std::move(stream));
+	_mixer->playStream(music ? Audio::Mixer::kMusicSoundType : Audio::Mixer::kSpeechSoundType, &_soundHandle,
+	                   std::move(stream));
+	_dirty = true;
 }
 
 void STGEngine::playBeep(int frequency) {
