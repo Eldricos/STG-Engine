@@ -126,14 +126,21 @@ FSNode FSNode::getParent() const {
 
 FSNode FSNode::getChild(const String &name) const {
 	fs::path exact = _path / fs::u8path(name);
-	std::error_code ec;
-	if (fs::exists(exact, ec))
-		return FSNode(exact);
 
+	// Always consult the directory listing rather than testing the path:
+	// on case-insensitive file systems (Windows, macOS) the requested
+	// spelling "exists" too, but we want the name as stored on disk.
+	std::error_code ec;
+	fs::path match;
 	for (const fs::directory_entry &entry : fs::directory_iterator(_path, ec)) {
-		if (equalsIgnoreCase(entry.path().filename().u8string(), name))
+		Common::String entryName = entry.path().filename().u8string();
+		if (entryName == name)
 			return FSNode(entry.path());
+		if (match.empty() && equalsIgnoreCase(entryName, name))
+			match = entry.path();
 	}
+	if (!match.empty())
+		return FSNode(match);
 
 	// Not found: return the exact path so it can be created.
 	return FSNode(exact);
