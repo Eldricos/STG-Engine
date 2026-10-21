@@ -4,6 +4,7 @@ add_library(stg_engines STATIC
 	game.cpp
 	launcher.cpp
 	metaengine.cpp
+	probe.cpp
 )
 target_link_libraries(stg_engines PUBLIC stg_common)
 

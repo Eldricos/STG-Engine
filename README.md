@@ -22,10 +22,9 @@ The framework is in place and working:
 
 Right now, running the engine against a game directory lists what's there,
 lets you browse any `.BMP` images and play any `.WAV` sounds, and otherwise
-shows a test pattern. The detection table has no entries yet, because no
-release has been checksummed. Until it does, the game is found by a fallback
-that looks for an executable mentioning "Generations", and reported as an
-unknown version.
+shows a test pattern. The 2 CD Windows release is in the detection table.
+Other versions are found by a fallback that looks for an executable mentioning
+"Generations", and reported as unknown versions.
 
 ## Layout
 
@@ -80,13 +79,20 @@ The executable is `build/sdl/stg` (`stg.exe` on Windows).
 
 ## Running
 
+Point `--path` at the *installed* game folder, the one containing `sgens.exe`
+and `DATA/`. The installer leaves `COMBAT.DAT`, `STELLAR.DAT`, the music and
+the movies on the CDs. Pass the discs, or folders you've copied them to, with
+`--cd1` and `--cd2`. Both are searched at once, so there's no disc swapping.
+
 ```sh
-stg --path=/path/to/stg          # detect and run the game in that directory
+stg --path=/games/stg --cd1=D:/ --cd2=E:/   # installed game plus both discs
+stg --add --path=/games/stg --cd1=... --cd2=...   # remember all three paths
 stg /path/to/stg                 # same
 stg --add --path=/path/to/stg    # remember it as a target in the config file
 stg stg-win                      # run a remembered target
 stg --detect --path=...          # only report what is detected
 stg --dump-files --path=...      # file sizes and detection checksums
+stg --probe --path=...           # identify each file's format; hex dump unknown ones
 stg --help                       # every option
 ```
 

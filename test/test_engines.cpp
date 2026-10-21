@@ -11,10 +11,12 @@
 
 #include "common/archive.h"
 #include "common/config-manager.h"
+#include "common/file.h"
 #include "common/md5.h"
 #include "engines/detection.h"
 #include "engines/engine.h"
 #include "engines/metaengine.h"
+#include "engines/stg/resources.h"
 
 namespace {
 
@@ -120,7 +122,7 @@ TEST(stg_engine_runs_headless) {
 
 	Test::TempDir gameDir, saveDir;
 	gameDir.writeFile("TREK.EXE", makeFakeExe());
-	gameDir.writeFile("ART/PICTURE.BMP", Test::makeBMP8(2, 2, { 1, 1, 1, 1 }, false));
+	gameDir.writeFile("PICTURE.BMP", Test::makeBMP8(2, 2, { 1, 1, 1, 1 }, false));
 
 	DetectedGames games = stg->detectGames(gameDir.node());
 	CHECK(!games.empty());
@@ -169,4 +171,44 @@ TEST(stg_engine_runs_headless) {
 	SearchMan.clear();
 	ConfMan.setActiveDomain("");
 	g_system = nullptr;
+}
+
+TEST(stg_two_cd_search_paths) {
+	Test::TempDir install, cd1, cd2;
+	const char *installed[] = { "COMMON.DAT", "OPTIONS.DAT", "AMARGOS1.DAT", "AMARGOS2.DAT", "ANTILIOS.DAT",
+	                            "ARVADA1.DAT", "BERSUS.DAT", "ENTERP.DAT", "EPSION.DAT", "GALORN1.DAT",
+	                            "GALORN2.DAT", "HALEE1.DAT", "QURASH.DAT", "VERID1.DAT" };
+	for (const char *name : installed)
+		install.writeFile(std::string("DATA/") + name, "installed");
+	install.writeFile("sgens.exe", makeFakeExe());
+
+	const char *disc1[] = { "COMBAT.DAT", "STELLAR.DAT", "MUSIC.1", "MOVIE/MOV_01.AVI", "MOVIE/MOV_02.AVI",
+	                        "MOVIE/MOV_03.AVI", "MOVIE/MOV_05.AVI", "MOVIE/MOV_07.AVI", "MOVIE/MOV_08.AVI",
+	                        "MOVIE/MOV_18.AVI" };
+	const char *disc2[] = { "MUSIC.2", "MOVIE/MOV_06.AVI", "MOVIE/MOV_09.AVI", "MOVIE/MOV_10.AVI",
+	                        "MOVIE/MOV_13.AVI", "MOVIE/MOV_14.AVI", "MOVIE/MOV_15.AVI", "MOVIE/MOV_16.AVI" };
+	for (const char *name : disc1)
+		cd1.writeFile(std::string("GENS/") + name, "cd1");
+	for (const char *name : disc2)
+		cd2.writeFile(std::string("GENS/") + name, "cd2");
+	// Also on the disc, but the installed copy must win.
+	cd1.writeFile("GENS/COMMON.DAT", "cd1");
+
+	STG::ResourceManager resources;
+	SearchMan.clear();
+
+	resources.addSearchPaths(install.node(), cd1.node().getPath(), "");
+	CHECK(!resources.checkDataFiles());
+
+	resources.addSearchPaths(install.node(), cd1.node().getPath(), cd2.node().getPath());
+	CHECK(resources.checkDataFiles());
+
+	Common::File f;
+	CHECK(f.open("common.dat"));
+	CHECK_EQ(f.readFixedString(9), Common::String("installed"));
+	CHECK(f.open("movie/mov_16.avi"));
+	CHECK_EQ(f.readFixedString(3), Common::String("cd2"));
+	CHECK(f.open("SGENS.EXE"));
+
+	SearchMan.clear();
 }
