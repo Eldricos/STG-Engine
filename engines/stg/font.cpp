@@ -71,7 +71,7 @@ int Font::getStringWidth(const Common::String &str) const {
 	return width;
 }
 
-void Font::drawChar(Graphics::Surface &dst, uint16 c, int x, int y, int color) const {
+void Font::drawChar(Graphics::Surface &dst, uint16 c, int x, int y, const byte *remap) const {
 	const Glyph *glyph = findGlyph(c);
 	if (!glyph)
 		return;
@@ -79,14 +79,14 @@ void Font::drawChar(Graphics::Surface &dst, uint16 c, int x, int y, int color) c
 		for (int gx = 0; gx < glyph->width; gx++) {
 			byte pixel = glyph->pixels[gy * glyph->width + gx];
 			if (pixel != _transparent)
-				dst.setPixel(x + gx, y + gy, color >= 0 ? (uint32)color : pixel);
+				dst.setPixel(x + gx, y + gy, remap ? remap[pixel] : pixel);
 		}
 	}
 }
 
-void Font::drawString(Graphics::Surface &dst, const Common::String &str, int x, int y, int color) const {
+void Font::drawString(Graphics::Surface &dst, const Common::String &str, int x, int y, const byte *remap) const {
 	for (char c : str) {
-		drawChar(dst, (byte)c, x, y, color);
+		drawChar(dst, (byte)c, x, y, remap);
 		x += getCharWidth((byte)c);
 	}
 }

@@ -19,6 +19,7 @@
 #include "engines/stg/font.h"
 #include "engines/stg/overlay.h"
 #include "engines/stg/resources.h"
+#include "engines/stg/sprite.h"
 
 namespace {
 
@@ -263,8 +264,13 @@ TEST(stg_font_format) {
 	CHECK_EQ(s.getPixel(2, 0), 5u);
 	CHECK_EQ(s.getPixel(3, 0), 9u);
 	CHECK_EQ(s.getPixel(3, 1), 6u);
-	font.drawString(s, "A", 4, 0, 1);
-	CHECK_EQ(s.getPixel(4, 0), 1u); // colour override
+	byte remap[256];
+	for (int i = 0; i < 256; i++)
+		remap[i] = (byte)(i + 100);
+	font.drawString(s, "A", 4, 0, remap);
+	CHECK_EQ(s.getPixel(4, 0), 105u); // glyph colour 5 remapped
+	CHECK_EQ(s.getPixel(5, 1), 106u);
+	CHECK_EQ(s.getPixel(5, 0), 9u);   // transparent stays untouched
 
 	CHECK_EQ(font.wordWrap("A A A A", 7).size(), (size_t)2);
 
@@ -348,4 +354,55 @@ TEST(stg_overlay_format) {
 	bad[16 + 4 * 4] = 0x7F; // first row: skip becomes a 127 pixel run
 	Common::MemoryReadStream badStream(bad.data(), (uint32)bad.size());
 	CHECK(!overlay.load(badStream));
+}
+
+TEST(stg_sprite_format) {
+	// Two frames: 2 columns x 3 rows and 1 column x 2 rows, stored
+	// column-major, bottom row first, 0xFF transparent, then 3 bytes of
+	// per-column tables per column.
+	Common::MemoryWriteStreamDynamic file;
+	file.writeUint32LE(2); // version
+	file.writeUint32LE(2); // frames
+	file.writeUint32LE(0);
+	file.writeUint32LE(3); // sequences
+	file.writeUint32LE(0);
+	file.writeUint16LE(64);
+	file.writeUint16LE(128);
+	const byte sequences[] = { 2, 0, 1, 0, 1, 1 }; // [0,1], [], [1]
+	file.write(sequences, sizeof(sequences));
+
+	file.writeUint32LE(4 << 8); // world width 4.0
+	file.writeUint32LE(2);
+	file.writeUint32LE(3);
+	const byte frame0[] = { 1, 2, 0xFF, 4, 5, 6 }; // column 0 bottom-up, column 1 bottom-up
+	file.write(frame0, sizeof(frame0));
+	const byte tables0[6] = {};
+	file.write(tables0, sizeof(tables0));
+
+	file.writeUint32LE(2 << 8);
+	file.writeUint32LE(1);
+	file.writeUint32LE(2);
+	const byte frame1[] = { 7, 8, 0, 0, 0 };
+	file.write(frame1, sizeof(frame1));
+
+	Common::MemoryReadStream stream(file.getData().data(), file.size());
+	STG::SpriteSet sprites;
+	CHECK(sprites.load(stream));
+	CHECK_EQ(sprites.getFrameCount(), 2);
+	CHECK_EQ(sprites.getSequences().size(), (size_t)3);
+	CHECK(sprites.getSequences()[1].empty());
+	CHECK_EQ(sprites.getMaxWidth(), 2);
+	CHECK_EQ(sprites.getMaxHeight(), 3);
+
+	const Graphics::Surface &s0 = sprites.getFrame(0).surface;
+	CHECK_EQ(sprites.getFrame(0).worldWidth, 4.0);
+	CHECK_EQ(s0.getPixel(0, 2), 1u); // bottom row first
+	CHECK_EQ(s0.getPixel(0, 1), 2u);
+	CHECK_EQ(s0.getPixel(0, 0), 0xFFu);
+	CHECK_EQ(s0.getPixel(1, 0), 6u);
+	CHECK_EQ(sprites.getFrame(1).surface.getPixel(0, 0), 8u);
+
+	// Truncated data is rejected.
+	Common::MemoryReadStream truncated(file.getData().data(), file.size() - 8);
+	CHECK(!sprites.load(truncated));
 }

@@ -50,12 +50,13 @@ public:
 	int getStringWidth(const Common::String &str) const;
 
 	/**
-	 * Draw text with its top left corner at (x, y). If color is non-negative
-	 * every non-transparent pixel is drawn in that colour instead of the
-	 * glyph's own colours.
+	 * Draw text with its top left corner at (x, y) in the glyphs' own
+	 * colours. The glyphs have dark outline pixels, so drawing them all in
+	 * one colour makes text unreadable; instead, remap (if given) translates
+	 * each glyph colour index into the destination palette.
 	 */
-	void drawChar(Graphics::Surface &dst, uint16 c, int x, int y, int color = -1) const;
-	void drawString(Graphics::Surface &dst, const Common::String &str, int x, int y, int color = -1) const;
+	void drawChar(Graphics::Surface &dst, uint16 c, int x, int y, const byte *remap = nullptr) const;
+	void drawString(Graphics::Surface &dst, const Common::String &str, int x, int y, const byte *remap = nullptr) const;
 
 	/** Split text into lines no wider than maxWidth, breaking at spaces. */
 	Common::StringArray wordWrap(const Common::String &str, int maxWidth) const;

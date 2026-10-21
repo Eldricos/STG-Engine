@@ -131,6 +131,12 @@ void STGEngine::loadFont() {
 	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
 	if (!stream || !_font.load(*stream))
 		warning("Could not load %s; text will not be shown", ref.toString().c_str());
+
+	// The font's colour indices are assumed to refer to the shared palette
+	// used by the images in COMMON.DAT.
+	_hasFontPalette = _resources.loadArchivePalette("COMMON.DAT", _fontPalette);
+	if (!_hasFontPalette)
+		warning("No palette found in COMMON.DAT; text colours will be approximate");
 }
 
 void STGEngine::handleEvent(const Common::Event &event) {
@@ -203,7 +209,22 @@ void STGEngine::drawFrame(uint32 delta) {
 		_dirty = true;
 	}
 
-	if (_overlayLoaded) {
+	if (_spritesLoaded) {
+		// Animate at about 8 frames per second, anchored bottom centre.
+		_overlayTime += delta;
+		if (_overlayTime >= 125) {
+			_overlayTime = 0;
+			_overlayFrame = (_overlayFrame + 1) % _sprites.getFrameCount();
+		}
+		const SpriteSet::Frame &f = _sprites.getFrame(_overlayFrame);
+		Graphics::Surface frame;
+		frame.create(_sprites.getMaxWidth(), _sprites.getMaxHeight(), Graphics::PixelFormat::createFormatCLUT8());
+		byte background = _screen->getPalette().findBestColor(0, 0, 0);
+		frame.fillRect(Common::Rect(frame.w, frame.h), background);
+		frame.transBlitFrom(f.surface, (frame.w - f.surface.w) / 2, frame.h - f.surface.h, SpriteSet::kTransparent);
+		_screen->clear(background);
+		_screen->drawImage(frame, Screen::kHeight - kTextPanelHeight);
+	} else if (_overlayLoaded) {
 		// Animate at about 12 frames per second.
 		_overlayTime += delta;
 		if (_overlayTime >= 80) {
@@ -241,12 +262,20 @@ void STGEngine::drawTextPanel() {
 	if (!_font.isLoaded())
 		return;
 
-	// Colours from whatever palette is current, so text stays readable
-	// over every image.
+	// Translate the font's colours into whatever palette is current, so
+	// text keeps its look over every image.
 	const Graphics::Palette &pal = _screen->getPalette();
+	byte remap[256];
+	for (int i = 0; i < 256; i++) {
+		byte r, g, b;
+		if (_hasFontPalette)
+			_fontPalette.get(i, r, g, b);
+		else
+			r = g = b = (byte)i;
+		remap[i] = pal.findBestColor(r, g, b);
+	}
 	byte background = pal.findBestColor(0, 0, 0);
 	byte highlight = pal.findBestColor(255, 153, 0);
-	byte text = pal.findBestColor(255, 255, 255);
 
 	Graphics::Surface &s = _screen->getSurface();
 	int top = Screen::kHeight - kTextPanelHeight;
@@ -255,12 +284,12 @@ void STGEngine::drawTextPanel() {
 
 	const int margin = 8;
 	int y = top + 4;
-	_font.drawString(s, _status, margin, y, highlight);
+	_font.drawString(s, _status, margin, y, remap);
 	y += _font.getHeight();
 	for (const Common::String &line : _font.wordWrap(_subtitle, Screen::kWidth - 2 * margin)) {
 		if (y + _font.getHeight() > Screen::kHeight)
 			break;
-		_font.drawString(s, line, margin, y, text);
+		_font.drawString(s, line, margin, y, remap);
 		y += _font.getHeight();
 	}
 }
@@ -298,10 +327,12 @@ void STGEngine::showImage(int index) {
 	index = ((index % count) + count) % count;
 	_imageIndex = index;
 	const ResourceRef &ref = images[index];
-	_imageLoaded = _overlayLoaded = false;
+	_imageLoaded = _overlayLoaded = _spritesLoaded = false;
 
 	if (Common::hasSuffixIgnoreCase(ref.name, ".ovr")) {
 		showOverlay(ref);
+	} else if (Common::hasSuffixIgnoreCase(ref.name, ".gs2")) {
+		showSprites(ref);
 	} else {
 		_imageLoaded = _resources.loadImage(ref, _image);
 		if (_imageLoaded && _image.hasPalette()) {
@@ -319,6 +350,33 @@ void STGEngine::showImage(int index) {
 	_status = Common::format("%d/%d  ", index + 1, count) + _status;
 	info("Image %s", _status.c_str());
 	_dirty = true;
+}
+
+void STGEngine::showSprites(const ResourceRef &ref) {
+	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+	_spritesLoaded = stream && _sprites.load(*stream) && _sprites.getFrameCount() > 0;
+	if (!_spritesLoaded) {
+		initPalette();
+		_status = ref.toString() + "  (could not decode)";
+		return;
+	}
+
+	// Like overlays, sprites carry no palette of their own.
+	Graphics::Palette palette;
+	if (_resources.loadArchivePalette(ref.archive, palette)) {
+		_screen->getPalette() = palette;
+		_screen->applyPalette();
+	} else {
+		initPalette();
+	}
+
+	int sequences = 0;
+	for (const std::vector<byte> &sequence : _sprites.getSequences())
+		sequences += !sequence.empty();
+	_overlayFrame = 0;
+	_overlayTime = 0;
+	_status = Common::format("%s  %d frames up to %dx%d, %d sequences", ref.toString().c_str(),
+	                         _sprites.getFrameCount(), _sprites.getMaxWidth(), _sprites.getMaxHeight(), sequences);
 }
 
 void STGEngine::showOverlay(const ResourceRef &ref) {
@@ -369,6 +427,7 @@ void STGEngine::jumpArchive(int direction) {
 void STGEngine::showStarfield() {
 	_imageLoaded = false;
 	_overlayLoaded = false;
+	_spritesLoaded = false;
 	_imageIndex = -1;
 	initPalette();
 	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";

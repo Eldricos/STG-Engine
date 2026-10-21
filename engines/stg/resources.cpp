@@ -170,7 +170,8 @@ void ResourceManager::scan() {
 	_sounds.clear();
 
 	auto add = [this](const Common::String &archive, const Common::String &name) {
-		if (Common::hasSuffixIgnoreCase(name, ".bmp") || Common::hasSuffixIgnoreCase(name, ".ovr"))
+		if (Common::hasSuffixIgnoreCase(name, ".bmp") || Common::hasSuffixIgnoreCase(name, ".ovr") ||
+		    Common::hasSuffixIgnoreCase(name, ".gs2"))
 			_images.push_back({ archive, name });
 		else if (Common::hasSuffixIgnoreCase(name, ".wav"))
 			_sounds.push_back({ archive, name });

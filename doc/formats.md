@@ -61,27 +61,40 @@ is not stored**. It looks like 252 for the 504- and 640-wide overlays and 88 for
 NUPLANT (152 wide), so it presumably comes from the game script. There's no
 palette either; the overlay uses the palette of the current scene.
 
-## GS2 / GSF sprite sets: partial
+## GS2 sprite sets: decoded, `engines/stg/sprite.h`
 
-`GS2` is a set of character sprites (e.g. `verid1/001.gs2` is a crew member).
+These are billboard sprites for the 3D away missions: `verid1/001.gs2` is a crew member
+(standing, walking, beaming in), and `008.gs2` is a flame.
 
 ```
-uint32  2 (GSF files have 1 here)
-uint32  frame count                 (25 in verid1/001.gs2)
+uint32  2                           version (GSF files have 1, see below)
+uint32  frame count                 (25 in verid1/001.gs2, 11 in 008.gs2)
 uint32  0
-uint32  sequence count              (16)
+uint32  sequence count              (16 in both)
 uint32  0
-uint16  ?  uint16 ?                 (128, 256 or 256, 128)
+uint16  ?, uint16 ?                 (128, 256 / 64, 128: a size hint)
 sequences[sequence count]:
-  uint8 n, uint8 frame index[n]     (verid1: [0..4], [], [5..19], [20..24], then 12 empty)
-frames: header such as "9c 00 00 4e 00 00 00 00 01 00 00" (156 and 156/2),
-        then pixel data with 0xFF as transparent
+  uint8 n, uint8 frame index[n]     (001: [0..4], [], [5..19], [20..24], 12 empty)
+frames[frame count]:
+  uint32 world width, 24.8 fixed point (00 9c 00 00 = 156.0 for 78 columns)
+  uint32 column count
+  uint32 column height              (256 in 001, 128 in 008)
+  uint8  pixels[columns][height]    column-major, BOTTOM row first, 0xFF transparent
+  uint8  tables[3][columns]         per-column hints; the first is twice the
+                                    topmost opaque row. Not needed to draw.
 ```
 
-The pixel data is stored **column-major**: rendering it 256 bytes wide shows
-the sprite lying on its side, as in Doom-style engines. The columns drift by
-a byte now and then, so there's per-column length or offset information still
-to find. The 16 sequences are possibly 8 directions × 2 states.
+Both samples parse to exactly their end with the advertised frame count.
+The world width is always 2 × columns for 256-high frames and 4 × columns for
+128-high ones, i.e. columns × 512 / height. The sequences are probably
+animation states, possibly per direction. As with overlays, there's no palette.
+
+## GSF (`.GSF`): unknown
+
+These start like GS2 but with version 1:
+`01 00 00 00 33 00 00 00 f8 06 00 00 10 00 00 00 18 00 00 00 80 00 00 01 ...`
+(51 frames, with something in the third dword). They're refused by the GS2
+decoder rather than misread.
 
 ## SGEN script (`GAME.BIN`): unknown
 

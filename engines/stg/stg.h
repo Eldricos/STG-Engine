@@ -21,6 +21,7 @@
 #include "engines/stg/overlay.h"
 #include "engines/stg/resources.h"
 #include "engines/stg/screen.h"
+#include "engines/stg/sprite.h"
 
 namespace STG {
 
@@ -64,6 +65,7 @@ private:
 
 	void showImage(int index);
 	void showOverlay(const ResourceRef &ref);
+	void showSprites(const ResourceRef &ref);
 	/** Jump to the first image of the next (direction 1) or previous (-1) archive. */
 	void jumpArchive(int direction);
 	void showStarfield();
@@ -79,13 +81,17 @@ private:
 
 	std::vector<Star> _stars;
 	Font _font;
+	Graphics::Palette _fontPalette;
+	bool _hasFontPalette = false;
 	Image::BitmapDecoder _image;
 	bool _imageLoaded = false;
 	Overlay _overlay;
 	bool _overlayLoaded = false;
 	int _overlayFrameHeight = 0;
 	int _overlayFrame = 0;
-	uint32 _overlayTime = 0;
+	uint32 _overlayTime = 0; // also used to animate sprites
+	SpriteSet _sprites;
+	bool _spritesLoaded = false;
 	int _imageIndex = -1;
 	int _soundIndex = -1;
 	Audio::SoundHandle _soundHandle;
