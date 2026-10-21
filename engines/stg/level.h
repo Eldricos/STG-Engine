@@ -219,9 +219,28 @@ public:
 		bool fullbright = false;
 	};
 
+	/** One of an actor's animations (8 bytes at 0xC4 + 8 * entry). */
+	struct Animation {
+		/** Distance walked per animation frame, 8.8 world units. */
+		uint16 speed;
+		/** Frames per second, roughly (see Actors). */
+		byte rate;
+		/** Frames per view direction. */
+		byte frames;
+		/** Frame the animation loops back to; frames - 1 plays it once. */
+		byte loopStart;
+		/** View directions stored: 8, or 1 for the same picture from all sides. */
+		byte directions;
+		/** Directions 5-7 are drawn as 3-1 mirrored. */
+		byte mirror;
+	};
+
+	static const int kAnimationCount = 7;
+
 	/**
 	 * An actor (type 6): a character or object the scripts control, drawn
-	 * with a sprite set. Only its placement is decoded so far.
+	 * from a sprite set. The original works on these records directly
+	 * (0x4C3C10). Actors sharing an id are parts of one actor.
 	 */
 	struct Actor {
 		/** Script object (id | 0xA000), from offset 0x14. */
@@ -229,6 +248,42 @@ public:
 		int32 x;
 		int32 y;
 		int32 z;
+		/** Distance at which "walk to" has arrived. */
+		int32 reach;
+		/** Added to z for the sprite's bottom edge. */
+		int32 drawOffset;
+		/** Sprite scale: the drawn width is 2 * frame half width * scale. */
+		int32 scale;
+		/** Drawn height in world units. */
+		int32 height;
+		/** Collision cylinder. */
+		int32 radius;
+		int32 bodyHeight;
+		uint32 flags;
+		/** Wander: turn back beyond outerRadius, walk home beyond homeRadius,
+		 * turn on crossing innerRadius inwards. */
+		int32 outerRadius;
+		int32 innerRadius;
+		int32 homeRadius;
+		/** Wander: walk this far (a random distance in the range) between turns. */
+		int32 minWalk;
+		int32 maxWalk;
+		int32 stepHeight;
+		Animation animations[kAnimationCount];
+		/** Sprite set number (NNN.gs2), which is also the actor's class. */
+		uint16 spriteSet;
+		/** Wander turn range, in 1/65536 turns. */
+		uint16 minTurn;
+		uint16 maxTurn;
+		/** Turning speed: heading units per 1024 ms. */
+		uint16 turnSpeed;
+		/** 65536 = a full turn; 0 faces +y, 16384 faces -x. */
+		uint16 heading;
+		/** AI mode (see Actors::Mode). */
+		byte mode;
+		/** Wander around the player rather than home. */
+		byte followPlayer;
+		LightInfo light;
 	};
 
 	struct Texture {

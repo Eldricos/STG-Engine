@@ -33,6 +33,18 @@ struct Camera {
 	double pitch = 0;
 };
 
+/** A sprite to draw this frame, such as an actor. */
+struct SpriteDraw {
+	/** Centre of the bottom edge, in world units. */
+	double x, y, bottom;
+	double halfWidth, height;
+	/** Upright frame; pixels equal to 0xFF are transparent. */
+	const Graphics::Surface *surface;
+	bool mirrored;
+	LevelFile::LightInfo light;
+	bool fullbright;
+};
+
 /**
  * A software renderer for GAME.LV2 levels, drawing into a CLUT8 surface in
  * the level's palette.
@@ -72,6 +84,9 @@ public:
 	/** Without the sky, the background is the fog colour. */
 	void setSkyEnabled(bool enabled) { _skyEnabled = enabled; }
 
+	/** Sprites to draw in the next frames; the vector must stay alive. */
+	void setSprites(const std::vector<SpriteDraw> *sprites) { _sprites = sprites; }
+
 	/** Turn lighting off to see the textures' own colours. */
 	void setLightingEnabled(bool enabled) { _lighting = enabled; }
 	bool isLightingEnabled() const { return _lighting; }
@@ -104,6 +119,9 @@ private:
 	void drawFlats(Graphics::Surface &dst, uint32 time);
 	void drawWalls(Graphics::Surface &dst, uint32 time);
 	void drawBillboards(Graphics::Surface &dst, uint32 time);
+	void drawSprites(Graphics::Surface &dst);
+	/** A sprite frame in the renderer's column-major layout. */
+	const Texture *getSpriteTexture(const Graphics::Surface *surface);
 
 	/** Transform a world point into camera space (x right, y up, z ahead). */
 	void toCamera(double x, double y, double z, Vertex &out) const;
@@ -113,6 +131,8 @@ private:
 
 	const LevelFile &_level;
 	std::map<uint32, std::unique_ptr<Texture>> _textures;
+	std::map<const Graphics::Surface *, std::unique_ptr<Texture>> _spriteTextures;
+	const std::vector<SpriteDraw> *_sprites = nullptr;
 	Graphics::Surface _sky;
 	bool _hasSky = false;
 	bool _skyEnabled = true;

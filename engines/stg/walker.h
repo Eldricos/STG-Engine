@@ -9,6 +9,7 @@
 #ifndef STG_WALKER_H
 #define STG_WALKER_H
 
+#include <memory>
 #include <vector>
 
 #include "engines/stg/level.h"
@@ -47,12 +48,32 @@ public:
 	static const uint64 kAllZones = ~(uint64)0;
 
 	explicit Walker(const LevelFile &level);
+	/** Copies share the level's wall lines, so walkers for actors are cheap. */
+	Walker(const Walker &other) = default;
 
 	/** Put the player's feet at (x, y, feet) and settle onto the floor there. */
 	void place(double x, double y, double feet);
 
 	/** Walk by (dx, dy) over the given time, colliding and following floors. */
 	void move(double dx, double dy, double seconds);
+
+	/** A round obstacle, such as an actor. */
+	struct Obstacle {
+		double x, y, radius;
+		double bottom, top;
+	};
+
+	/**
+	 * Obstacles to collide with besides walls; the vector must outlive the
+	 * walker's moves. ignore is an index to skip (the mover itself), or -1.
+	 */
+	void setObstacles(const std::vector<Obstacle> *obstacles, int ignore = -1) {
+		_obstacles = obstacles;
+		_ignoredObstacle = ignore;
+	}
+
+	/** Without falling, the walker drops straight onto lower floors, as actors do. */
+	void setFalls(bool falls) { _falls = falls; }
 
 	/** With collision off the player walks through walls but keeps to floors. */
 	void setCollisionEnabled(bool enabled) { _collision = enabled; }
@@ -74,6 +95,10 @@ public:
 	 * -1. Like the original, standing still touches nothing.
 	 */
 	int getContactWall() const { return _contactWall; }
+	/** The obstacle the last move ran into, or -1. */
+	int getContactObstacle() const { return _contactObstacle; }
+	/** Whether the last move was stopped short by anything. */
+	bool wasBlocked() const { return _contactWall >= 0 || _contactObstacle >= 0; }
 	uint64 getActiveZones() const { return _zones; }
 	/** Index of the flat underfoot, or -1. */
 	int getFloor() const { return _floor; }
@@ -89,8 +114,10 @@ public:
 		double t;
 		/** Unit direction along the obstacle, to slide along. */
 		double slideX, slideY;
-		/** Index into the level's walls. */
+		/** Index into the level's walls, or -1. */
 		int wall;
+		/** Index into the obstacles, or -1. */
+		int obstacle;
 	};
 
 	/**
@@ -113,11 +140,15 @@ private:
 	void followFloor(double seconds);
 
 	const LevelFile &_level;
-	std::vector<WallLine> _walls;
+	std::shared_ptr<const std::vector<WallLine>> _walls;
 	double _x = 0, _y = 0, _feet = 0;
 	double _fallSpeed = 0;
 	int _floor = -1;
 	int _contactWall = -1;
+	int _contactObstacle = -1;
+	const std::vector<Obstacle> *_obstacles = nullptr;
+	int _ignoredObstacle = -1;
+	bool _falls = true;
 	double _eyeHeight = kEyeHeight;
 	double _stepHeight = kStepHeight;
 	double _headroom = kHeadroom;

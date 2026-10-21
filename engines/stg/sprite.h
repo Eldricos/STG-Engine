@@ -30,7 +30,7 @@ namespace STG {
  *   uint16   ?, uint16 ?  (64, 128 / 128, 256 ... a size hint)
  *   sequences: uint8 n, then n frame indices
  *   frames:
- *     uint32 world width, 24.8 fixed point (156.0 for a 78 column frame)
+ *     uint32 half width at scale 1.0, 16.16 (0.609 for a 78 column frame)
  *     uint32 column count
  *     uint32 column height
  *     uint8  pixels[columns][height]   column-major, bottom row first,
@@ -48,8 +48,11 @@ public:
 	struct Frame {
 		/** Upright image; transparent pixels hold kTransparent. */
 		Graphics::Surface surface;
-		/** Width in world units, from the 24.8 fixed point header value. */
-		double worldWidth = 0;
+		/**
+		 * Half the width in world units for a sprite at scale 1.0, from the
+		 * header's 16.16 value. Drawn actors scale it (0x4C3C10).
+		 */
+		double halfWidth = 0;
 	};
 
 	bool load(Common::SeekableReadStream &stream);

@@ -9,9 +9,11 @@
 #include "test/test.h"
 
 #include <cmath>
+#include <cstring>
 
 #include "common/endian.h"
 #include "common/stream.h"
+#include "engines/stg/actors.h"
 #include "engines/stg/level.h"
 #include "engines/stg/mission.h"
 #include "engines/stg/opcodes.h"
@@ -360,7 +362,36 @@ namespace {
 /** Builds levels of rectangular floors and straight walls for the walker. */
 struct LevelBuilder {
 	std::vector<std::pair<int32, int32>> vertices;
-	std::vector<std::vector<byte>> flats, walls;
+	std::vector<std::vector<byte>> flats, walls, actors;
+
+	/**
+	 * An actor of sprite set 1 standing at (x, y, z). Animation 0 (stand)
+	 * has one frame in eight mirrored directions; animation 6 (walk) four
+	 * frames in one direction at 1 unit per frame.
+	 */
+	std::vector<byte> &addActor(uint16 id, double x, double y, double z, int mode, uint16 heading) {
+		std::vector<byte> r(276);
+		WRITE_LE_UINT16(&r[0x14], id);
+		WRITE_LE_UINT32(&r[0x1C], (uint32)(int32)(x * 65536));
+		WRITE_LE_UINT32(&r[0x20], (uint32)(int32)(z * 65536));
+		WRITE_LE_UINT32(&r[0x24], (uint32)(int32)(y * 65536));
+		WRITE_LE_UINT32(&r[0x28], 2 << 16); // reach
+		WRITE_LE_UINT32(&r[0x34], 1 << 16); // scale
+		WRITE_LE_UINT32(&r[0x38], 6 << 16); // height
+		WRITE_LE_UINT32(&r[0x54], 1 << 16); // radius
+		WRITE_LE_UINT32(&r[0x58], 6 << 16); // body height
+		WRITE_LE_UINT32(&r[0xAC], 2 << 16); // step height
+		const byte stand[8] = { 0, 0, 0, 1, 0, 8, 1, 0 };
+		memcpy(&r[0xC4], stand, 8);
+		const byte walk[8] = { 0, 1, 64, 4, 0, 1, 0, 1 };
+		memcpy(&r[0xC4 + 6 * 8], walk, 8);
+		WRITE_LE_UINT16(&r[0xFC], 1);
+		WRITE_LE_UINT16(&r[0x104], 0xFFFF); // turn speed
+		WRITE_LE_UINT16(&r[0x108], heading);
+		r[0x10E] = (byte)mode;
+		actors.push_back(r);
+		return actors.back();
+	}
 
 	uint16 addVertex(double x, double y) {
 		vertices.push_back({ (int32)(x * 65536), (int32)(y * 65536) });
@@ -419,6 +450,10 @@ struct LevelBuilder {
 		for (const auto &r : walls)
 			w.data.insert(w.data.end(), r.begin(), r.end());
 		chunks.push_back(w);
+		Chunk a = { STG::LevelFile::kChunkActors, 1, (uint16)actors.size(), {} };
+		for (const auto &r : actors)
+			a.data.insert(a.data.end(), r.begin(), r.end());
+		chunks.push_back(a);
 		return makeLevelFile(chunks);
 	}
 };
@@ -591,7 +626,7 @@ TEST(mission_runs_level_scripts) {
 	Walker walker(level);
 	walker.place(2, 2, 0);
 
-	Mission mission(level, script, renderer, walker);
+	Mission mission(level, script, renderer, walker, nullptr);
 	mission.start();
 	CHECK(walker.getX() == 5);
 	CHECK(walker.getY() == 10);
@@ -614,4 +649,119 @@ TEST(mission_runs_level_scripts) {
 	walker.move(10, 0, 0.01);
 	CHECK(walker.getX() > 15);
 	CHECK(mission.getMissingNatives().empty());
+}
+
+namespace {
+
+/**
+ * A sprite set of one-pixel frames whose colour is 10 + the frame number:
+ * sequence 0 (stand) is frames 0-4, one per view direction, and sequence 1
+ * (walk) frames 5-8.
+ */
+bool loadTestSprites(uint16 number, STG::SpriteSet &set) {
+	Common::MemoryWriteStreamDynamic file;
+	file.writeUint32LE(2);
+	file.writeUint32LE(9);
+	file.writeUint32LE(0);
+	file.writeUint32LE(2);
+	file.writeUint32LE(0);
+	file.writeUint32LE(0);
+	const byte sequences[] = { 5, 0, 1, 2, 3, 4, 4, 5, 6, 7, 8 };
+	file.write(sequences, sizeof(sequences));
+	for (int i = 0; i < 9; i++) {
+		file.writeUint32LE(1 << 16); // half width 1.0
+		file.writeUint32LE(1);
+		file.writeUint32LE(1);
+		const byte pixel[4] = { (byte)(10 + i), 0, 0, 0 };
+		file.write(pixel, sizeof(pixel));
+	}
+	std::vector<byte> data = file.getData();
+	Common::MemoryReadStream stream(data.data(), (uint32)data.size());
+	return set.load(stream);
+}
+
+} // End of anonymous namespace
+
+TEST(actors_headings_and_view_directions) {
+	using STG::Actors;
+	CHECK_EQ(Actors::headingTowards(0, 1), 0);
+	CHECK_EQ(Actors::headingTowards(-1, 0), 16384);
+	CHECK_EQ(Actors::headingTowards(1, 0), 49152);
+
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 40, 40, 0);
+	builder.addActor(1, 10, 10, 0, Actors::kModeIdle, 0); // facing +y
+	STG::LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	STG::Walker walker(level);
+	Actors actors(level, walker, loadTestSprites);
+
+	std::vector<STG::SpriteDraw> sprites;
+	auto viewFrom = [&](double x, double y, bool &mirrored) {
+		actors.getSprites(x, y, STG::Walker::kAllZones, sprites);
+		mirrored = !sprites.empty() && sprites[0].mirrored;
+		return sprites.empty() ? -1 : (int)sprites[0].surface->getPixel(0, 0) - 10;
+	};
+	bool mirrored;
+	CHECK_EQ(viewFrom(10, 20, mirrored), 4); // in front
+	CHECK_EQ(viewFrom(10, 0, mirrored), 0); // behind
+	CHECK_EQ(viewFrom(20, 10, mirrored), 2); // from its right
+	CHECK(!mirrored);
+	CHECK_EQ(viewFrom(0, 10, mirrored), 2); // from its left: the right view flipped
+	CHECK(mirrored);
+	CHECK(sprites[0].halfWidth == 1.0);
+	CHECK(sprites[0].height == 6.0);
+	CHECK(sprites[0].bottom == 0.0);
+
+	actors.setMode(0xA001, Actors::kModeHidden);
+	viewFrom(10, 20, mirrored);
+	CHECK(sprites.empty());
+}
+
+TEST(actors_walk_and_block) {
+	using STG::Actors;
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 40, 40, 0);
+	builder.addActor(1, 10, 10, 0, Actors::kModeWalkTo, 49152); // facing +x
+	builder.addActor(2, 10, 30, 0, Actors::kModeIdle, 0);
+	STG::LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	STG::Walker player(level);
+	player.place(30, 10, 0);
+	Actors actors(level, player, loadTestSprites);
+	player.setObstacles(&actors.getObstacles());
+
+	// Actor 1 walks at the player: 64 frames a second at 1 unit per frame.
+	std::vector<Actors::ScriptEvent> events;
+	int arrived = 0, cycles = 0;
+	for (int i = 0; i < 15; i++) {
+		events.clear();
+		actors.update(20, player, events);
+		for (const Actors::ScriptEvent &event : events) {
+			CHECK_EQ(event.object, 0xA001);
+			arrived += event.event == Actors::kEventArrived;
+			cycles += event.event == Actors::kEventCycle;
+		}
+	}
+	double x, y, z;
+	uint16 heading;
+	CHECK(actors.getPosition(1, x, y, z, heading));
+	CHECK(x > 20 && x < 30);
+	CHECK(std::fabs(y - 10) < 0.01);
+	CHECK_EQ(heading, 49152);
+	CHECK(cycles >= 3);
+	CHECK_EQ(arrived, 0);
+	for (int i = 0; i < 20 && !arrived; i++) {
+		events.clear();
+		actors.update(20, player, events);
+		for (const Actors::ScriptEvent &event : events)
+			arrived += event.event == Actors::kEventArrived;
+	}
+	CHECK(arrived > 0);
+
+	// Actor 2 stands in the player's way.
+	player.place(10, 22, 0);
+	player.move(0, 10, 0.1);
+	CHECK(std::fabs(player.getY() - (30 - 1 - STG::Walker::kRadius)) < 0.05);
+	CHECK_EQ(actors.getObstacleObject(player.getContactObstacle()), 0xA002);
 }

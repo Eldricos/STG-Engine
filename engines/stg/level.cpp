@@ -230,6 +230,38 @@ bool LevelFile::loadTables() {
 		actor.x = (int32)READ_LE_UINT32(r + 0x1C);
 		actor.z = (int32)READ_LE_UINT32(r + 0x20);
 		actor.y = (int32)READ_LE_UINT32(r + 0x24);
+		actor.reach = (int32)READ_LE_UINT32(r + 0x28);
+		actor.drawOffset = (int32)READ_LE_UINT32(r + 0x30);
+		actor.scale = (int32)READ_LE_UINT32(r + 0x34);
+		actor.height = (int32)READ_LE_UINT32(r + 0x38);
+		actor.radius = (int32)READ_LE_UINT32(r + 0x54);
+		actor.bodyHeight = (int32)READ_LE_UINT32(r + 0x58);
+		actor.light = readLight(r);
+		actor.flags = READ_LE_UINT32(r + 0x6C);
+		actor.outerRadius = (int32)READ_LE_UINT32(r + 0x90);
+		actor.innerRadius = (int32)READ_LE_UINT32(r + 0x94);
+		actor.homeRadius = (int32)READ_LE_UINT32(r + 0x98);
+		actor.minWalk = (int32)READ_LE_UINT32(r + 0x9C);
+		actor.maxWalk = (int32)READ_LE_UINT32(r + 0xA0);
+		actor.stepHeight = (int32)READ_LE_UINT32(r + 0xAC);
+		for (int m = 0; m < kAnimationCount; m++) {
+			const byte *a = r + 0xC4 + m * 8;
+			Animation &anim = actor.animations[m];
+			// With the original loader's fixes (0x4BE39B..0x4BE3DB).
+			anim.speed = READ_LE_UINT16(a) ? READ_LE_UINT16(a) : 0x40;
+			anim.rate = a[2];
+			anim.frames = a[3] ? a[3] : 1;
+			anim.loopStart = std::min<byte>(a[4], (byte)(anim.frames - 1));
+			anim.directions = a[5];
+			anim.mirror = a[6];
+		}
+		actor.spriteSet = READ_LE_UINT16(r + 0xFC);
+		actor.minTurn = READ_LE_UINT16(r + 0x100);
+		actor.maxTurn = READ_LE_UINT16(r + 0x102);
+		actor.turnSpeed = READ_LE_UINT16(r + 0x104);
+		actor.heading = READ_LE_UINT16(r + 0x108);
+		actor.followPlayer = r[0x10D];
+		actor.mode = r[0x10E];
 		_actors.push_back(actor);
 	}
 	return true;

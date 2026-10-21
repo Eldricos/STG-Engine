@@ -76,7 +76,7 @@ uint16  ?, uint16 ?                 (128, 256 / 64, 128: a size hint)
 sequences[sequence count]:
   uint8 n, uint8 frame index[n]     (001: [0..4], [], [5..19], [20..24], 12 empty)
 frames[frame count]:
-  uint32 world width, 24.8 fixed point (00 9c 00 00 = 156.0 for 78 columns)
+  uint32 half width at scale 1.0, 16.16 (00 9c 00 00 = 0.609 for 78 columns)
   uint32 column count
   uint32 column height              (256 in 001, 128 in 008)
   uint8  pixels[columns][height]    column-major, BOTTOM row first, 0xFF transparent
@@ -85,9 +85,9 @@ frames[frame count]:
 ```
 
 Both samples parse to exactly their end with the advertised frame count.
-The world width is always 2 × columns for 256-high frames and 4 × columns for
-128-high ones, i.e. columns × 512 / height. The sequences are probably
-animation states, possibly per direction. As with overlays, there's no palette.
+The half width is always columns / 128 for 256-high frames and columns / 64
+for 128-high ones. Actors scale it (see Actors below). As with overlays,
+there's no palette.
 
 ## GSF (`.GSF`): unknown
 
@@ -289,7 +289,7 @@ heading in degrees.
   - SET_EYE_HEIGHT, SET_STEP_HEADROOM, SET_PLAYER_WIDTH, SET_PLAYER_MOTION
   - SET_PLAYER_CONTROLS, LOW_GRAVITY
 - **Actors:**
-  - ACTOR_WANDER, ACTOR_APPROACH_PLAYER, ACTOR_ATTACK, ACTOR_FACE: AI modes 6, 7, 3 and 2
+  - ACTOR_WANDER, ACTOR_APPROACH_PLAYER, ACTOR_ATTACK, ACTOR_FACE, ACTOR_STATE_1/4/5, SHOW, HIDE: set the mode (see Actors)
   - SET_ACTOR_COMBAT_STATS, SET_ACTOR_WEAPON, SET_ACTOR_TEAM, and size and reach settings
 - **Sound:** PLAY_SOUND sound, volume (0–64), PLAY_SOUND_CUE, PRELOAD_SOUND, SET_SOUND_VOLUME.
 - **Interface:**
@@ -299,8 +299,8 @@ heading in degrees.
   - screen flashes and tints, view shake
 
 `engines/stg/mission.h` runs a level's scripts. It implements the natives
-for objects, timers, the level, positions and the player's health and
-size. The rest balance the stack and are counted as missing; the viewer
+for objects, timers, the level, positions, actors' modes and settings, and
+the player's health and size. The rest balance the stack and are counted as missing; the viewer
 logs each one once with `--debugflags=scripts`.
 
 To get a full listing of a script:
@@ -334,7 +334,7 @@ records.
 | 3 | 292 | flats: floor and ceiling polygons (see below) |
 | 4 | 152 | walls (see below) |
 | 5 | 140 | billboards: sprites that always face the camera |
-| 6 | 276 | actors, with an id, a position and animation tables; placed by the scripts |
+| 6 | 276 | actors (see Actors below) |
 | 7 | 196 | empty in verid1 |
 | 12 | – | the sky (see below) |
 | 13 | – | textures, one chunk per texture, id = texture number |
@@ -454,6 +454,124 @@ Every wall, flat, billboard and actor is drawn at one of 8 light levels.
 In verid1, about half the walls and flats are in light groups, at
 brightness 5120 to 20480. That leaves the caves under the ice noticeably
 darker than the open canyon.
+
+### Actors
+
+Type 6 records are the actors themselves: the engine updates them in
+place (`0x4C3C10`). Records sharing an id (+0x14) are parts of one actor,
+chained at +0, and change mode together. verid1 has 40 actors, each with
+one part.
+
+| Offset | Meaning |
+|--------|---------|
+| 0x14 | id; the script object is 0xA000 \| id |
+| 0x1C, 0x20, 0x24 | x, z (feet), y |
+| 0x28 | reach: "walk to" has arrived within this distance |
+| 0x30 | added to z for the sprite's bottom edge |
+| 0x34 | sprite scale (at run time, the current half width) |
+| 0x38 | sprite height in world units |
+| 0x54, 0x58 | collision radius and height |
+| 0x64..0x68 | light, as walls; at run time the floor's light is copied in |
+| 0x6C | flags: 0x1 not drawn, 0x10 fullbright, 0x400000 never frozen, 0x1000000 flyer (keeps its height) |
+| 0x90, 0x94, 0x98 | wander: outer, inner and home radius |
+| 0x9C, 0xA0 | wander: walk between this and this far before a random turn |
+| 0xAC | step height |
+| 0xB0 | home point (the start position) |
+| 0xC4 | 7 animation entries of 8 bytes (below) |
+| 0xFC | u16 sprite set number: the actor's sprites are `NNN.gs2` next to GAME.LV2, and the number is also its class |
+| 0x100, 0x102 | wander: random turn range, 65536 to a turn |
+| 0x104 | turning speed, heading units per 1024 ms |
+| 0x108 | heading: 65536 to a turn, 0 faces +y, 16384 faces −x |
+| 0x10D | wander around the player rather than home |
+| 0x10E | mode (below) |
+
+**Animation entries.** Each entry has eight bytes:
+- u16 speed, 8.8 units walked per frame (0 means 0x40);
+- rate;
+- frames per view direction (0 means 1);
+- loop start, clamped to frames − 1;
+- number of view directions (8 or 1);
+- mirror flag;
+- the sequence's number (unused).
+
+The entry for mode m is min(m, 6). Its GS2 sequence is given by the table
+at `0x552338`:
+
+| Entry | Animation | GS2 sequence |
+|-------|-----------|--------------|
+| 0 | stand | 0 |
+| 1 | pain | 2 |
+| 2 | stand | 0 |
+| 3 | attack | 3 |
+| 4 | death A | 4 |
+| 5 | death B | 5 |
+| 6 | walk | 1 |
+
+A sequence holds each view direction's frames in turn.
+
+**Timing** (`0x4C4230`):
+- Each tick advances the animation by rate × dt / 1024 frames (dt in ms),
+  which is about `rate` frames a second.
+- The first pass plays every frame; after that the animation loops from
+  loop start. A loop start of frames − 1 plays the animation once and holds
+  the last frame.
+- Each cycle raises script event 37, unless the animation has only one frame.
+- Walking moves speed × frames advanced.
+
+**Drawing** (`0x4C3C10`):
+- **Facing:** let A be the angle from the camera to the actor, measured like a heading.
+  The octant is `(u16)(−A − heading + 0x1000) >> 13`, and direction =
+  octant × directions / 8.
+  - Direction 0 shows the actor's back, 2 its right side and 4 its front.
+  - With the mirror flag, directions 5–7 are drawn as 3–1 flipped.
+  - The frame is the sequence's entry at frame + direction × frames, or entry 0 if that is past the end.
+- **Size:** the sprite is centred on x, y. It is 2 × the frame's half width
+  × scale wide and 0x38 high, and stands on z + 0x30.
+- **Light:** it is lit like the floor it stands on.
+
+**Modes**. Scripts set them, and nothing changes mode by itself:
+
+| Mode | Behaviour |
+|------|-----------|
+| 0 | idle |
+| 1 | pain animation |
+| 2 | turn to face the target or the player; event 36 once facing |
+| 3 | face and fire at the start of each cycle (each shot raises 36) |
+| 4, 5 | death animations |
+| 6 | wander (below) |
+| 7 | walk straight at the target or the player; event 36 every tick while within reach. Blocked, it turns a quarter and tries again (no path finding) |
+| 8 | hidden: neither drawn nor updated |
+
+**Wander** (mode 6):
+- Walks its heading and turns at the turning speed.
+- After walking a random distance, it turns by a random angle in the
+  turn range, always in the same direction.
+- Beyond the outer radius from its centre it turns a quarter towards the
+  centre. Beyond the home radius it walks home until it is inside the outer
+  radius again. Crossing inwards past the inner radius turns it a quarter.
+- A wall turns it a quarter.
+- SET_ACTOR_COMBAT_PARAMS stores its angles as given. verid1 gives degrees,
+  so its wanderers turn by under a degree at a time, as in the original.
+
+**Movement:** actors move with the player's sweep and slide, using their own
+radius, height and step height. They snap onto floors and never fall.
+
+**Frozen actors:** an actor whose floor is in a zone the player can't see
+is frozen.
+
+**Proximity events.** SET_PROXIMITY_RANGES sets four distances, r1 to r4, for
+an actor class and a target class (0 is the player). Each is measured from
+the player's eye to the actor's feet:
+- 29 when the player comes within r1 (with a line of sight in the original);
+- 31 when the player goes beyond r2;
+- 33 when the player comes within r3;
+- 35 when the player goes beyond r4.
+
+The player collides with actors as with wall ends. A bump sends 14 and 15,
+as walls do.
+
+`engines/stg/actors.h` implements all this. Shots, combat damage and the
+line-of-sight check are not implemented yet.
 
 ### Collision and zones
 

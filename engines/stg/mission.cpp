@@ -41,8 +41,8 @@ bool isObject(uint16 recordId, uint16 typeBits, uint16 id) {
 
 } // End of anonymous namespace
 
-Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker)
-	: _level(level), _script(script), _renderer(renderer), _walker(walker), _random(0x53544721) {
+Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker, Actors *actors)
+	: _level(level), _script(script), _renderer(renderer), _walker(walker), _random(0x53544721), _actors(actors) {
 	_vm.reset(new ScriptVM(script, this));
 	_array.assign(kArraySize, 0);
 	for (const LevelFile::Wall &wall : level.getWalls())
@@ -51,10 +51,6 @@ Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &rend
 		_flatTextures.push_back(flat.texture);
 	for (const LevelFile::Billboard &billboard : level.getBillboards())
 		_billboardTextures.push_back(billboard.texture);
-	for (const LevelFile::Actor &actor : level.getActors()) {
-		Position position = { fromFixed(actor.x), fromFixed(actor.y), fromFixed(actor.z), 0 };
-		_actors[(uint16)(actor.objectId | kTypeActor)] = position;
-	}
 }
 
 Mission::~Mission() {}
@@ -87,8 +83,16 @@ void Mission::start() {
 
 void Mission::update(uint32 ms) {
 	// The original clamps its frame time the same way (0x4309C5).
-	_time += std::max<uint32>(8, std::min<uint32>(ms, 1000));
+	ms = std::max<uint32>(8, std::min<uint32>(ms, 1000));
+	_time += ms;
 	runTimers();
+
+	if (_actors) {
+		_actorEvents.clear();
+		_actors->update(ms, _walker, _actorEvents);
+		for (const Actors::ScriptEvent &event : _actorEvents)
+			send(event.object, event.event);
+	}
 
 	while (!_effects.empty() && _effects.begin()->first <= _time) {
 		uint16 id = _effects.begin()->second;
@@ -171,6 +175,15 @@ void Mission::checkPlayerContacts() {
 			send((uint16)(_level.getWalls()[wall].objectId | kTypeWall), kEventTouch);
 	}
 
+	uint16 actor = _actors ? _actors->getObstacleObject(_walker.getContactObstacle()) : 0;
+	if (actor != _touchedActor) {
+		if (_touchedActor)
+			send(_touchedActor, kEventUntouch);
+		_touchedActor = actor;
+		if (actor)
+			send(actor, kEventTouch);
+	}
+
 	int flat = _walker.getFloor();
 	if (flat != _standingFlat) {
 		if (_standingFlat >= 0) {
@@ -245,9 +258,9 @@ bool Mission::getPosition(uint16 id, Position &position) const {
 		position.heading = (int16)std::lround(degrees < 0 ? degrees + 360 : degrees);
 		return true;
 	}
-	auto actor = _actors.find(id);
-	if (actor != _actors.end()) {
-		position = actor->second;
+	uint16 heading;
+	if (_actors && _actors->getPosition(id, position.x, position.y, position.z, heading)) {
+		position.heading = (int16)(heading * 360 / 65536);
 		return true;
 	}
 	for (const LevelFile::Billboard &b : _level.getBillboards()) {
@@ -260,9 +273,8 @@ bool Mission::getPosition(uint16 id, Position &position) const {
 }
 
 void Mission::setPosition(uint16 id, const Position &position) {
-	auto actor = _actors.find(id);
-	if (actor != _actors.end())
-		actor->second = position;
+	if (_actors && _actors->isActor(id))
+		_actors->setPosition(id, position.x, position.y, position.z, (uint16)(position.heading * 65536 / 360));
 	for (LevelFile::Billboard &b : _level.getBillboards()) {
 		if (isObject(b.objectId, kTypeBillboard, id)) {
 			b.x = toFixed(position.x);
@@ -285,6 +297,16 @@ void Mission::setVisible(uint16 id, bool visible) {
 		if (isObject(b.objectId, kTypeBillboard, id))
 			b.hidden = !visible;
 	}
+	// Showing an actor makes it idle (0x456BBC); hiding takes it out (mode 8).
+	if (_actors && _actors->isActor(id))
+		_actors->setMode(id, visible ? Actors::kModeIdle : Actors::kModeHidden);
+}
+
+void Mission::setActorMode(ScriptVM &vm, int mode, bool popTarget) {
+	uint16 id = (uint16)vm.pop();
+	uint16 target = popTarget ? (uint16)vm.pop() : 0;
+	if (_actors)
+		_actors->setMode(id, mode, target);
 }
 
 void Mission::setTexture(uint16 id, uint16 texture, uint16 frames, uint16 speed) {
@@ -439,6 +461,84 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 	case 0x47: // SHOW
 		setVisible((uint16)vm.pop(), true);
 		break;
+	case 0x43: { // SET_PROXIMITY_RANGES
+		int actorClass = vm.pop();
+		int targetClass = vm.pop();
+		double radii[5];
+		for (int i = 0; i < 5; i++)
+			radii[i] = pop32(vm);
+		if (_actors)
+			_actors->setProximity(actorClass, targetClass, radii);
+		break;
+	}
+	case 0x44: { // SET_ACTOR_STEP_HEIGHT
+		uint16 id = (uint16)vm.pop();
+		double height = pop32(vm);
+		if (_actors)
+			_actors->setStepHeight(id, height);
+		break;
+	}
+	case 0x48: // ACTOR_WANDER
+		setActorMode(vm, Actors::kModeWander, false);
+		break;
+	case 0x49: // ACTOR_APPROACH_PLAYER
+		setActorMode(vm, Actors::kModeWalkTo, false);
+		break;
+	case 0x4E: { // SET_ACTOR_COMBAT_PARAMS: the wander settings
+		uint16 id = (uint16)vm.pop();
+		bool followPlayer = vm.pop() != 0;
+		vm.pop(); // guard target, not implemented
+		uint16 minTurn = (uint16)vm.pop();
+		uint16 maxTurn = (uint16)vm.pop();
+		double inner = pop32(vm), home = pop32(vm), outer = pop32(vm);
+		double minWalk = pop32(vm), maxWalk = pop32(vm);
+		if (_actors)
+			_actors->setWander(id, followPlayer, minTurn, maxTurn, inner, home, outer, minWalk, maxWalk);
+		break;
+	}
+	case 0x4F: { // SET_ACTOR_WIDTH
+		uint16 id = (uint16)vm.pop();
+		double width = pop32(vm);
+		if (_actors)
+			_actors->setRadius(id, width / 2);
+		break;
+	}
+	case 0x50: { // SET_ACTOR_HEIGHT
+		uint16 id = (uint16)vm.pop();
+		double height = pop32(vm);
+		if (_actors)
+			_actors->setBodyHeight(id, height);
+		break;
+	}
+	case 0x53: { // SET_ACTOR_ANIM_RATE
+		int mode = vm.pop();
+		int rate = vm.pop();
+		if (_actors)
+			_actors->setAnimationRate(self.object->id, mode, (byte)rate);
+		break;
+	}
+	case 0x54: // ACTOR_STATE_1
+		setActorMode(vm, Actors::kModePain, false);
+		break;
+	case 0x55: // ACTOR_ATTACK
+		setActorMode(vm, Actors::kModeAttack, true);
+		break;
+	case 0x56: // ACTOR_FACE
+		setActorMode(vm, Actors::kModeFace, true);
+		break;
+	case 0x57: // ACTOR_STATE_4
+		setActorMode(vm, Actors::kModeDeathA, false);
+		break;
+	case 0x58: // ACTOR_STATE_5
+		setActorMode(vm, Actors::kModeDeathB, false);
+		break;
+	case 0x5A: { // SET_ACTOR_REACH
+		uint16 id = (uint16)vm.pop();
+		double reach = pop32(vm);
+		if (_actors)
+			_actors->setReach(id, reach);
+		break;
+	}
 	case 0x4D: { // SET_POSITION
 		uint16 id = (uint16)vm.pop();
 		setPosition(id, popPosition(vm));
@@ -447,9 +547,8 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 	case 0x59: { // SET_HEADING
 		uint16 id = (uint16)vm.pop();
 		int16 heading = vm.pop();
-		auto actor = _actors.find(id);
-		if (actor != _actors.end())
-			actor->second.heading = heading;
+		if (_actors)
+			_actors->setHeading(id, (uint16)(heading * 65536 / 360));
 		break;
 	}
 	case 0x70: { // HIDE_ACTOR

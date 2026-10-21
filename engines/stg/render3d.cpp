@@ -144,6 +144,7 @@ void LevelRenderer::render(const Camera &camera, Graphics::Surface &dst, uint32 
 	drawFlats(dst, time);
 	drawWalls(dst, time);
 	drawBillboards(dst, time);
+	drawSprites(dst);
 }
 
 void LevelRenderer::drawSky(const Camera &camera, Graphics::Surface &dst) {
@@ -256,6 +257,46 @@ void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 			poly[i].v = (i >= 2) ? texture->height : 0;
 		}
 		drawPolygon(poly, texture, billboard.fullbright ? nullptr : getShade(billboard.light), dst);
+	}
+}
+
+const LevelRenderer::Texture *LevelRenderer::getSpriteTexture(const Graphics::Surface *surface) {
+	std::unique_ptr<Texture> &texture = _spriteTextures[surface];
+	if (!texture) {
+		texture.reset(new Texture());
+		texture->width = surface->w;
+		texture->height = surface->h;
+		texture->pixels.resize((size_t)surface->w * surface->h);
+		for (int u = 0; u < surface->w; u++) {
+			for (int v = 0; v < surface->h; v++)
+				texture->pixels[(size_t)u * surface->h + v] = (byte)surface->getPixel(u, v);
+		}
+	}
+	return texture.get();
+}
+
+void LevelRenderer::drawSprites(Graphics::Surface &dst) {
+	if (!_sprites)
+		return;
+	std::vector<Vertex> poly(4);
+	for (const SpriteDraw &sprite : *_sprites) {
+		if (!sprite.surface || sprite.surface->w == 0 || sprite.surface->h == 0)
+			continue;
+		const Texture *texture = getSpriteTexture(sprite.surface);
+		Vertex centre;
+		toCamera(sprite.x, sprite.y, sprite.bottom, centre);
+		const double xs[4] = { -sprite.halfWidth, sprite.halfWidth, sprite.halfWidth, -sprite.halfWidth };
+		const double ys[4] = { sprite.height, sprite.height, 0, 0 };
+		poly.resize(4);
+		for (int i = 0; i < 4; i++) {
+			bool right = i == 1 || i == 2;
+			poly[i].x = centre.x + xs[i];
+			poly[i].y = centre.y + ys[i];
+			poly[i].z = centre.z;
+			poly[i].u = right != sprite.mirrored ? texture->width : 0;
+			poly[i].v = i >= 2 ? texture->height : 0;
+		}
+		drawPolygon(poly, texture, sprite.fullbright ? nullptr : getShade(sprite.light), dst);
 	}
 }
 

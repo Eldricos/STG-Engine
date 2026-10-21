@@ -1,4 +1,5 @@
 target_sources(stg_engines PRIVATE
+	actors.cpp
 	detection.cpp
 	disasm.cpp
 	font.cpp

@@ -232,6 +232,8 @@ void STGEngine::drawFrame(uint32 delta) {
 		updateWalk(delta);
 		Graphics::Surface view;
 		view.create(Screen::kWidth, Screen::kHeight - kTextPanelHeight, Graphics::PixelFormat::createFormatCLUT8());
+		if (_actors)
+			_actors->getSprites(_camera.x, _camera.y, _walker->getActiveZones(), _actorSprites);
 		_levelRenderer->render(_camera, view, _levelTime);
 		_screen->getSurface().copyRectToSurface(view, 0, 0, Common::Rect(view.w, view.h));
 		_screen->getSurface().fillRect(Common::Rect(0, view.h, Screen::kWidth, Screen::kHeight),
@@ -374,6 +376,7 @@ void STGEngine::showImage(int index) {
 	const ResourceRef &ref = images[index];
 	_imageLoaded = _overlayLoaded = _spritesLoaded = false;
 	_mission.reset();
+	_actors.reset();
 	_walker.reset();
 	_levelRenderer.reset();
 	_level.reset();
@@ -406,6 +409,7 @@ void STGEngine::showImage(int index) {
 void STGEngine::showLevel(const ResourceRef &ref) {
 	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
 	_mission.reset();
+	_actors.reset();
 	_walker.reset();
 	_levelRenderer.reset();
 	_level.reset(new LevelFile());
@@ -419,6 +423,7 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 	_levelTextures = _level->getTextureIds();
 	_levelRenderer.reset(new LevelRenderer(*_level));
 	_walker.reset(new Walker(*_level));
+	loadActors(ref);
 	_camera = _levelRenderer->getStartCamera(Walker::kEyeHeight);
 	_walker->place(_camera.x, _camera.y, _camera.z - Walker::kEyeHeight);
 	startMission(ref);
@@ -430,6 +435,26 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 	_screen->getPalette() = _level->getPalette();
 	_screen->applyPalette();
 	showLevelPage(0);
+}
+
+void STGEngine::loadActors(const ResourceRef &levelRef) {
+	// Sprite sets are NNN.gs2 next to GAME.LV2 (0x4C01B0).
+	size_t slash = levelRef.name.find_last_of("/\\");
+	Common::String folder = slash == Common::String::npos ? "" : levelRef.name.substr(0, slash + 1);
+	bool upper = !levelRef.name.empty() && std::isupper((unsigned char)levelRef.name.back());
+	auto loader = [this, levelRef, folder, upper](uint16 number, SpriteSet &set) {
+		ResourceRef ref = { levelRef.archive, folder + Common::format(upper ? "%03u.GS2" : "%03u.gs2", number) };
+		std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+		if (!stream || !set.load(*stream)) {
+			warning("Could not load the sprite set %s", ref.toString().c_str());
+			return false;
+		}
+		return true;
+	};
+	Walker prototype(*_walker);
+	_actors.reset(new Actors(*_level, prototype, loader));
+	_walker->setObstacles(&_actors->getObstacles());
+	_levelRenderer->setSprites(&_actorSprites);
 }
 
 void STGEngine::startMission(const ResourceRef &levelRef) {
@@ -449,7 +474,7 @@ void STGEngine::startMission(const ResourceRef &levelRef) {
 		_levelScript.reset();
 		return;
 	}
-	_mission.reset(new Mission(*_level, *_levelScript, *_levelRenderer, *_walker));
+	_mission.reset(new Mission(*_level, *_levelScript, *_levelRenderer, *_walker, _actors.get()));
 	_mission->start();
 	double yaw;
 	if (_mission->takePlayerYaw(yaw))
@@ -562,6 +587,9 @@ void STGEngine::updateWalk(uint32 delta) {
 		double yaw;
 		if (_mission->takePlayerYaw(yaw))
 			_camera.yaw = yaw;
+	} else if (_actors) {
+		std::vector<Actors::ScriptEvent> events;
+		_actors->update(delta, *_walker, events);
 	}
 	_camera.x = _walker->getX();
 	_camera.y = _walker->getY();
@@ -657,6 +685,7 @@ void STGEngine::showStarfield() {
 	_overlayLoaded = false;
 	_spritesLoaded = false;
 	_mission.reset();
+	_actors.reset();
 	_walker.reset();
 	_levelRenderer.reset();
 	_level.reset();

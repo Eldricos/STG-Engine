@@ -63,7 +63,7 @@ bool SpriteSet::load(Common::SeekableReadStream &stream) {
 		stream.skip(3 * columnCount); // per-column tables
 
 		Frame frame;
-		frame.worldWidth = width / 256.0;
+		frame.halfWidth = width / 65536.0;
 		frame.surface.create((int16)columnCount, (int16)height, Graphics::PixelFormat::createFormatCLUT8());
 		for (uint32 x = 0; x < columnCount; x++) {
 			const byte *column = &columns[x * height];

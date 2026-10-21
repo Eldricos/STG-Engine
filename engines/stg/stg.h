@@ -78,6 +78,8 @@ private:
 	/** Move the camera by the keys held, over delta ms, keeping it on the floor. */
 	void updateWalk(uint32 delta);
 	void updateWalkStatus();
+	/** Set up the level's actors, loading their sprite sets. */
+	void loadActors(const ResourceRef &levelRef);
 	/** Load the level's GAME.BIN, if there is one, and start its mission. */
 	void startMission(const ResourceRef &levelRef);
 	/** Jump to the first image of the next (direction 1) or previous (-1) archive. */
@@ -112,6 +114,8 @@ private:
 	int _levelPage = 0;
 	std::unique_ptr<LevelRenderer> _levelRenderer;
 	std::unique_ptr<Walker> _walker;
+	std::unique_ptr<Actors> _actors;
+	std::vector<SpriteDraw> _actorSprites;
 	std::unique_ptr<ScriptFile> _levelScript;
 	/** Declared last of the level's parts, so it goes first. */
 	std::unique_ptr<Mission> _mission;

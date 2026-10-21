@@ -372,7 +372,7 @@ TEST(stg_sprite_format) {
 	const byte sequences[] = { 2, 0, 1, 0, 1, 1 }; // [0,1], [], [1]
 	file.write(sequences, sizeof(sequences));
 
-	file.writeUint32LE(4 << 8); // world width 4.0
+	file.writeUint32LE(4 << 8); // half width 1/64
 	file.writeUint32LE(2);
 	file.writeUint32LE(3);
 	const byte frame0[] = { 1, 2, 0xFF, 4, 5, 6 }; // column 0 bottom-up, column 1 bottom-up
@@ -396,7 +396,7 @@ TEST(stg_sprite_format) {
 	CHECK_EQ(sprites.getMaxHeight(), 3);
 
 	const Graphics::Surface &s0 = sprites.getFrame(0).surface;
-	CHECK_EQ(sprites.getFrame(0).worldWidth, 4.0);
+	CHECK_EQ(sprites.getFrame(0).halfWidth, 1024 / 65536.0);
 	CHECK_EQ(s0.getPixel(0, 2), 1u); // bottom row first
 	CHECK_EQ(s0.getPixel(0, 1), 2u);
 	CHECK_EQ(s0.getPixel(0, 0), 0xFFu);

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "common/random.h"
+#include "engines/stg/actors.h"
 #include "engines/stg/level.h"
 #include "engines/stg/render3d.h"
 #include "engines/stg/script.h"
@@ -40,7 +41,7 @@ namespace STG {
  * The natives the scripts call are implemented here as far as they are
  * understood. The rest balance the stack and are counted, so their
  * effects are simply missing (sound, the HUD and panels, inventory,
- * actor AI, screen effects).
+ * combat, screen effects).
  */
 class Mission : public ScriptHost {
 public:
@@ -70,7 +71,8 @@ public:
 		kTypeMask = 0xE000
 	};
 
-	Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker);
+	/** actors may be null for a level without them. */
+	Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker, Actors *actors);
 	~Mission() override;
 
 	/** Start the level: every object to state 0, then the start broadcast. */
@@ -138,6 +140,8 @@ private:
 	void restoreTexture(uint16 id);
 	void setFullbright(uint16 id, bool on);
 	void setPlayerHeading(int16 degrees);
+	/** Set an actor's mode from a native that pops the actor's id. */
+	void setActorMode(ScriptVM &vm, int mode, bool popTarget);
 	void skipNative(ScriptVM &vm, uint16 op);
 
 	LevelFile &_level;
@@ -157,13 +161,15 @@ private:
 
 	/** Textures as loaded, for RESET_DEFAULT. */
 	std::vector<uint16> _wallTextures, _flatTextures, _billboardTextures;
-	std::map<uint16, Position> _actors;
+	Actors *_actors;
 
 	int16 _health = 100;
 	int16 _maxHealth = 100;
 	int _touchedWall = -1;
 	int _standingFlat = -1;
 	int _billboard = -1;
+	uint16 _touchedActor = 0;
+	std::vector<Actors::ScriptEvent> _actorEvents;
 	bool _hasYaw = false;
 	double _yaw = 0;
 	double _currentYaw = 0;
