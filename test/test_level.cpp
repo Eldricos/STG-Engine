@@ -11,6 +11,7 @@
 #include "common/endian.h"
 #include "common/stream.h"
 #include "engines/stg/level.h"
+#include "engines/stg/render3d.h"
 
 namespace {
 
@@ -173,4 +174,101 @@ TEST(level_map_draws_sectors) {
 	CHECK(map.getPixel(32, 16) != 0xEEu);
 	CHECK_EQ(map.getPixel(2, 16), 0xEEu);
 	CHECK_EQ(map.getPixel(61, 16), 0xEEu);
+}
+
+namespace {
+
+/**
+ * The square level made renderable: a visible floor at height 0 and a wall
+ * one unit high along x = 2, both using the 2x3 texture, and a 4x2 sky.
+ */
+std::vector<Chunk> makeRenderableLevel() {
+	std::vector<Chunk> chunks = makeSquareLevel();
+	byte *sector = chunks[2].data.data();
+	WRITE_LE_UINT32(sector + 108, STG::LevelFile::kFlagVisible);
+	WRITE_LE_UINT32(sector + 0x20, 0);
+	WRITE_LE_UINT32(sector + 0x48, 0x10000);
+	WRITE_LE_UINT32(sector + 0x50, 0x10000);
+	WRITE_LE_UINT16(sector + 0x11C, 9);
+
+	byte *wall = chunks[3].data.data();
+	WRITE_LE_UINT32(wall + 0x2C, 0x10000);
+	WRITE_LE_UINT32(wall + 0x30, 0);
+	WRITE_LE_UINT32(wall + 0x48, 0x20000);
+	WRITE_LE_UINT32(wall + 0x50, 0x30000);
+	WRITE_LE_UINT32(wall + 0x6C, STG::LevelFile::kFlagVisible);
+	WRITE_LE_UINT16(wall + 0x96, 9);
+
+	Chunk billboards = { STG::LevelFile::kChunkBillboards, 1, 1, std::vector<byte>(140) };
+	WRITE_LE_UINT32(&billboards.data[0x1C], 0x1CCCD);           // x 1.8
+	WRITE_LE_UINT32(&billboards.data[0x20], 0x4000);            // z 0.25
+	WRITE_LE_UINT32(&billboards.data[0x24], (uint32)-0x4CCD);   // y -0.3
+	WRITE_LE_UINT32(&billboards.data[0x34], 0x2000);
+	WRITE_LE_UINT32(&billboards.data[0x38], 0x4000);
+	WRITE_LE_UINT16(&billboards.data[0x86], 1);
+	WRITE_LE_UINT16(&billboards.data[0x8A], 9);
+	chunks.push_back(billboards);
+
+	Chunk sky = { STG::LevelFile::kChunkSky, 0, 1, std::vector<byte>(64 + 8, 0x77) };
+	WRITE_LE_UINT32(&sky.data[16], 8);
+	WRITE_LE_UINT32(&sky.data[24], 2);
+	chunks.push_back(sky);
+	return chunks;
+}
+
+} // End of anonymous namespace
+
+TEST(level_surfaces_billboards_and_sky) {
+	STG::LevelFile level;
+	CHECK(loadLevel(level, makeLevelFile(makeRenderableLevel())));
+
+	const STG::LevelFile::Sector &flat = level.getSectors()[0];
+	CHECK(!flat.isCeiling());
+	CHECK_EQ(flat.texture, 9);
+	CHECK_EQ(flat.uScale, 0x10000);
+
+	const STG::LevelFile::Wall &wall = level.getWalls()[0];
+	CHECK_EQ(wall.top, 0x10000);
+	CHECK_EQ(wall.bottom, 0);
+	CHECK_EQ(wall.vLength, 0x30000);
+	CHECK_EQ(wall.texture, 9);
+
+	CHECK_EQ(level.getBillboards().size(), (size_t)1);
+	CHECK_EQ(level.getBillboards()[0].y, -0x4CCD);
+	CHECK_EQ(level.getBillboards()[0].texture, 9);
+
+	Graphics::Surface sky;
+	CHECK(level.loadSky(sky));
+	CHECK_EQ(sky.w, 4);
+	CHECK_EQ(sky.h, 2);
+	CHECK_EQ(sky.getPixel(3, 1), 0x77u);
+}
+
+TEST(level_renderer_draws_floor_wall_and_sky) {
+	STG::LevelFile level;
+	CHECK(loadLevel(level, makeLevelFile(makeRenderableLevel())));
+	STG::LevelRenderer renderer(level);
+
+	double floor = -1;
+	CHECK(renderer.findFloor(1, 1, 10, floor));
+	CHECK(floor == 0);
+	CHECK(!renderer.findFloor(5, 1, 10, floor));
+	CHECK(!renderer.findFloor(1, 1, -1, floor));
+
+	// Standing in the square, looking along +x at the wall.
+	STG::Camera camera;
+	camera.x = 0.2;
+	camera.y = 1;
+	camera.z = 0.25;
+	Graphics::Surface view;
+	view.create(64, 32, Graphics::PixelFormat::createFormatCLUT8());
+	renderer.render(camera, view, 0);
+
+	auto isTexel = [](uint32 c) { return c >= 10 && c <= 15; };
+	CHECK(isTexel(view.getPixel(32, 31))); // floor
+	CHECK(isTexel(view.getPixel(28, 17))); // wall
+	// The billboard stands beyond the end of the wall, against the sky.
+	CHECK(isTexel(view.getPixel(57, 13)));
+	CHECK_EQ(view.getPixel(57, 4), 0x77u);
+	CHECK_EQ(view.getPixel(32, 0), 0x77u); // sky above the wall
 }

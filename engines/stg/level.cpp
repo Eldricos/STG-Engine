@@ -83,6 +83,7 @@ bool LevelFile::loadTables() {
 	_vertices.clear();
 	_walls.clear();
 	_sectors.clear();
+	_billboards.clear();
 
 	// Each table's record count is in count B; check it against the size.
 	auto table = [this](uint16 type, uint32 recordSize, const byte *&data, uint32 &count) {
@@ -124,6 +125,15 @@ bool LevelFile::loadTables() {
 		wall.normalX = (int32)READ_LE_UINT32(r + 28);
 		wall.normalY = (int32)READ_LE_UINT32(r + 36);
 		wall.distance = (int32)READ_LE_UINT32(r + 40);
+		wall.top = (int32)READ_LE_UINT32(r + 0x2C);
+		wall.bottom = (int32)READ_LE_UINT32(r + 0x30);
+		wall.uStart = (int32)READ_LE_UINT32(r + 0x44);
+		wall.uLength = (int32)READ_LE_UINT32(r + 0x48);
+		wall.vStart = (int32)READ_LE_UINT32(r + 0x4C);
+		wall.vLength = (int32)READ_LE_UINT32(r + 0x50);
+		wall.flags = READ_LE_UINT32(r + 0x6C);
+		wall.frames = READ_LE_UINT16(r + 0x82);
+		wall.texture = READ_LE_UINT16(r + 0x96);
 		if (wall.vertex1 >= _vertices.size() || wall.vertex2 >= _vertices.size()) {
 			warning("LevelFile: wall %u refers to a missing vertex", i);
 			return false;
@@ -137,6 +147,15 @@ bool LevelFile::loadTables() {
 		const byte *r = p + i * kRecordSizes[2];
 		Sector sector;
 		sector.flags = READ_LE_UINT32(r + 108);
+		sector.height = (int32)READ_LE_UINT32(r + 0x20);
+		sector.uOffset = (int32)READ_LE_UINT32(r + 0x44);
+		sector.uScale = (int32)READ_LE_UINT32(r + 0x48);
+		sector.vOffset = (int32)READ_LE_UINT32(r + 0x4C);
+		sector.vScale = (int32)READ_LE_UINT32(r + 0x50);
+		sector.group = (int16)READ_LE_UINT16(r + 0x64);
+		sector.frames = READ_LE_UINT16(r + 0x100);
+		sector.texture = READ_LE_UINT16(r + 0x11C);
+		sector.rotation = READ_LE_UINT16(r + 0x11E);
 		uint16 n = READ_LE_UINT16(r + 266);
 		if (n > 8) {
 			warning("LevelFile: sector %u has %u vertices", i, n);
@@ -153,6 +172,47 @@ bool LevelFile::loadTables() {
 		sector.raw.assign(r, r + kRecordSizes[2]);
 		_sectors.push_back(std::move(sector));
 	}
+
+	if (!table(kChunkBillboards, kRecordSizes[4], p, count))
+		return false;
+	for (uint32 i = 0; i < count; i++) {
+		const byte *r = p + i * kRecordSizes[4];
+		Billboard billboard;
+		billboard.x = (int32)READ_LE_UINT32(r + 0x1C);
+		billboard.z = (int32)READ_LE_UINT32(r + 0x20);
+		billboard.y = (int32)READ_LE_UINT32(r + 0x24);
+		billboard.halfWidth = (int32)READ_LE_UINT32(r + 0x34);
+		billboard.height = (int32)READ_LE_UINT32(r + 0x38);
+		billboard.flags = READ_LE_UINT32(r + 0x6C);
+		billboard.frames = READ_LE_UINT16(r + 0x86);
+		billboard.texture = READ_LE_UINT16(r + 0x8A);
+		_billboards.push_back(billboard);
+	}
+	return true;
+}
+
+bool LevelFile::loadSky(Graphics::Surface &sky) const {
+	const uint32 headerSize = 64;
+	const ChunkEntry *entry = nullptr;
+	for (const ChunkEntry &e : _directory) {
+		if (e.type == kChunkSky) {
+			entry = &e;
+			break;
+		}
+	}
+	if (!entry || entry->size < headerSize)
+		return false;
+
+	const byte *p = &_data[entry->offset];
+	uint32 size = READ_LE_UINT32(p + 16);
+	uint32 height = READ_LE_UINT32(p + 24);
+	if (height == 0 || size % height != 0 || headerSize + (uint64)size > entry->size || size / height > 4096) {
+		warning("LevelFile: sky has a bad size");
+		return false;
+	}
+	uint32 width = size / height;
+	sky.create((int16)width, (int16)height, Graphics::PixelFormat::createFormatCLUT8());
+	sky.copyRectToSurface(p + headerSize, (int)width, 0, 0, (int)width, (int)height);
 	return true;
 }
 

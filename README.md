@@ -26,14 +26,13 @@ The framework is in place and working:
 | `engines/stg`: `.GSF` sprite sets | Not started |
 | `engines/stg`: scripts (`GAME.BIN`): format, interpreter, disassembler | Done |
 | `engines/stg`: the ~200 game opcodes the scripts call | Stack effects known; meanings to do |
-| `engines/stg`: levels (`GAME.LV2`): container, palette, floor plan, textures | Done (heights and 3D fields to do) |
+| `engines/stg`: levels (`GAME.LV2`): geometry, textures, sky, and a software 3D renderer to walk through them | Done (no lighting, collision or actors yet) |
 | `engines/stg`: game logic: the 3D away missions, starship combat, stellar cartography | **Not started** |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
 
 Right now, the engine runs as a viewer for the game's data. You can browse
 every image in its archives, and play every speech line and music track, with
-speech subtitles drawn in the game's own font, and see each level's floor plan
-and textures. The 2 CD Windows release is in the detection table.
+speech subtitles drawn in the game's own font, and walk through each level in 3D. The 2 CD Windows release is in the detection table.
 Other versions are found by a fallback that looks for an executable mentioning
 "Generations", and reported as unknown versions.
 
@@ -116,7 +115,8 @@ recognise.
 In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
 In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
 archives. Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
-through its textures. Home
+from the floor plan to a 3D view and then through the textures. In the 3D view, the
+arrows or WASD move, PgUp/PgDn look up and down, and End levels the view. Home
 returns to the starfield, F5/F7 save and load, and Esc quits.
 
 Settings and saves go in the per-user directory SDL picks for the platform:

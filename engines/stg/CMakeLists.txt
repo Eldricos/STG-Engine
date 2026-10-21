@@ -5,6 +5,7 @@ target_sources(stg_engines PRIVATE
 	level.cpp
 	opcodes.cpp
 	overlay.cpp
+	render3d.cpp
 	resources.cpp
 	screen.cpp
 	script.cpp

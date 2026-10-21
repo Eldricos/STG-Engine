@@ -198,7 +198,7 @@ stg --extract --path=DATA/VERID1.DAT --pattern='verid1/game.bin' -o out
 stg --probe --path=out/verid1/game.bin
 ```
 
-## Level data (`GAME.LV2`): partly decoded, `engines/stg/level.h`
+## Level data (`GAME.LV2`): decoded enough to render, `engines/stg/level.h`, `render3d.h`
 
 Loaded by the routine at `0x4BD130` in `sgens.exe`. All values are little endian.
 
@@ -219,37 +219,105 @@ records.
 |------|--------|----------|
 | 1 | 4 | palette, 256 × (R, G, B, 0) |
 | 2 | 8 | vertices: int32 x, y in 16.16 fixed point. The floor plan, y up |
-| 3 | 292 | sectors (see below) |
+| 3 | 292 | flats: floor and ceiling polygons (see below) |
 | 4 | 152 | walls (see below) |
-| 5, 6, 7 | 140, 276, 196 | polygon-like records handled by the same code as sectors; unexplored |
-| 12 | – | a single 161 KB chunk; unexplored |
+| 5 | 140 | billboards: sprites that always face the camera |
+| 6 | 276 | actors, with an id, a position and animation tables; placed by the scripts |
+| 7 | 196 | empty in verid1 |
+| 12 | – | the sky (see below) |
 | 13 | – | textures, one chunk per texture, id = texture number |
 
-**Sectors** are convex polygons that tile the floor plan. They can lie above
-one another, as rooms over rooms.
+World coordinates are 16.16 fixed point. x and y are the floor plan, and
+z is height, growing upwards. In verid1, walls are mostly 12 units high and
+a texture usually covers 10 or 15 units.
+
+The renderer was traced through `sgens.exe`:
+- **Camera.** `0x4C3600` transforms the vertices with the camera at
+  `0x57D9B8` (x, z, y). Yaw cos/sin are at `0x57D9CC`/`0x57D9D0`, and a pitch
+  shear is at `0x57D9D8`. Looking up and down shears the view instead of
+  rotating it.
+- **Projection.** screen x = centre + x/depth · W/2 and screen y = centre −
+  y/depth · W/2, set up at `0x4B58B0`. That is a 90° horizontal field of view.
+- **Drawing.** `0x4C13F0` draws flats and `0x4C1A50` texture-maps them;
+  `0x4C7D00` draws walls.
+
+Several records share a layout for animated textures: a frame count and a
+speed, with the current frame being the base texture id plus an offset
+that advances with time.
+
+**Flats** (type 3) are horizontal convex polygons. Each one is a floor or a
+ceiling at a single height; a level's floors and ceilings are stacked to
+make rooms over rooms.
 
 | Offset | Meaning |
 |--------|---------|
-| 108 | u32 flags |
-| 124 | edge planes, 16 bytes each: a, b (always 0), c, d with a·x + c·y + d = 0 |
-| 266 | u16 vertex count, 3–8 |
-| 268 | u16 vertex indices |
+| 0x14 | u32 group: flats with the same value are linked in one list (count A groups) |
+| 0x20 | height |
+| 0x3C, 0x40 | used to choose a depth-sorting bucket |
+| 0x44, 0x48 | u offset and scale: u = x · scale + offset, in texels |
+| 0x4C, 0x50 | v offset and scale: v = y · scale + offset |
+| 0x5C | maximum drawing distance, 15000 |
+| 0x60, 0x62 | i16 u and v scroll speeds |
+| 0x64 | i16 scripted object (door, lift) the flat belongs to, or 0 |
+| 0x69 | byte, 2 on floors and 3 on ceilings |
+| 0x6C | u32 flags: 0x100 visible, 0x100000 ceiling, 0x4000 extra pass (`0x4C8120`), 0x1 not depth sorted |
+| 0x7C | 16 bytes per vertex: an edge plane a, c, d (a·x + c·y + d = 0) at +0, +8 and +12; +4 receives the transformed vertex's address at load time |
+| 0xFC | animation start time (run time) |
+| 0x100, 0x102, 0x104 | u16 animation frame count, speed and current frame |
+| 0x10A | u16 vertex count, 3–8 |
+| 0x10C | u16 vertex indices |
+| 0x11C | u16 texture id |
+| 0x11E | u16 texture rotation angle, a full turn being 65536 |
 
-Fields not yet understood: +32 and +44..+56 (probably floor and ceiling
-heights), +68..+80 (plane-like, possibly slopes), +100 (an object link), +256 and +262.
+A floor is drawn only when the camera is above it, and a ceiling only when
+the camera is below it.
 
-**Walls** join the vertices at u16 +134 and +136. Their line is
-nx·x + ny·y + d = 0, with the unit normal at +28 (x) and +36 (y) and d at +40,
-all in 16.16. +32 is unknown.
+**Walls** (type 4) are vertical quads.
+
+| Offset | Meaning |
+|--------|---------|
+| 0x1C, 0x24, 0x28 | line nx·x + ny·y + d = 0 with a unit normal, used to cull walls facing away |
+| 0x20 | unknown, 0 to 0.87 |
+| 0x2C, 0x30 | heights of the top and bottom edges |
+| 0x44, 0x48 | u at the first vertex, and u length in texels along the wall |
+| 0x4C, 0x50 | v at the top, and v length in texels down the wall |
+| 0x62 | i16 v scroll speed |
+| 0x64 | i16 scripted object, or 0 |
+| 0x68 | byte copied into the wall's span; probably a light level |
+| 0x6C | u32 flags: 0x100 visible, 0xC0 two-sided, 0x8 masked (has transparent texels), 0x4 unknown, 0x2000 set aside for script handling at `0x4B7DB5` |
+| 0x7C, 0x80, 0x82, 0x84 | animation start time, speed, frame count, current frame |
+| 0x86, 0x88 | u16 vertex indices |
+| 0x8A | u16 scripted object id |
+| 0x96 | u16 texture id |
+
+The u length divided by the wall's length is always a whole texture over a
+whole number of units (12.8 texels per unit = 128 over 10, and so on), which
+confirms the u and v fields.
+
+**Billboards** (type 5) stand at x +0x1C, z +0x20, y +0x24. They are
+2 × (+0x34) wide and +0x38 high, with the texture id at u16 +0x8A and the
+frame count at +0x86.
+
+**Sky** (type 12, id 0) is a 64-byte header followed by an image stored
+row by row. The header holds the data size at +16 and the height at +24;
+the width is size / height. verid1's sky is 640 × 252 and wraps seamlessly
+from left to right. The header also holds 504 at +20, which the drawing
+routine at `0x4C2F50` uses as its row stride. That doesn't fit verid1's
+image, so this field isn't understood yet. Nor is how the sky maps to the
+view angle; the reimplementation tiles it at one sky pixel per screen pixel.
 
 **Textures** have a 20-byte header: 12 zero bytes (pointers filled in at
 run time), then u16 id, width, height and flags. Then come width × height
-pixels stored column by column (top first, as far as can be told), and 3 ×
-width bytes of per-column hints like GS2's. Palette index 255 (magenta) is
-transparent.
+pixels stored column by column, each column top first, and 3 × width bytes
+of per-column hints like GS2's. Flag 1 means the texture has no hints. Palette index 255
+(magenta) is transparent.
 
 At load time the game builds a 64 × 64 grid of 32-byte cells over the map
-(around `0x4BEE07`), presumably for collision and visibility.
+(around `0x4BEE07`), presumably for collision and visibility. A colour
+table builder at `0x4BFC60` makes 8 levels of fog, blending toward a
+colour; lighting and fog are not reimplemented yet.
 
-Opening a `GAME.LV2` in the viewer draws its floor plan. `]` and `[` step
-through its textures.
+Opening a `GAME.LV2` in the viewer draws its floor plan. `]` switches to a
+3D view of the level that you can walk through (arrows or WASD, PgUp/PgDn
+to look up and down, End to level the view). Pressing `]` again steps
+through the textures.

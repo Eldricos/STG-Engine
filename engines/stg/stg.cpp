@@ -34,6 +34,13 @@ const byte kColorFrame = 254;
 
 const int kNumStars = 400;
 const int kTextPanelHeight = 60;
+
+// Pages of a level in the viewer.
+const int kLevelPageMap = 0;
+const int kLevelPage3D = 1;
+const int kLevelPageTextures = 2;
+/** Eye height above the floor, in world units (walls are typically 12). */
+const double kEyeHeight = 6.0;
 const double kPi = 3.14159265358979323846;
 
 } // End of anonymous namespace
@@ -64,6 +71,7 @@ Common::Error STGEngine::run() {
 	info("%d images and %d sounds found", (int)_resources.getImages().size(), (int)_resources.getSounds().size());
 	info("Controls: Left/Right = image, PgUp/PgDn = archive, Up/Down = sound, Space = replay sound,");
 	info("          Home = starfield, click = test tone, F5/F7 = save/load, Alt+Enter = fullscreen, Esc = quit");
+	info("          On a level: [ ] = floor plan, 3D view, textures; in 3D, arrows/WASD move, PgUp/PgDn look");
 	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";
 
 	for (int i = 0; i < kNumStars; i++)
@@ -140,6 +148,11 @@ void STGEngine::loadFont() {
 }
 
 void STGEngine::handleEvent(const Common::Event &event) {
+	bool walking = _level && _levelPage == kLevelPage3D;
+	if (walking && (event.type == Common::EVENT_KEYDOWN || event.type == Common::EVENT_KEYUP) &&
+	    handleWalkKey(event.kbd.keycode, event.type == Common::EVENT_KEYDOWN))
+		return;
+
 	switch (event.type) {
 	case Common::EVENT_KEYDOWN:
 		switch (event.kbd.keycode) {
@@ -215,7 +228,16 @@ void STGEngine::drawFrame(uint32 delta) {
 		_dirty = true;
 	}
 
-	if (_level) {
+	if (_level && _levelPage == kLevelPage3D) {
+		_levelTime += delta;
+		updateWalk(delta);
+		Graphics::Surface view;
+		view.create(Screen::kWidth, Screen::kHeight - kTextPanelHeight, Graphics::PixelFormat::createFormatCLUT8());
+		_levelRenderer->render(_camera, view, _levelTime);
+		_screen->getSurface().copyRectToSurface(view, 0, 0, Common::Rect(view.w, view.h));
+		_screen->getSurface().fillRect(Common::Rect(0, view.h, Screen::kWidth, Screen::kHeight),
+		                               _screen->getPalette().findBestColor(0, 0, 0));
+	} else if (_level) {
 		if (!_dirty) {
 			_system->updateScreen();
 			return;
@@ -230,7 +252,7 @@ void STGEngine::drawFrame(uint32 delta) {
 			_screen->drawImage(map, Screen::kHeight - kTextPanelHeight);
 		} else {
 			LevelFile::Texture texture;
-			if (_level->loadTexture(_levelTextures[_levelPage - 1], texture))
+			if (_level->loadTexture(_levelTextures[_levelPage - kLevelPageTextures], texture))
 				_screen->drawImage(texture.surface, Screen::kHeight - kTextPanelHeight);
 		}
 	} else if (_spritesLoaded) {
@@ -352,6 +374,7 @@ void STGEngine::showImage(int index) {
 	_imageIndex = index;
 	const ResourceRef &ref = images[index];
 	_imageLoaded = _overlayLoaded = _spritesLoaded = false;
+	_levelRenderer.reset();
 	_level.reset();
 
 	if (Common::hasSuffixIgnoreCase(ref.name, ".lv2")) {
@@ -381,8 +404,10 @@ void STGEngine::showImage(int index) {
 
 void STGEngine::showLevel(const ResourceRef &ref) {
 	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+	_levelRenderer.reset();
 	_level.reset(new LevelFile());
 	if (!stream || !_level->load(*stream)) {
+		_levelRenderer.reset();
 		_level.reset();
 		initPalette();
 		_status = ref.toString() + "  (could not decode)";
@@ -390,6 +415,9 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 	}
 	_levelName = ref.toString();
 	_levelTextures = _level->getTextureIds();
+	_levelRenderer.reset(new LevelRenderer(*_level));
+	_camera = _levelRenderer->getStartCamera(kEyeHeight);
+	_levelTime = 0;
 	_screen->getPalette() = _level->getPalette();
 	_screen->applyPalette();
 	showLevelPage(0);
@@ -398,23 +426,105 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 void STGEngine::showLevelPage(int page) {
 	if (!_level)
 		return;
-	int pages = (int)_levelTextures.size() + 1;
+	int pages = (int)_levelTextures.size() + kLevelPageTextures;
 	_levelPage = ((page % pages) + pages) % pages;
+	for (bool &held : _walkKeys)
+		held = false;
 
-	if (_levelPage == 0) {
-		_status = Common::format("%s  map: %d sectors, %d walls, %d vertices  ([ ] textures)", _levelName.c_str(),
-		                         (int)_level->getSectors().size(), (int)_level->getWalls().size(),
-		                         (int)_level->getVertices().size());
+	if (_levelPage == kLevelPageMap) {
+		_status = Common::format("%s  map: %d sectors, %d walls, %d vertices  ([ ] 3D view, textures)",
+		                         _levelName.c_str(), (int)_level->getSectors().size(),
+		                         (int)_level->getWalls().size(), (int)_level->getVertices().size());
+	} else if (_levelPage == kLevelPage3D) {
+		updateWalkStatus();
 	} else {
 		LevelFile::Texture texture;
-		uint16 id = _levelTextures[_levelPage - 1];
+		int index = _levelPage - kLevelPageTextures;
+		uint16 id = _levelTextures[index];
 		if (_level->loadTexture(id, texture))
-			_status = Common::format("%s  texture %d/%d (id %u) %dx%d", _levelName.c_str(), _levelPage,
+			_status = Common::format("%s  texture %d/%d (id %u) %dx%d", _levelName.c_str(), index + 1,
 			                         (int)_levelTextures.size(), id, texture.surface.w, texture.surface.h);
 		else
 			_status = Common::format("%s  texture %u (could not decode)", _levelName.c_str(), id);
 	}
 	_dirty = true;
+}
+
+bool STGEngine::handleWalkKey(Common::KeyCode key, bool down) {
+	int walkKey;
+	switch (key) {
+	case Common::KEYCODE_UP:
+	case Common::KEYCODE_w:
+		walkKey = kWalkForward;
+		break;
+	case Common::KEYCODE_DOWN:
+	case Common::KEYCODE_s:
+		walkKey = kWalkBack;
+		break;
+	case Common::KEYCODE_LEFT:
+		walkKey = kWalkTurnLeft;
+		break;
+	case Common::KEYCODE_RIGHT:
+		walkKey = kWalkTurnRight;
+		break;
+	case Common::KEYCODE_a:
+		walkKey = kWalkStrafeLeft;
+		break;
+	case Common::KEYCODE_d:
+		walkKey = kWalkStrafeRight;
+		break;
+	case Common::KEYCODE_PAGEUP:
+		walkKey = kWalkLookUp;
+		break;
+	case Common::KEYCODE_PAGEDOWN:
+		walkKey = kWalkLookDown;
+		break;
+	case Common::KEYCODE_END:
+		if (down)
+			_camera.pitch = 0;
+		return true;
+	default:
+		return false;
+	}
+	_walkKeys[walkKey] = down;
+	return true;
+}
+
+void STGEngine::updateWalk(uint32 delta) {
+	const double kSpeed = 25.0;     // world units per second
+	const double kTurnSpeed = 2.0;  // radians per second
+	const double kLookSpeed = 0.8;  // pitch per second
+	const double kStepHeight = 4.0; // highest ledge that can be stepped onto
+	double seconds = std::min<uint32>(delta, 100) / 1000.0;
+
+	double forward = (_walkKeys[kWalkForward] ? 1 : 0) - (_walkKeys[kWalkBack] ? 1 : 0);
+	double strafe = (_walkKeys[kWalkStrafeRight] ? 1 : 0) - (_walkKeys[kWalkStrafeLeft] ? 1 : 0);
+	double turn = (_walkKeys[kWalkTurnLeft] ? 1 : 0) - (_walkKeys[kWalkTurnRight] ? 1 : 0);
+	double look = (_walkKeys[kWalkLookDown] ? 1 : 0) - (_walkKeys[kWalkLookUp] ? 1 : 0);
+	if (forward == 0 && strafe == 0 && turn == 0 && look == 0)
+		return;
+
+	_camera.yaw += turn * kTurnSpeed * seconds;
+	_camera.pitch = std::max(-1.0, std::min(1.0, _camera.pitch + look * kLookSpeed * seconds));
+	double step = kSpeed * seconds;
+	double x = _camera.x + (std::cos(_camera.yaw) * forward + std::sin(_camera.yaw) * strafe) * step;
+	double y = _camera.y + (std::sin(_camera.yaw) * forward - std::cos(_camera.yaw) * strafe) * step;
+
+	// Walls don't block yet; just stay on the floor below, if there is one.
+	double floor;
+	if (_levelRenderer->findFloor(x, y, _camera.z - kEyeHeight + kStepHeight, floor))
+		_camera.z = floor + kEyeHeight;
+	_camera.x = x;
+	_camera.y = y;
+	updateWalkStatus();
+}
+
+void STGEngine::updateWalkStatus() {
+	double degrees = std::fmod(_camera.yaw * 180 / 3.14159265358979323846, 360.0);
+	if (degrees < 0)
+		degrees += 360;
+	_status = Common::format("3D view (%.0f, %.0f, %.0f) %.0f deg  Arrows/WASD: move  PgUp/PgDn: look",
+	                         _camera.x, _camera.y, _camera.z, degrees);
 }
 
 void STGEngine::showSprites(const ResourceRef &ref) {
@@ -493,6 +603,7 @@ void STGEngine::showStarfield() {
 	_imageLoaded = false;
 	_overlayLoaded = false;
 	_spritesLoaded = false;
+	_levelRenderer.reset();
 	_level.reset();
 	_imageIndex = -1;
 	initPalette();

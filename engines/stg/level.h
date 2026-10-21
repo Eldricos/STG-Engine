@@ -34,14 +34,20 @@ namespace STG {
  *
  *   type 1   palette: 256 x (R, G, B, 0)
  *   type 2   vertices: (x, y) in 16.16 fixed point, the floor plan
- *   type 3   sectors (292 bytes): convex polygons of 3-8 vertices that
- *            tile the map, possibly stacked above one another
- *   type 4   walls (152 bytes): a line between two vertices
- *   type 5-7 further polygon records (140, 276, 196 bytes), unexplored
- *   type 12  one 161 KB chunk, unexplored
+ *   type 3   flats (292 bytes): horizontal convex polygons of 3-8
+ *            vertices, each a floor or a ceiling at one height
+ *   type 4   walls (152 bytes): vertical quads between two vertices
+ *   type 5   billboards (140 bytes): sprites that always face the camera
+ *   type 6   actors (276 bytes), placed and moved by the scripts
+ *   type 7   (196 bytes), empty in verid1
+ *   type 12  the sky: a 64-byte header and a row-major image
  *   type 13  textures, one chunk each, id = texture number
  *
  * Every byte of verid1's file belongs to the header, directory or a chunk.
+ *
+ * World space: x and y are the floor plan, z is height and grows upwards.
+ * All coordinates are 16.16 fixed point. Fields were identified from the
+ * renderer in sgens.exe (0x4C13F0 flats, 0x4C7D00 walls).
  */
 class LevelFile {
 public:
@@ -50,6 +56,8 @@ public:
 		kChunkVertices = 2,
 		kChunkSectors = 3,
 		kChunkWalls = 4,
+		kChunkBillboards = 5,
+		kChunkSky = 12,
 		kChunkTexture = 13
 	};
 
@@ -79,21 +87,74 @@ public:
 		uint16 vertex2;
 		/**
 		 * Line equation: normalX * x + normalY * y + distance = 0, with a unit
-		 * normal (16.16), from offsets 28, 36 and 40. Offset 32 holds a
-		 * further value whose meaning is unknown (possibly a slope).
+		 * normal (16.16), from offsets 28, 36 and 40. The renderer uses it
+		 * to cull walls facing away unless flag 0xC0 (two-sided) is set.
 		 */
 		int32 normalX;
 		int32 normalY;
 		int32 distance;
+		/** Heights of the top and bottom edges. */
+		int32 top;
+		int32 bottom;
+		/**
+		 * Texture coordinates in texels (16.16): u runs from uStart at
+		 * vertex1 to uStart + uLength at vertex2, v from vStart at the top
+		 * to vStart + vLength at the bottom.
+		 */
+		int32 uStart;
+		int32 uLength;
+		int32 vStart;
+		int32 vLength;
+		uint16 texture;
+		/** Animation frames: textures texture .. texture + frames - 1. */
+		uint16 frames;
+		uint32 flags;
 	};
 
+	/**
+	 * A floor or ceiling polygon. The original stores these in the same
+	 * table and draws a floor only from above and a ceiling from below.
+	 */
 	struct Sector {
 		/** Vertex indices of the convex polygon, from offsets 266/268. */
 		std::vector<uint16> vertices;
-		/** Flags word at offset 108. */
+		/** Flags word at offset 108; see kFlag* below. */
 		uint32 flags;
+		int32 height;
+		/**
+		 * World-aligned texture mapping in texels (16.16):
+		 * u = x * uScale + uOffset, v = y * vScale + vOffset, rotated by
+		 * rotation (a 16-bit angle) when that is non-zero.
+		 */
+		int32 uOffset;
+		int32 uScale;
+		int32 vOffset;
+		int32 vScale;
+		uint16 rotation;
+		uint16 texture;
+		uint16 frames;
+		/** Scripted object (door, lift) this polygon belongs to, or 0. */
+		int16 group;
 		/** The raw 292-byte record, for the fields still being decoded. */
 		std::vector<byte> raw;
+
+		bool isCeiling() const { return (flags & kFlagCeiling) != 0; }
+	};
+
+	static const uint32 kFlagVisible = 0x100;
+	static const uint32 kFlagCeiling = 0x100000;
+
+	/** A camera-facing sprite, standing on (x, y, z). */
+	struct Billboard {
+		int32 x;
+		int32 y;
+		int32 z;
+		/** Half the width, and the height. */
+		int32 halfWidth;
+		int32 height;
+		uint16 texture;
+		uint16 frames;
+		uint32 flags;
 	};
 
 	struct Texture {
@@ -114,6 +175,13 @@ public:
 	const std::vector<Vertex> &getVertices() const { return _vertices; }
 	const std::vector<Wall> &getWalls() const { return _walls; }
 	const std::vector<Sector> &getSectors() const { return _sectors; }
+	const std::vector<Billboard> &getBillboards() const { return _billboards; }
+
+	/**
+	 * The sky image, if the level has one. The header holds the image size
+	 * at offset 16 and its height at offset 24; rows are stored in order.
+	 */
+	bool loadSky(Graphics::Surface &sky) const;
 
 	/** Ids of all texture chunks, in directory order. */
 	std::vector<uint16> getTextureIds() const;
@@ -128,6 +196,7 @@ private:
 	std::vector<Vertex> _vertices;
 	std::vector<Wall> _walls;
 	std::vector<Sector> _sectors;
+	std::vector<Billboard> _billboards;
 };
 
 /**
