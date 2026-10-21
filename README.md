@@ -53,17 +53,28 @@ test suite's `OSystem_Null` shows how little is needed.
 
 ## Building
 
-You need CMake 3.16+, a C++17 compiler, and SDL 3.2 or newer.
+You need CMake 3.16+, a C++17 compiler and Git.
 
 ```sh
-# With SDL3 installed (e.g. from your package manager or a source build):
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+cmake --build build --config Release --parallel
+ctest --test-dir build --build-config Release --output-on-failure
 ```
 
-If SDL3 isn't in a standard location, add `-DCMAKE_PREFIX_PATH=/path/to/sdl3`.
-To have CMake download and build SDL3 itself, add `-DSTG_VENDORED_SDL=ON`.
+The build uses an installed SDL 3.2 or newer if it finds one. Otherwise it
+downloads SDL3 and links it statically, so the executable doesn't need an SDL
+DLL next to it. To control which SDL is used:
+
+- An installed SDL3 in a non-standard location: add `-DCMAKE_PREFIX_PATH=/path/to/sdl3`
+  (or `-DSDL3_DIR=/path/to/sdl3/lib/cmake/SDL3`).
+- Always use the downloaded copy: add `-DSTG_VENDORED_SDL=ON`.
+- Never download (for offline or packaging builds): add `-DSTG_DOWNLOAD_SDL=OFF`.
+
+On Linux, the downloaded SDL can only use the windowing and audio systems
+whose development headers are installed. On Debian or Ubuntu, install
+`libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev
+libwayland-dev libxkbcommon-dev libegl1-mesa-dev libasound2-dev libpulse-dev`
+before configuring.
 
 The executable is `build/sdl/stg` (`stg.exe` on Windows).
 
