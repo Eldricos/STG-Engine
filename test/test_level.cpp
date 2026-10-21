@@ -308,6 +308,22 @@ TEST(level_shade_tables) {
 	CHECK_EQ(tables[7][0], 0);
 }
 
+TEST(level_blend_table) {
+	using STG::LevelRenderer;
+	Graphics::Palette palette;
+	for (int i = 0; i < 256; i++)
+		palette.set(i, 0, 255, 0);
+	palette.set(1, 0, 0, 200);
+	palette.set(2, 100, 0, 100);
+	palette.set(3, 200, 0, 0);
+	palette.set(LevelRenderer::kBlendFirst, 200, 0, 0);
+
+	byte table[LevelRenderer::kBlendColors][256];
+	LevelRenderer::buildBlendTable(palette, table);
+	CHECK_EQ(table[0][1], 2); // red over blue: purple
+	CHECK_EQ(table[0][3], 3); // red over red: the first red
+}
+
 TEST(level_renderer_lighting) {
 	// Put the wall in light group 1 at full brightness. Switching the group
 	// off gives light level 7, and with the test palette (black apart from

@@ -41,6 +41,7 @@ struct LevelRenderer::Vertex {
 
 LevelRenderer::LevelRenderer(const LevelFile &level) : _level(level) {
 	_hasSky = _level.loadSky(_sky);
+	buildBlendTable(_level.getPalette(), _blend);
 	// The original builds its tables toward black when a level starts.
 	setFogColor(0, 0, 0);
 }
@@ -68,6 +69,30 @@ void LevelRenderer::buildShadeTables(const Graphics::Palette &palette, byte r, b
 				}
 			}
 			tables[n][i] = (byte)best;
+		}
+	}
+}
+
+void LevelRenderer::buildBlendTable(const Graphics::Palette &palette, byte table[kBlendColors][256]) {
+	for (int k = 0; k < kBlendColors; k++) {
+		byte sr, sg, sb;
+		palette.get(kBlendFirst + k, sr, sg, sb);
+		for (int i = 0; i < 256; i++) {
+			byte pr, pg, pb;
+			palette.get(i, pr, pg, pb);
+			int tr = (pr + sr) >> 1, tg = (pg + sg) >> 1, tb = (pb + sb) >> 1;
+			// The nearest entry; the first one wins a tie.
+			int best = 0, bestDistance = INT32_MAX;
+			for (int j = 0; j < 256; j++) {
+				byte qr, qg, qb;
+				palette.get(j, qr, qg, qb);
+				int distance = (tr - qr) * (tr - qr) + (tg - qg) * (tg - qg) + (tb - qb) * (tb - qb);
+				if (distance < bestDistance) {
+					bestDistance = distance;
+					best = j;
+				}
+			}
+			table[k][i] = (byte)best;
 		}
 	}
 }
@@ -145,6 +170,28 @@ void LevelRenderer::render(const Camera &camera, Graphics::Surface &dst, uint32 
 	drawWalls(dst, time);
 	drawBillboards(dst, time);
 	drawSprites(dst);
+	drawTranslucent(dst);
+}
+
+void LevelRenderer::queuePolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
+                                 Graphics::Surface &dst, bool tile, bool translucent) {
+	if (!translucent) {
+		drawPolygon(poly, texture, shade, dst, tile);
+		return;
+	}
+	double depth = 0;
+	for (const Vertex &v : poly)
+		depth += v.z;
+	_translucent.push_back({ poly, texture, shade, tile, depth / poly.size() });
+}
+
+void LevelRenderer::drawTranslucent(Graphics::Surface &dst) {
+	// The original paints far to near; what is behind must be there first.
+	std::stable_sort(_translucent.begin(), _translucent.end(),
+	                 [](const Translucent &a, const Translucent &b) { return a.depth > b.depth; });
+	for (Translucent &t : _translucent)
+		drawPolygon(t.poly, t.texture, t.shade, dst, t.tile, true);
+	_translucent.clear();
 }
 
 void LevelRenderer::drawSky(const Camera &camera, Graphics::Surface &dst) {
@@ -229,8 +276,9 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 		toCamera(x1, y1, bottom, poly[3]);
 		poly[3].u = u1;
 		poly[3].v = v2;
-		drawPolygon(poly, getTexture(wall.texture, wall.frames, wall.speed, time),
-		            wall.fullbright ? nullptr : getShade(wall.light), dst);
+		queuePolygon(poly, getTexture(wall.texture, wall.frames, wall.speed, time),
+		             wall.fullbright ? nullptr : getShade(wall.light), dst, true,
+		             (wall.flags & LevelFile::kFlagTranslucent) != 0);
 	}
 }
 
@@ -256,7 +304,9 @@ void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 			poly[i].u = (i == 1 || i == 2) ? texture->width : 0;
 			poly[i].v = (i >= 2) ? texture->height : 0;
 		}
-		drawPolygon(poly, texture, billboard.fullbright ? nullptr : getShade(billboard.light), dst, false);
+		const uint32 seeThrough = LevelFile::kFlagTranslucent | LevelFile::kFlagColumnTests;
+		queuePolygon(poly, texture, billboard.fullbright ? nullptr : getShade(billboard.light), dst, false,
+		             (billboard.flags & seeThrough) == seeThrough);
 	}
 }
 
@@ -296,12 +346,13 @@ void LevelRenderer::drawSprites(Graphics::Surface &dst) {
 			poly[i].u = right != sprite.mirrored ? texture->width : 0;
 			poly[i].v = i >= 2 ? texture->height : 0;
 		}
-		drawPolygon(poly, texture, sprite.fullbright ? nullptr : getShade(sprite.light), dst, false);
+		queuePolygon(poly, texture, sprite.fullbright ? nullptr : getShade(sprite.light), dst, false,
+		             sprite.translucent);
 	}
 }
 
 void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
-                                Graphics::Surface &dst, bool tile) {
+                                Graphics::Surface &dst, bool tile, bool translucent) {
 	// Clip against the near plane.
 	std::vector<Vertex> clipped;
 	clipped.reserve(poly.size() + 2);
@@ -402,6 +453,12 @@ void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *textur
 				color = texture->pixels[(size_t)u * texture->height + v];
 				if (color == LevelFile::kTransparent)
 					continue;
+				if (translucent && color >= kBlendFirst) {
+					// Blended over what is already there, which was
+					// shaded when drawn; it hides nothing behind it.
+					out[x] = _blend[color - kBlendFirst][out[x]];
+					continue;
+				}
 			}
 			out[x] = shade ? shade[color] : color;
 			depth[x] = (float)iz;

@@ -195,6 +195,13 @@ public:
 	 */
 	static const uint32 kFlagNotDrawn = 0x1;
 	static const uint32 kFlagCeiling = 0x100000;
+	/**
+	 * See-through drawing (0x4C0AD0, 0x4C80B4): texels 0xF0-0xFE are
+	 * averaged with what is behind them. Walls need only this bit;
+	 * billboards and actors also need kFlagColumnTests.
+	 */
+	static const uint32 kFlagTranslucent = 0x8;
+	static const uint32 kFlagColumnTests = 0x4;
 	/** Floors actors don't stand on (0x4B6AB0); the player still does. */
 	static const uint32 kFlagNoActors = 0x1000;
 

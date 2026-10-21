@@ -521,6 +521,8 @@ void Actors::getSprites(double cameraX, double cameraY, uint64 visibleZones, std
 		// Lit like the floor underfoot (its light is copied each frame).
 		sprite.light = floor >= 0 ? flats[floor].light : actor.data.light;
 		sprite.fullbright = (actor.data.flags & kFlagFullbright) != 0;
+		const uint32 seeThrough = LevelFile::kFlagTranslucent | LevelFile::kFlagColumnTests;
+		sprite.translucent = (actor.data.flags & seeThrough) == seeThrough;
 		sprites.push_back(sprite);
 	}
 }

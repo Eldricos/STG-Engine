@@ -497,6 +497,20 @@ confirms the u and v fields.
 2 × (+0x34) wide and +0x38 high, with the texture id at u16 +0x8A and the
 frame count at +0x86. Lighting is at +0x64..+0x68, as for flats (record kind 4 or 5).
 
+How walls, billboards and actors are drawn depends on their flags
+(`0x4C5820`, `0x4C0AD0`, `0x4C80B4`):
+
+- Index 255 is skipped. Without flag 0x4 the original draws billboards and actors with a routine
+  that doesn't skip it, but none in verid1 lack the flag.
+- Flag 0x8 makes them **see-through**: walls with 0x8 alone, billboards and actors with 0x8 and
+  0x4. Texels 0xF0..0xFE are then averaged with the picture behind them through a 15 × 256 table
+  built at level load (`0x4BD620`): entry [s − 0xF0][d] is the palette entry nearest
+  ((pal[s] + pal[d]) >> 1), the first one winning a tie. Those texels aren't shaded; the rest are
+  drawn as usual. verid1's steam (textures 143..147, flags 0x30C) is drawn this way.
+- Without 0x8, texels 0xF0..0xFE are ordinary colours.
+- Flag 0x2 (trim columns to their opaque run), and 0x40 and 0x80 (hide what is above or below),
+  only save work. Flag 0x10 is fullbright and 0x20 mirrors.
+
 Billboards with flag 0x400000 are **items** (record kind 5). The level keeps
 the ones not yet in play in a storage room off the map, in a zone of their
 own. At the start (`0x4BDD70`) and whenever a script puts one somewhere,

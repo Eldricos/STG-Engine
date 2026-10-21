@@ -43,6 +43,8 @@ struct SpriteDraw {
 	bool mirrored;
 	LevelFile::LightInfo light;
 	bool fullbright;
+	/** Drawn see-through; see LevelFile::kFlagTranslucent. */
+	bool translucent = false;
 };
 
 /**
@@ -97,6 +99,17 @@ public:
 	 */
 	void setGroupBrightness(int16 group, int percent);
 
+	/** The first palette entry that see-through things blend; the rest up to 0xFE do too. */
+	static const int kBlendFirst = 0xF0;
+	static const int kBlendColors = 15;
+
+	/**
+	 * The original's blend table (0x4BD620): for each of the palette
+	 * entries 0xF0-0xFE drawn over each background colour, the entry
+	 * nearest their average.
+	 */
+	static void buildBlendTable(const Graphics::Palette &palette, byte table[kBlendColors][256]);
+
 	/** Rebuild the shade tables for a new fog colour. */
 	void setFogColor(byte r, byte g, byte b);
 
@@ -130,7 +143,21 @@ private:
 	 * The texture repeats if tile is set, otherwise its edges stretch.
 	 */
 	void drawPolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
-	                 Graphics::Surface &dst, bool tile = true);
+	                 Graphics::Surface &dst, bool tile = true, bool translucent = false);
+	/** Draw now, or after everything solid if translucent. */
+	void queuePolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
+	                  Graphics::Surface &dst, bool tile, bool translucent);
+	/** The see-through polygons queued this frame, far to near. */
+	void drawTranslucent(Graphics::Surface &dst);
+
+	struct Translucent {
+		std::vector<Vertex> poly;
+		const Texture *texture;
+		const byte *shade;
+		bool tile;
+		double depth;
+	};
+	std::vector<Translucent> _translucent;
 
 	const LevelFile &_level;
 	std::map<uint32, std::unique_ptr<Texture>> _textures;
@@ -140,6 +167,7 @@ private:
 	bool _hasSky = false;
 	bool _skyEnabled = true;
 	byte _shades[LevelFile::kLightLevels][256];
+	byte _blend[kBlendColors][256];
 	/** The palette entry nearest the fog colour, shown where there is no sky. */
 	byte _fogIndex = 0;
 	bool _lighting = true;
