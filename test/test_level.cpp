@@ -272,3 +272,65 @@ TEST(level_renderer_draws_floor_wall_and_sky) {
 	CHECK_EQ(view.getPixel(57, 4), 0x77u);
 	CHECK_EQ(view.getPixel(32, 0), 0x77u); // sky above the wall
 }
+
+TEST(level_light_levels) {
+	STG::LevelFile::LightInfo fixed = { 0, 0, 3 };
+	CHECK_EQ(fixed.getLevel(100), 3);
+	CHECK_EQ(fixed.getLevel(0), 3);
+
+	// 3200 brightness per level, scaled by the group's percentage.
+	STG::LevelFile::LightInfo grouped = { 1, 7680, 0 };
+	CHECK_EQ(grouped.getLevel(100), 5);
+	CHECK_EQ(grouped.getLevel(50), 6);
+	CHECK_EQ(grouped.getLevel(0), 7);
+	grouped.brightness = 25600;
+	CHECK_EQ(grouped.getLevel(100), 0);
+}
+
+TEST(level_shade_tables) {
+	Graphics::Palette palette;
+	palette.set(0, 0, 0, 0);
+	palette.set(1, 128, 128, 128);
+	for (int i = 2; i < 256; i++)
+		palette.set(i, 255, 255, 255);
+
+	byte tables[STG::LevelFile::kLightLevels][256];
+	STG::LevelRenderer::buildShadeTables(palette, 0, 0, 0, tables);
+	CHECK_EQ(tables[0][2], 2);
+	CHECK_EQ(tables[1][2], 2); // 224: still nearest to white
+	CHECK_EQ(tables[4][2], 1); // 127: grey
+	CHECK_EQ(tables[7][2], 0); // 31: black
+	CHECK_EQ(tables[7][0], 0);
+}
+
+TEST(level_renderer_lighting) {
+	// Put the wall in light group 1 at full brightness. Switching the group
+	// off gives light level 7, and with the test palette (black apart from
+	// one red entry) every texel then shades to index 0.
+	std::vector<Chunk> chunks = makeRenderableLevel();
+	WRITE_LE_UINT16(&chunks[3].data[0x64], 1);
+	WRITE_LE_UINT16(&chunks[3].data[0x66], 25600);
+	STG::LevelFile level;
+	CHECK(loadLevel(level, makeLevelFile(chunks)));
+	CHECK_EQ(level.getWalls()[0].light.group, 1);
+
+	STG::LevelRenderer renderer(level);
+	STG::Camera camera;
+	camera.x = 0.2;
+	camera.y = 1;
+	camera.z = 0.25;
+	Graphics::Surface view;
+	view.create(64, 32, Graphics::PixelFormat::createFormatCLUT8());
+
+	renderer.render(camera, view, 0);
+	CHECK(view.getPixel(28, 17) >= 10);
+
+	renderer.setGroupBrightness(1, 0);
+	renderer.render(camera, view, 0);
+	CHECK_EQ(view.getPixel(28, 17), 0u);
+	CHECK(view.getPixel(32, 31) >= 10); // the floor has no group and stays lit
+
+	renderer.setLightingEnabled(false);
+	renderer.render(camera, view, 0);
+	CHECK(view.getPixel(28, 17) >= 10);
+}

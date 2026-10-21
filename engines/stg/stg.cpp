@@ -71,7 +71,7 @@ Common::Error STGEngine::run() {
 	info("%d images and %d sounds found", (int)_resources.getImages().size(), (int)_resources.getSounds().size());
 	info("Controls: Left/Right = image, PgUp/PgDn = archive, Up/Down = sound, Space = replay sound,");
 	info("          Home = starfield, click = test tone, F5/F7 = save/load, Alt+Enter = fullscreen, Esc = quit");
-	info("          On a level: [ ] = floor plan, 3D view, textures; in 3D, arrows/WASD move, PgUp/PgDn look");
+	info("          On a level: [ ] = floor plan, 3D view, textures; in 3D, arrows/WASD move, PgUp/PgDn look, L lighting");
 	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";
 
 	for (int i = 0; i < kNumStars; i++)
@@ -483,6 +483,12 @@ bool STGEngine::handleWalkKey(Common::KeyCode key, bool down) {
 		if (down)
 			_camera.pitch = 0;
 		return true;
+	case Common::KEYCODE_l:
+		if (down) {
+			_levelRenderer->setLightingEnabled(!_levelRenderer->isLightingEnabled());
+			updateWalkStatus();
+		}
+		return true;
 	default:
 		return false;
 	}
@@ -523,8 +529,9 @@ void STGEngine::updateWalkStatus() {
 	double degrees = std::fmod(_camera.yaw * 180 / 3.14159265358979323846, 360.0);
 	if (degrees < 0)
 		degrees += 360;
-	_status = Common::format("3D view (%.0f, %.0f, %.0f) %.0f deg  Arrows/WASD: move  PgUp/PgDn: look",
-	                         _camera.x, _camera.y, _camera.z, degrees);
+	_status = Common::format("3D %.0f,%.0f,%.0f %.0fdeg  Arrows/WASD PgUp/PgDn  L: lights %s",
+	                         _camera.x, _camera.y, _camera.z, degrees,
+	                         _levelRenderer->isLightingEnabled() ? "on" : "off");
 }
 
 void STGEngine::showSprites(const ResourceRef &ref) {

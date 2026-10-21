@@ -82,6 +82,29 @@ public:
 		int32 y;
 	};
 
+	/**
+	 * How a wall, flat or billboard is lit, from offsets 0x64-0x68.
+	 *
+	 * The renderer darkens each surface by one of 8 levels, 0 being fully
+	 * lit and 7 nearly black (see buildShadeTables()). A surface in a light
+	 * group gets its level from its brightness and the group's brightness,
+	 * which the scripts can change; any other surface keeps the level
+	 * stored in the file.
+	 */
+	struct LightInfo {
+		/** Light group, or 0. */
+		int16 group;
+		/** Brightness when the group is fully on; 3200 per light level. */
+		uint16 brightness;
+		/** Fixed light level, used when group is 0. */
+		byte level;
+
+		/** The light level for a group brightness of percent (100 = on). */
+		int getLevel(int percent) const;
+	};
+
+	static const int kLightLevels = 8;
+
 	struct Wall {
 		uint16 vertex1;
 		uint16 vertex2;
@@ -109,6 +132,7 @@ public:
 		/** Animation frames: textures texture .. texture + frames - 1. */
 		uint16 frames;
 		uint32 flags;
+		LightInfo light;
 	};
 
 	/**
@@ -133,8 +157,7 @@ public:
 		uint16 rotation;
 		uint16 texture;
 		uint16 frames;
-		/** Scripted object (door, lift) this polygon belongs to, or 0. */
-		int16 group;
+		LightInfo light;
 		/** The raw 292-byte record, for the fields still being decoded. */
 		std::vector<byte> raw;
 
@@ -155,6 +178,7 @@ public:
 		uint16 texture;
 		uint16 frames;
 		uint32 flags;
+		LightInfo light;
 	};
 
 	struct Texture {

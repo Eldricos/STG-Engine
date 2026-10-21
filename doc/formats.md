@@ -258,8 +258,8 @@ make rooms over rooms.
 | 0x4C, 0x50 | v offset and scale: v = y · scale + offset |
 | 0x5C | maximum drawing distance, 15000 |
 | 0x60, 0x62 | i16 u and v scroll speeds |
-| 0x64 | i16 scripted object (door, lift) the flat belongs to, or 0 |
-| 0x69 | byte, 2 on floors and 3 on ceilings |
+| 0x64, 0x66, 0x68 | lighting: i16 light group, u16 brightness, byte light level (see Lighting) |
+| 0x69 | byte record kind: 2 on floors and 3 on ceilings |
 | 0x6C | u32 flags: 0x100 visible, 0x100000 ceiling, 0x4000 extra pass (`0x4C8120`), 0x1 not depth sorted |
 | 0x7C | 16 bytes per vertex: an edge plane a, c, d (a·x + c·y + d = 0) at +0, +8 and +12; +4 receives the transformed vertex's address at load time |
 | 0xFC | animation start time (run time) |
@@ -282,8 +282,8 @@ the camera is below it.
 | 0x44, 0x48 | u at the first vertex, and u length in texels along the wall |
 | 0x4C, 0x50 | v at the top, and v length in texels down the wall |
 | 0x62 | i16 v scroll speed |
-| 0x64 | i16 scripted object, or 0 |
-| 0x68 | byte copied into the wall's span; probably a light level |
+| 0x64, 0x66, 0x68 | lighting, as for flats |
+| 0x69 | byte record kind, 1 |
 | 0x6C | u32 flags: 0x100 visible, 0xC0 two-sided, 0x8 masked (has transparent texels), 0x4 unknown, 0x2000 set aside for script handling at `0x4B7DB5` |
 | 0x7C, 0x80, 0x82, 0x84 | animation start time, speed, frame count, current frame |
 | 0x86, 0x88 | u16 vertex indices |
@@ -296,7 +296,7 @@ confirms the u and v fields.
 
 **Billboards** (type 5) stand at x +0x1C, z +0x20, y +0x24. They are
 2 × (+0x34) wide and +0x38 high, with the texture id at u16 +0x8A and the
-frame count at +0x86.
+frame count at +0x86. Lighting is at +0x64..+0x68, as for flats (record kind 4 or 5).
 
 **Sky** (type 12, id 0) is a 64-byte header followed by an image stored
 row by row. The header holds the data size at +16 and the height at +24;
@@ -313,11 +313,34 @@ of per-column hints like GS2's. Flag 1 means the texture has no hints. Palette i
 (magenta) is transparent.
 
 At load time the game builds a 64 × 64 grid of 32-byte cells over the map
-(around `0x4BEE07`), presumably for collision and visibility. A colour
-table builder at `0x4BFC60` makes 8 levels of fog, blending toward a
-colour; lighting and fog are not reimplemented yet.
+(around `0x4BEE07`), presumably for collision and visibility.
+
+### Lighting
+
+Every wall, flat, billboard and actor is drawn at one of 8 light levels.
+- **Shade tables.** Each level has a colour table, built at `0x4BFC60` and
+  held as 8 pointers at `0x575D80`. Table n maps each palette entry to the
+  entry nearest to it blended n/8 of the way toward a fog colour; table 0 is
+  the identity, drawn by faster routines. The builder is only called when a
+  level starts, and then with black, so the levels are darkness. There is
+  no distance fog. Where there is no sky, the background is filled with the
+  entry nearest the fog colour, kept at `0x575670`.
+- **Choosing the level.** A surface's level comes from offsets 0x64-0x68:
+  - If the i16 light group at 0x64 is 0, the level is the byte at 0x68
+    (0 for every such surface in verid1).
+  - Otherwise, on load (`0x4BE0E0`) the level is 7 − min(7, brightness ÷
+    3200), with the u16 brightness at 0x66.
+  - A script can set a group's brightness percentage (the native at
+    `0x4B7BA0`). The level then becomes 7 − min(7, percent × brightness ÷
+    320000).
+- **Actors.** An actor takes the light level of the flat it stands on
+  (`0x4B7A50`).
+
+In verid1, about half the walls and flats are in light groups, at
+brightness 5120 to 20480. That leaves the caves under the ice noticeably
+darker than the open canyon.
 
 Opening a `GAME.LV2` in the viewer draws its floor plan. `]` switches to a
 3D view of the level that you can walk through (arrows or WASD, PgUp/PgDn
-to look up and down, End to level the view). Pressing `]` again steps
+to look up and down, End to level the view, L to switch lighting off and on). Pressing `]` again steps
 through the textures.

@@ -24,7 +24,24 @@ const uint32 kHeaderSize = 48;
 const uint32 kEntrySize = 16;
 const uint32 kTextureHeaderSize = 20;
 
+LevelFile::LightInfo readLight(const byte *record) {
+	LevelFile::LightInfo light;
+	light.group = (int16)READ_LE_UINT16(record + 0x64);
+	light.brightness = READ_LE_UINT16(record + 0x66);
+	light.level = record[0x68];
+	return light;
+}
+
 } // End of anonymous namespace
+
+int LevelFile::LightInfo::getLevel(int percent) const {
+	// As the original computes it at 0x4BE0E0 (on load) and 0x4B7BA0 (when
+	// a script changes a group's brightness).
+	if (group == 0)
+		return std::min<int>(level, kLightLevels - 1);
+	uint32 scaled = (uint32)std::max(percent, 0) * brightness / (3200 * 100);
+	return kLightLevels - 1 - (int)std::min<uint32>(scaled, kLightLevels - 1);
+}
 
 bool LevelFile::load(Common::SeekableReadStream &stream) {
 	_directory.clear();
@@ -134,6 +151,7 @@ bool LevelFile::loadTables() {
 		wall.flags = READ_LE_UINT32(r + 0x6C);
 		wall.frames = READ_LE_UINT16(r + 0x82);
 		wall.texture = READ_LE_UINT16(r + 0x96);
+		wall.light = readLight(r);
 		if (wall.vertex1 >= _vertices.size() || wall.vertex2 >= _vertices.size()) {
 			warning("LevelFile: wall %u refers to a missing vertex", i);
 			return false;
@@ -152,7 +170,7 @@ bool LevelFile::loadTables() {
 		sector.uScale = (int32)READ_LE_UINT32(r + 0x48);
 		sector.vOffset = (int32)READ_LE_UINT32(r + 0x4C);
 		sector.vScale = (int32)READ_LE_UINT32(r + 0x50);
-		sector.group = (int16)READ_LE_UINT16(r + 0x64);
+		sector.light = readLight(r);
 		sector.frames = READ_LE_UINT16(r + 0x100);
 		sector.texture = READ_LE_UINT16(r + 0x11C);
 		sector.rotation = READ_LE_UINT16(r + 0x11E);
@@ -186,6 +204,7 @@ bool LevelFile::loadTables() {
 		billboard.flags = READ_LE_UINT32(r + 0x6C);
 		billboard.frames = READ_LE_UINT16(r + 0x86);
 		billboard.texture = READ_LE_UINT16(r + 0x8A);
+		billboard.light = readLight(r);
 		_billboards.push_back(billboard);
 	}
 	return true;

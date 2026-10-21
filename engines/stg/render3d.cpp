@@ -9,6 +9,7 @@
 #include "engines/stg/render3d.h"
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 
 namespace STG {
@@ -42,6 +43,57 @@ struct LevelRenderer::Vertex {
 
 LevelRenderer::LevelRenderer(const LevelFile &level) : _level(level) {
 	_hasSky = _level.loadSky(_sky);
+	// The original builds its tables toward black when a level starts.
+	setFogColor(0, 0, 0);
+}
+
+void LevelRenderer::buildShadeTables(const Graphics::Palette &palette, byte r, byte g, byte b,
+                                     byte tables[LevelFile::kLightLevels][256]) {
+	for (int i = 0; i < 256; i++)
+		tables[0][i] = (byte)i;
+	for (int n = 1; n < LevelFile::kLightLevels; n++) {
+		for (int i = 0; i < 256; i++) {
+			byte pr, pg, pb;
+			palette.get(i, pr, pg, pb);
+			int tr = pr + (((int)r - pr) * n >> 3);
+			int tg = pg + (((int)g - pg) * n >> 3);
+			int tb = pb + (((int)b - pb) * n >> 3);
+			// The nearest entry; the first one wins a tie.
+			int best = 0, bestDistance = INT32_MAX;
+			for (int j = 0; j < 256; j++) {
+				byte qr, qg, qb;
+				palette.get(j, qr, qg, qb);
+				int distance = (tr - qr) * (tr - qr) + (tg - qg) * (tg - qg) + (tb - qb) * (tb - qb);
+				if (distance < bestDistance) {
+					bestDistance = distance;
+					best = j;
+				}
+			}
+			tables[n][i] = (byte)best;
+		}
+	}
+}
+
+void LevelRenderer::setFogColor(byte r, byte g, byte b) {
+	buildShadeTables(_level.getPalette(), r, g, b, _shades);
+	_fogIndex = _level.getPalette().findBestColor(r, g, b);
+}
+
+void LevelRenderer::setGroupBrightness(int16 group, int percent) {
+	_groupBrightness[group] = percent;
+}
+
+const byte *LevelRenderer::getShade(const LevelFile::LightInfo &light) const {
+	if (!_lighting)
+		return nullptr;
+	int percent = 100;
+	if (light.group != 0) {
+		auto it = _groupBrightness.find(light.group);
+		if (it != _groupBrightness.end())
+			percent = it->second;
+	}
+	int level = light.getLevel(percent);
+	return level == 0 ? nullptr : _shades[level];
 }
 
 LevelRenderer::~LevelRenderer() {}
@@ -97,7 +149,7 @@ void LevelRenderer::render(const Camera &camera, Graphics::Surface &dst, uint32 
 
 void LevelRenderer::drawSky(const Camera &camera, Graphics::Surface &dst) {
 	if (!_hasSky) {
-		dst.fillRect(Common::Rect(dst.w, dst.h), 0);
+		dst.fillRect(Common::Rect(dst.w, dst.h), _fogIndex);
 		return;
 	}
 	// One sky pixel per screen pixel, so a 90 degree view covers dst.w
@@ -147,7 +199,7 @@ void LevelRenderer::drawFlats(Graphics::Surface &dst, uint32 time) {
 			v.v = (y * c - x * s) * vScale + vOffset;
 			poly.push_back(v);
 		}
-		drawPolygon(poly, getTexture(flat.texture, flat.frames, time), dst);
+		drawPolygon(poly, getTexture(flat.texture, flat.frames, time), getShade(flat.light), dst);
 	}
 }
 
@@ -176,7 +228,7 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 		toCamera(x1, y1, bottom, poly[3]);
 		poly[3].u = u1;
 		poly[3].v = v2;
-		drawPolygon(poly, getTexture(wall.texture, wall.frames, time), dst);
+		drawPolygon(poly, getTexture(wall.texture, wall.frames, time), getShade(wall.light), dst);
 	}
 }
 
@@ -200,11 +252,12 @@ void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 			poly[i].u = (i == 1 || i == 2) ? texture->width : 0;
 			poly[i].v = (i >= 2) ? texture->height : 0;
 		}
-		drawPolygon(poly, texture, dst);
+		drawPolygon(poly, texture, getShade(billboard.light), dst);
 	}
 }
 
-void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *texture, Graphics::Surface &dst) {
+void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *texture, const byte *shade,
+                                Graphics::Surface &dst) {
 	// Clip against the near plane.
 	std::vector<Vertex> clipped;
 	clipped.reserve(poly.size() + 2);
@@ -299,7 +352,7 @@ void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *textur
 				if (color == LevelFile::kTransparent)
 					continue;
 			}
-			out[x] = color;
+			out[x] = shade ? shade[color] : color;
 			depth[x] = (float)iz;
 		}
 	}
