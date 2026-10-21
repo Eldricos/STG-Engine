@@ -673,9 +673,18 @@ void STGEngine::showSprites(const ResourceRef &ref) {
 		return;
 	}
 
-	// Like overlays, sprites carry no palette of their own.
+	// Sprites carry no palette of their own: they are drawn with the 3D
+	// level's, from the GAME.LV2 beside them. Failing that, borrow one
+	// from an image in the same archive.
 	Graphics::Palette palette;
-	if (_resources.loadArchivePalette(ref.archive, palette)) {
+	size_t slash = ref.name.find_last_of("/\\");
+	Common::String folder = slash == Common::String::npos ? "" : ref.name.substr(0, slash + 1);
+	std::unique_ptr<Common::SeekableReadStream> levelStream = _resources.open({ ref.archive, folder + "GAME.LV2" });
+	LevelFile level;
+	if (levelStream && level.load(*levelStream)) {
+		_screen->getPalette() = level.getPalette();
+		_screen->applyPalette();
+	} else if (_resources.loadArchivePalette(ref.archive, palette)) {
 		_screen->getPalette() = palette;
 		_screen->applyPalette();
 	} else {
