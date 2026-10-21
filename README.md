@@ -27,7 +27,7 @@ The framework is in place and working:
 | `engines/stg`: scripts (`GAME.BIN`): format, interpreter, disassembler | Done |
 | `engines/stg`: the ~200 game opcodes the scripts call | Stack effects known; meanings to do |
 | `engines/stg`: levels (`GAME.LV2`) | Not started |
-| `engines/stg`: the formats inside the archives, scripts, scenes, combat | **Not started**: needs reverse engineering |
+| `engines/stg`: game logic: the 3D away missions, starship combat, stellar cartography | **Not started** |
 | Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
 
 Right now, the engine runs as a viewer for the game's data. You can browse
