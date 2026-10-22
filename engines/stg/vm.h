@@ -15,6 +15,10 @@
 
 #include "engines/stg/script.h"
 
+namespace Common {
+class Serializer;
+}
+
 namespace STG {
 
 class ScriptVM;
@@ -95,6 +99,9 @@ public:
 	/** Stack access for ScriptHost::callNative(). */
 	void push(int16 value);
 	int16 pop();
+
+	/** Save or load the objects' states, locals and parents, and the globals. */
+	void sync(Common::Serializer &s);
 
 	/** Opcodes that reached the stub host, for tracking what's left to implement. */
 	const std::set<uint16> &getStubbedOpcodes() const { return _stubbed; }

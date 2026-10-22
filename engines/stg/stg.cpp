@@ -15,6 +15,7 @@
 #include "common/config-manager.h"
 #include "common/debug.h"
 #include "common/savefile.h"
+#include "common/serializer.h"
 #include "common/system.h"
 #include "engines/stg/locations.h"
 
@@ -23,7 +24,8 @@ namespace STG {
 namespace {
 
 const uint32 kSaveMagic = MKTAG('S', 'T', 'G', 'S');
-const uint32 kSaveVersion = 1;
+// 1: the viewer's place; 2: adds a mission in progress.
+const uint32 kSaveVersion = 2;
 const uint32 kFrameMillis = 1000 / 60;
 
 // Palette layout used by the viewer when no game image is shown.
@@ -321,8 +323,8 @@ void STGEngine::drawFrame(uint32 delta) {
 	}
 
 	if (_playingMission && _mission && _mission->isFinished()) {
-		leaveMission(Common::format("%s is over: result %d, flags %x", _missions[_missionChoice].name.c_str(),
-		                            _mission->getResult(), _mission->getResultFlags()));
+		leaveMission(Common::format("%s %s", _missions[_missionChoice].name.c_str(),
+		                            _mission->isAccomplished() ? "accomplished" : "ended, objectives not met"));
 		return;
 	}
 	if (_level && _levelPage == kLevelPage3D && _hudScreen) {
@@ -349,6 +351,7 @@ void STGEngine::drawFrame(uint32 delta) {
 		_screen->getSurface().copyRectToSurface(view, 0, 0, Common::Rect(view.w, view.h));
 		_screen->getSurface().fillRect(Common::Rect(0, view.h, Screen::kWidth, Screen::kHeight),
 		                               _screen->getPalette().findBestColor(0, 0, 0));
+		applyScreenEffects();
 	} else if (_level) {
 		if (!_dirty) {
 			_system->updateScreen();
@@ -480,6 +483,8 @@ void STGEngine::drawMissionScreen(uint32 delta) {
 }
 
 void STGEngine::applyScreenEffects() {
+	if (!_mission || !_level)
+		return;
 	// 0x43199A: each slot blends every colour towards its own, slot 0 last.
 	Hud &hud = _mission->getHud();
 	bool any = false;
@@ -495,6 +500,30 @@ void STGEngine::applyScreenEffects() {
 			blended.get(i, pr, pg, pb);
 			blended.set(i, (byte)((pr * (128 - k) + r * k) >> 7), (byte)((pg * (128 - k) + g * k) >> 7),
 			            (byte)((pb * (128 - k) + b * k) >> 7));
+		}
+	}
+
+	// A transition (0x91, 0x92): the briefing picture, or the game, faded.
+	Mission::TransitionView transition = _mission->getTransitionView();
+	if (transition.active) {
+		any = true;
+		if (transition.briefing && _briefingLoaded) {
+			const Graphics::Surface &picture = _briefing.getSurface();
+			Graphics::Surface &screen = _screen->getSurface();
+			screen.fillRect(Common::Rect(screen.w, screen.h), 0);
+			screen.copyRectToSurface(picture, std::max(0, (screen.w - picture.w) / 2),
+			                         std::max(0, (screen.h - picture.h) / 2),
+			                         Common::Rect(std::min<int>(picture.w, screen.w), std::min<int>(picture.h, screen.h)));
+			blended = Graphics::Palette();
+			blended.set(_briefing.getPalette().data(), 0, _briefing.getPaletteColorCount());
+		} else if (transition.briefing) {
+			transition.brightness = 0;
+		}
+		for (int i = 0; i < 256; i++) {
+			byte r, g, b;
+			blended.get(i, r, g, b);
+			blended.set(i, (byte)(r * transition.brightness), (byte)(g * transition.brightness),
+			            (byte)(b * transition.brightness));
 		}
 	}
 	if (any || _paletteBlended) {
@@ -656,7 +685,7 @@ void STGEngine::showImage(int index) {
 	_dirty = true;
 }
 
-void STGEngine::showLevel(const ResourceRef &ref) {
+void STGEngine::showLevel(const ResourceRef &ref, bool run) {
 	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
 	_hudScreen.reset();
 	_heldItem.load(_resources, _levelRef, 0);
@@ -681,7 +710,17 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 	loadActors(ref);
 	_camera = _levelRenderer->getStartCamera(Walker::kEyeHeight);
 	_walker->place(_camera.x, _camera.y, _camera.z - Walker::kEyeHeight);
-	startMission(ref);
+	startMission(ref, run);
+	// The mission's briefing picture, which its opening transition shows.
+	{
+		size_t slash = ref.name.find_last_of("/\\");
+		ResourceRef briefing = { ref.archive, ref.name.substr(0, slash + 1) + "BRIEFING.BMP" };
+		_briefingLoaded = false;
+		for (const ResourceRef &image : _resources.getImages()) {
+			if (image.archive == briefing.archive && Common::toLower(image.name) == Common::toLower(briefing.name))
+				_briefingLoaded = _resources.loadImage(image, _briefing) && _briefing.hasPalette();
+		}
+	}
 	_hudScreen.reset();
 	_heldItem.load(_resources, _levelRef, 0);
 	if (_mission) {
@@ -744,7 +783,7 @@ bool STGEngine::findSoundFile(const Common::String &name, const Common::String &
 	return true;
 }
 
-void STGEngine::startMission(const ResourceRef &levelRef) {
+void STGEngine::startMission(const ResourceRef &levelRef, bool run) {
 	// A level's scripts are in GAME.BIN next to its GAME.LV2.
 	ResourceRef ref = levelRef;
 	size_t dot = ref.name.rfind('.');
@@ -779,7 +818,8 @@ void STGEngine::startMission(const ResourceRef &levelRef) {
 		return _resources.open(ref);
 	};
 	_mission.reset(new Mission(*_level, *_levelScript, *_levelRenderer, *_walker, _actors.get(), _mixer, openSound));
-	_mission->start();
+	if (run)
+		_mission->start();
 	double yaw;
 	if (_mission->takePlayerYaw(yaw))
 		_camera.yaw = yaw;
@@ -918,6 +958,9 @@ void STGEngine::updateWalk(uint32 delta) {
 	double strafe = (_walkKeys[kWalkStrafeRight] ? 1 : 0) - (_walkKeys[kWalkStrafeLeft] ? 1 : 0);
 	double turn = (_walkKeys[kWalkTurnLeft] ? 1 : 0) - (_walkKeys[kWalkTurnRight] ? 1 : 0);
 	double look = (_walkKeys[kWalkLookDown] ? 1 : 0) - (_walkKeys[kWalkLookUp] ? 1 : 0);
+	// No moving while a transition holds the screen.
+	if (_mission && _mission->getTransitionView().active)
+		forward = strafe = turn = look = 0;
 
 	_camera.yaw += turn * kTurnSpeed * seconds;
 	_camera.pitch = std::max(-1.0, std::min(1.0, _camera.pitch + look * kLookSpeed * seconds));
@@ -1253,6 +1296,21 @@ Common::Error STGEngine::saveGameState(int slot, const Common::String &descripti
 	out->writeString(description);
 	out->writeUint32LE((uint32)_imageIndex);
 	out->writeUint32LE((uint32)_soundIndex);
+	// A mission in progress: where, the view, then everything the mission holds.
+	bool inMission = _playingMission && _mission && _level;
+	out->writeByte(inMission ? 1 : 0);
+	if (inMission) {
+		Common::Serializer s(nullptr, out.get());
+		Common::String name = _missions[_missionChoice].name;
+		s.syncString(name);
+		s.syncAsDouble(_camera.yaw);
+		s.syncAsDouble(_camera.pitch);
+		int leftMode = _hudScreen ? (int)_hudScreen->getLeftMode() : 0;
+		s.syncAsInt(leftMode);
+		_mission->sync(s);
+		if (s.err())
+			return Common::kWritingFailed;
+	}
 	if (!out->flush() || out->err())
 		return Common::kWritingFailed;
 
@@ -1274,8 +1332,51 @@ Common::Error STGEngine::loadGameState(int slot) {
 	Common::String description = in->readFixedString(in->readUint16LE());
 	int32 imageIndex = in->readSint32LE();
 	int32 soundIndex = in->readSint32LE();
+	bool inMission = version >= 2 && in->readByte() != 0;
 	if (in->eos())
 		return Common::Error(Common::kReadingFailed, "truncated saved game");
+
+	if (inMission) {
+		Common::Serializer s(in.get(), nullptr);
+		Common::String name;
+		s.syncString(name);
+		int index = -1;
+		for (int i = 0; i < (int)_missions.size(); i++) {
+			if (_missions[i].name == name)
+				index = i;
+		}
+		if (index < 0)
+			return Common::Error(Common::kReadingFailed, "the mission " + std::string(name.c_str()) + " isn't installed");
+		double yaw = 0, pitch = 0;
+		int leftMode = 0;
+		s.syncAsDouble(yaw);
+		s.syncAsDouble(pitch);
+		s.syncAsInt(leftMode);
+		// Set the level up without starting its scripts, then put the
+		// saved state over it.
+		_missionChoice = index;
+		_missionMessage.clear();
+		showLevel(_missions[index].level, false);
+		if (!_level || !_mission)
+			return Common::Error(Common::kReadingFailed, "could not load the mission");
+		_mission->sync(s);
+		if (s.err()) {
+			leaveMission("The saved game could not be read");
+			return Common::Error(Common::kReadingFailed, "damaged saved game");
+		}
+		_camera.yaw = yaw;
+		_camera.pitch = pitch;
+		_camera.x = _walker->getX();
+		_camera.y = _walker->getY();
+		_camera.z = _walker->getEye();
+		_levelRenderer->setVisibleZones(_walker->getActiveZones());
+		if (_hudScreen && leftMode >= HudScreen::kLeftOff && leftMode <= HudScreen::kLeftObject)
+			_hudScreen->setLeftMode((HudScreen::LeftMode)leftMode);
+		_playingMission = true;
+		showLevelPage(kLevelPage3D);
+		info("Loaded slot %d: %s (%s)", slot, description.c_str(), name.c_str());
+		return Common::kNoError;
+	}
 
 	_soundIndex = soundIndex;
 	if (imageIndex >= 0)

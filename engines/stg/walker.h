@@ -14,6 +14,10 @@
 
 #include "engines/stg/level.h"
 
+namespace Common {
+class Serializer;
+}
+
 namespace STG {
 
 /**
@@ -53,6 +57,8 @@ public:
 
 	/** Put the player's feet at (x, y, feet) and settle onto the floor there. */
 	void place(double x, double y, double feet);
+	/** Save or load the position and the settings scripts change. */
+	void sync(Common::Serializer &s);
 
 	/** Walk by (dx, dy) over the given time, colliding and following floors. */
 	void move(double dx, double dy, double seconds);

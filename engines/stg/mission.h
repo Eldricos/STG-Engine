@@ -24,6 +24,10 @@
 #include "engines/stg/vm.h"
 #include "engines/stg/walker.h"
 
+namespace Common {
+class Serializer;
+}
+
 namespace STG {
 
 /**
@@ -54,6 +58,8 @@ public:
 		kEventSignal = 4,
 		kEventSetValue = 5,
 		kEventStart = 6,
+		kEventBriefingDone = 7,
+		kEventObjectivesDone = 8,
 		kEventPlayerDamaged = 9,
 		kEventPlayerHealed = 10,
 		kEventTouch = 14,
@@ -204,11 +210,32 @@ public:
 		_leftPanelRequest = 0;
 		return request;
 	}
-	/** END_MISSION (0xBF) ran: the location is over. */
+	/**
+	 * Save or load the mission: the scripts, the world they changed, the
+	 * player and the actors. Sounds playing aren't kept; shots in flight
+	 * are dropped.
+	 */
+	void sync(Common::Serializer &s);
+
+	/** END_MISSION (0xBF) or END_TRANSITION (0x92) has ended the location. */
 	bool isFinished() const { return _finished; }
-	/** What the scripts left for the game: a value (0x99, -1 if unset) and flags (0x9A). */
-	int32 getResult() const { return _result; }
-	uint32 getResultFlags() const { return _resultFlags; }
+	/**
+	 * Every objective was done (event 8): what the original's campaign
+	 * reads, as its controller's +0x10, to know the mission succeeded.
+	 */
+	bool isAccomplished() const { return _accomplished; }
+
+	/**
+	 * What a transition (0x91, 0x92) shows: the mission's BRIEFING.BMP or
+	 * the game, and how bright, 0 (black) to 1. The original's blends may
+	 * run differently; this fades through black.
+	 */
+	struct TransitionView {
+		bool active = false;
+		bool briefing = false;
+		double brightness = 1.0;
+	};
+	TransitionView getTransitionView() const;
 
 	/** The item in use (SET_ACTIVE_ITEM), or 0. */
 	uint16 getActiveItem() const { return _activeItem; }
@@ -295,8 +322,18 @@ private:
 	int _leftPanelRequest = 0;
 	uint16 _activeItem = 0;
 	bool _finished = false;
-	int32 _result = -1;
-	uint32 _resultFlags = 0;
+	// game+0x94 and +0x90.
+	uint32 _objectives = 0xFFFFFFFF;
+	uint32 _objectivesDone = 0;
+	bool _accomplished = false;
+	struct Transition {
+		bool active = false;
+		bool ending = false;
+		uint32 phase[3] = {};
+		uint32 elapsed = 0;
+	};
+	Transition _transition;
+	int _transitionSound = -1, _transitionVolume = 64;
 	Punch _punch;
 	std::vector<MissionSound::Finished> _soundsFinished;
 

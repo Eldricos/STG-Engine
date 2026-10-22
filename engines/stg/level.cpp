@@ -15,6 +15,7 @@
 
 #include "common/debug.h"
 #include "common/endian.h"
+#include "common/serializer.h"
 
 namespace STG {
 
@@ -35,6 +36,53 @@ LevelFile::LightInfo readLight(const byte *record) {
 }
 
 } // End of anonymous namespace
+
+void LevelFile::LightInfo::sync(Common::Serializer &s) {
+	s.syncAsSint16(group);
+	s.syncAsUint16(brightness);
+	s.syncAsByte(level);
+}
+
+void LevelFile::syncState(Common::Serializer &s) {
+	s.syncCount((uint32)_walls.size());
+	for (Wall &wall : _walls) {
+		if (s.err())
+			return;
+		s.syncAsUint16(wall.texture);
+		s.syncAsUint16(wall.frames);
+		s.syncAsUint16(wall.speed);
+		s.syncAsUint32(wall.flags);
+		wall.light.sync(s);
+		s.syncAsBool(wall.fullbright);
+	}
+	s.syncCount((uint32)_sectors.size());
+	for (Sector &sector : _sectors) {
+		if (s.err())
+			return;
+		s.syncAsUint16(sector.texture);
+		s.syncAsUint16(sector.frames);
+		s.syncAsUint16(sector.speed);
+		s.syncAsUint32(sector.flags);
+		sector.light.sync(s);
+		s.syncAsBool(sector.fullbright);
+	}
+	s.syncCount((uint32)_billboards.size());
+	for (Billboard &billboard : _billboards) {
+		if (s.err())
+			return;
+		s.syncAsSint32(billboard.x);
+		s.syncAsSint32(billboard.y);
+		s.syncAsSint32(billboard.z);
+		s.syncAsUint16(billboard.texture);
+		s.syncAsUint16(billboard.frames);
+		s.syncAsUint16(billboard.speed);
+		s.syncAsUint32(billboard.flags);
+		billboard.light.sync(s);
+		s.syncAsUint64(billboard.zones);
+		s.syncAsBool(billboard.hidden);
+		s.syncAsBool(billboard.fullbright);
+	}
+}
 
 int LevelFile::LightInfo::getLevel(int percent) const {
 	// As the original computes it at 0x4BE0E0 (on load) and 0x4B7BA0 (when

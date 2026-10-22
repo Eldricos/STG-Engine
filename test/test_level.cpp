@@ -1062,14 +1062,25 @@ TEST(mission_punch) {
 	CHECK(mission.getMissingNatives().empty());
 }
 
-TEST(mission_ends) {
+TEST(mission_flow) {
 	using namespace STG;
-	// A logic object reports a result (0x99) and two flags (0x9A), then
-	// ends the mission (0xBF), as verid1's last scene does.
+	const uint16 P = OP_PUSH;
+	// A logic object as verid1's e001: on the start (event 6) it sets two
+	// objectives (bits 2 and 4) and runs the briefing transition, 100 ms a
+	// phase; when that ends (event 7) it marks global 0. Event 8 (all done)
+	// marks global 1 and starts the closing transition. Signal 1 marks
+	// objective 4 done, signal 2 objective 2.
 	std::vector<uint16> program = {
 		1, 0xE001,
 		0x8000,
-		kEventEnterState, 0xFFFF, OP_PUSH32, 2, 0, 0x99, OP_PUSH32, 4, 0, 0x9A, OP_PUSH32, 1, 0, 0x9A, 0xBF, OP_END,
+		kEventEnterState, 0xFFFF, OP_PUSH_SELF, 0x31, OP_END,
+		Mission::kEventStart, 0xFFFF, OP_PUSH32, 6, 0, 0x99, OP_PUSH32, 100, 0, OP_PUSH32, 100, 0, OP_PUSH32, 100, 0,
+		0x91, OP_END,
+		Mission::kEventBriefingDone, 0xFFFF, P, 1, P, 0, OP_SET_GLOBAL, OP_END,
+		Mission::kEventObjectivesDone, 0xFFFF, P, 1, P, 1, OP_SET_GLOBAL, OP_PUSH32, 100, 0, OP_PUSH32, 100, 0,
+		OP_PUSH32, 100, 0, 0x92, OP_END,
+		Mission::kEventSignal, 0xFFFF, P, 1, OP_IF_EQ, OP_PUSH32, 4, 0, 0x9A, OP_ELSE, OP_PUSH32, 2, 0, 0x9A,
+		OP_ENDIF, OP_END,
 		0x3000,
 		0x2000,
 		0x1000
@@ -1085,12 +1096,34 @@ TEST(mission_ends) {
 	LevelRenderer renderer(level);
 	Walker walker(level);
 	Mission mission(level, script, renderer, walker, nullptr);
-	CHECK(!mission.isFinished());
-	CHECK_EQ(mission.getResult(), -1);
 	mission.start();
+
+	// The briefing shows, out of black, then the mission takes over.
+	Mission::TransitionView view = mission.getTransitionView();
+	CHECK(view.active && view.briefing && view.brightness < 0.01);
+	mission.update(50);
+	CHECK(mission.getTransitionView().briefing);
+	CHECK(std::fabs(mission.getTransitionView().brightness - 0.5) < 1e-9);
+	mission.update(130);
+	CHECK(!mission.getTransitionView().briefing);
+	mission.update(200);
+	CHECK(!mission.getTransitionView().active);
+	CHECK_EQ(mission.getVM().getGlobal(0), 1);
+
+	// One objective isn't enough...
+	mission.send(0xE001, Mission::kEventSignal, { 1 });
+	mission.update(40);
+	CHECK(!mission.isAccomplished());
+	// ...both are; event 8 starts the closing transition, which ends it.
+	mission.send(0xE001, Mission::kEventSignal, { 2 });
+	mission.update(40);
+	CHECK(mission.isAccomplished());
+	CHECK_EQ(mission.getVM().getGlobal(1), 1);
+	CHECK(!mission.isFinished());
+	mission.update(150);
+	CHECK(mission.getTransitionView().brightness < 1.0);
+	mission.update(200);
 	CHECK(mission.isFinished());
-	CHECK_EQ(mission.getResult(), 2);
-	CHECK_EQ(mission.getResultFlags(), 5u);
 	CHECK(mission.getMissingNatives().empty());
 }
 

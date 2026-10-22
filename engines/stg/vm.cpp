@@ -8,7 +8,10 @@
 
 #include "engines/stg/vm.h"
 
+#include <algorithm>
+
 #include "common/debug.h"
+#include "common/serializer.h"
 #include "engines/stg/opcodes.h"
 
 namespace STG {
@@ -52,6 +55,45 @@ int ScriptVM::findInstance(uint16 id) const {
 			return (int)i;
 	}
 	return -1;
+}
+
+void ScriptVM::sync(Common::Serializer &s) {
+	s.syncCount((uint32)_instances.size());
+	for (ScriptInstance &instance : _instances) {
+		s.syncAsSint16(instance.state);
+		s.syncAsBool(instance.enabled);
+		s.syncAsSint16(instance.pendingState);
+		s.syncVector(instance.locals, [](Common::Serializer &ser, int16 &v) { ser.syncAsSint16(v); });
+		int32 parent = -1;
+		if (instance.parent)
+			parent = (int32)(instance.parent - _instances.data());
+		s.syncAsSint32(parent);
+		if (s.isLoading())
+			instance.parent = parent >= 0 && parent < (int32)_instances.size() ? &_instances[parent] : nullptr;
+	}
+	// Globals: only the ones set.
+	uint32 count = 0;
+	if (s.isSaving()) {
+		for (int16 v : _globals)
+			count += v != 0;
+	}
+	s.syncAsUint32(count);
+	if (s.isLoading())
+		std::fill(_globals.begin(), _globals.end(), 0);
+	int index = 0;
+	for (uint32 i = 0; i < count && !s.err(); i++) {
+		if (s.isSaving()) {
+			while (_globals[index] == 0)
+				index++;
+		}
+		uint16 at = (uint16)index;
+		s.syncAsUint16(at);
+		int16 value = s.isSaving() ? _globals[index] : 0;
+		s.syncAsSint16(value);
+		if (s.isLoading() && at < _globals.size())
+			_globals[at] = value;
+		index++;
+	}
 }
 
 int16 ScriptVM::getGlobal(int index) const {

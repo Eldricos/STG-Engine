@@ -15,6 +15,10 @@
 #include "common/graphics/surface.h"
 #include "common/stream.h"
 
+namespace Common {
+class Serializer;
+}
+
 namespace STG {
 
 /**
@@ -102,6 +106,7 @@ public:
 
 		/** The light level for a group brightness of percent (100 = on). */
 		int getLevel(int percent) const;
+		void sync(Common::Serializer &s);
 	};
 
 	static const int kLightLevels = 8;
@@ -355,6 +360,12 @@ public:
 	const std::vector<Actor> &getActors() const { return _actors; }
 
 	/** Writable tables, for the scripts to change the level as it is played. */
+	/**
+	 * Save or load what scripts change: the walls', flats' and billboards'
+	 * textures, flags, lights and visibility, and where billboards are.
+	 */
+	void syncState(Common::Serializer &s);
+
 	std::vector<Wall> &getWalls() { return _walls; }
 	std::vector<Sector> &getSectors() { return _sectors; }
 	std::vector<Billboard> &getBillboards() { return _billboards; }

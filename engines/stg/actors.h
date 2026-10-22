@@ -21,6 +21,10 @@
 #include "engines/stg/sprite.h"
 #include "engines/stg/walker.h"
 
+namespace Common {
+class Serializer;
+}
+
 namespace STG {
 
 /**
@@ -149,6 +153,9 @@ public:
 	 * [3] in range, [4] out of range. radii[0] is unused, as in the original.
 	 */
 	void setProximity(int actorClass, int targetClass, const double radii[5]);
+
+	/** Save or load every actor's state, and the settings scripts gave them. */
+	void sync(Common::Serializer &s);
 
 	/** Set the stats; values of kKeep leave a stat as it is. Order as CombatStats. */
 	void setCombatStats(uint16 id, const int32 values[7]);

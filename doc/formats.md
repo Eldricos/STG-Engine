@@ -387,12 +387,21 @@ heading in degrees.
   - SET_SOUND_VOLUME, SET_SOUND_LOOP, SET_SOUND_PRIORITY, SET_SOUND_POSITION, SET_SOUND_OBJECT, SET_SOUND_MAX_DISTANCE, MUTE_SOUND
   - PRELOAD_SOUND
 - **The mission:**
-  - SET_MISSION_RESULT (0x99) v: a 32-bit value for the game, game+0x94 (-1 until set)
-  - ADD_MISSION_FLAGS (0x9A) f: game+0x90 |= f (32 bits)
-  - END_MISSION (0xBF): the location's controller (game+0x4C) is done (`0x443384` sets its +0x50).
-    verid1's last scene fades to black over 4 s (SCREEN_FLASH), and on the fade's event 55 calls it.
+  - Event 6 starts it. verid1's e001 answers with BRIEFING_TRANSITION (0x91) t1, t2, t3 (32-bit ms,
+    1000 each): the mission's BRIEFING.BMP (with proceed.bmp) gives way to the game over three
+    phases (`0x43D8FF`, run by `0x43E13A`), then event 7 starts the mission proper. Its sound is
+    SET_TRANSITION_SOUND (0x96) sound, volume. How each phase blends isn't certain; the engine
+    fades the picture in from black, swaps it for the game through black, then holds.
+  - END_TRANSITION (0x92) t1, t2, t3: the screen to black, then the mission ends (`0x43DC37`);
+    ignored while another transition runs. verid1's death (e00b) and its leaving (e001 on 46) use it.
+  - END_MISSION (0xBF): ends it at once (game.vt114 → the controller's `0x443384`, +0x50 = 1).
+  - SET_OBJECTIVES (0x99) mask: game+0x94 (-1 until set); OBJECTIVE_DONE (0x9A) bits: game+0x90 |=
+    bits; 0x9B clears them. Once they're equal the game broadcasts event 8, once (`0x43AD04`), and
+    sets the controller's +0x10: the mission was accomplished. Nothing else says how it went.
   - The player never dies in the engine: damage leaves at least 1 health and broadcasts event 9, and
     the scripts decide (verid1's hypospray steps in at 1 on the easiest setting).
+  - GET_ARRAY/SET_ARRAY's words (0x56F844) outlive the mission: verid1 stores the health and the
+    phaser's charge there before leaving.
 - **Interface:**
   - the close-up panel (PANEL_*)
   - the automap (MAP_*)

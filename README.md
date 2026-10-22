@@ -116,8 +116,10 @@ recognise.
 In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
 The starting screen lists the away missions found in the game's data (the
 fifteen locations sgens.exe knows, from AMARGOS1 to VERID1): Up/Down choose
-one and Enter plays it in the 3D view. Esc leaves a mission for the list, and
-a mission that ends itself returns there too, showing how it ended.
+one and Enter plays it in the 3D view, after its briefing picture. Esc leaves a
+mission for the list, and a mission that ends itself returns there too, saying
+whether its objectives were met. F5 saves a mission in progress and F7 picks
+it up again.
 In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
 archives. Tab and Shift+Tab jump to the next and previous 3D level (`GAME.LV2`),
 whose name the 3D view shows on its status line. Away from the starting screen, Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step

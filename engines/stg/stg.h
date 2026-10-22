@@ -76,7 +76,8 @@ private:
 	void showImage(int index);
 	void showOverlay(const ResourceRef &ref);
 	void showSprites(const ResourceRef &ref);
-	void showLevel(const ResourceRef &ref);
+	/** Load a level; with run false its scripts are set up but not started (a saved game follows). */
+	void showLevel(const ResourceRef &ref, bool run = true);
 	/** Page 0 is the map, page 1 the 3D view, page n + 1 the n-th texture. */
 	void showLevelPage(int page);
 	/** Handle a key on the 3D view; returns false if it isn't a movement key. */
@@ -92,7 +93,7 @@ private:
 	 */
 	bool findSoundFile(const Common::String &name, const Common::String &archivePrefix, ResourceRef &ref) const;
 	/** Load the level's GAME.BIN, if there is one, and start its mission. */
-	void startMission(const ResourceRef &levelRef);
+	void startMission(const ResourceRef &levelRef, bool run = true);
 	/** Jump to the first image of the next (direction 1) or previous (-1) archive. */
 	void jumpArchive(int direction);
 	/** Show the next (1) or previous (-1) 3D level, GAME.LV2. */
@@ -130,6 +131,9 @@ private:
 	Graphics::Palette _fontPalette;
 	bool _hasFontPalette = false;
 	Image::BitmapDecoder _image;
+	/** The mission's BRIEFING.BMP, for its opening transition. */
+	Image::BitmapDecoder _briefing;
+	bool _briefingLoaded = false;
 	bool _imageLoaded = false;
 	Overlay _overlay;
 	bool _overlayLoaded = false;

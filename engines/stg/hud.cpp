@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "common/serializer.h"
+
 namespace STG {
 
 Hud::Hud(const EventSink &send) : _send(send) {}
@@ -357,6 +359,87 @@ void Hud::update(uint32 ms, double playerX, double playerY) {
 	}
 	for (const auto &event : events)
 		_send(event.first, event.second, {});
+}
+
+namespace {
+
+void syncAnimation(Common::Serializer &s, Hud::Animation &a) {
+	s.syncAsBool(a.running);
+	s.syncAsInt(a.first);
+	s.syncAsInt(a.last);
+	s.syncAsInt(a.remaining);
+	s.syncAsUint32(a.ms);
+	s.syncAsUint32(a.elapsed);
+}
+
+void syncRect(Common::Serializer &s, Common::Rect &r) {
+	s.syncAsInt(r.left, 2);
+	s.syncAsInt(r.top, 2);
+	s.syncAsInt(r.right, 2);
+	s.syncAsInt(r.bottom, 2);
+}
+
+} // End of anonymous namespace
+
+void Hud::sync(Common::Serializer &s) {
+	for (uint16 &slot : _slots)
+		s.syncAsUint16(slot);
+	s.syncVector(_panels, [](Common::Serializer &ser, Panel &panel) {
+		ser.syncAsUint16(panel.owner);
+		ser.syncAsSint16(panel.image);
+		ser.syncAsInt(panel.frame);
+		ser.syncAsDouble(panel.x);
+		ser.syncAsDouble(panel.y);
+		ser.syncVector(panel.buttons, [](Common::Serializer &ser2, Button &button) {
+			ser2.syncAsInt(button.number);
+			ser2.syncAsSint16(button.image);
+			ser2.syncAsInt(button.frame);
+			syncRect(ser2, button.rect);
+			ser2.syncAsBool(button.keyed);
+			ser2.syncAsBool(button.hotspot);
+			syncAnimation(ser2, button.animation);
+		});
+		syncAnimation(ser, panel.animation);
+		ser.syncAsBool(panel.notifyWhenDone);
+	});
+	s.syncAsInt(_visible);
+	s.syncAsSint16(_bodyImage);
+	s.syncAsInt(_bodyFrame);
+	uint32 markers = (uint32)_markers.size();
+	s.syncAsUint32(markers);
+	if (s.isLoading())
+		_markers.clear();
+	auto it = _markers.begin();
+	for (uint32 i = 0; i < markers && !s.err(); i++) {
+		uint16 id = s.isSaving() ? it->first : 0;
+		int kind = s.isSaving() ? (int)it->second.kind : 0;
+		int style = s.isSaving() ? it->second.style : 0;
+		s.syncAsUint16(id);
+		s.syncAsInt(kind);
+		s.syncAsInt(style);
+		if (s.isLoading())
+			_markers[id] = { (MarkerKind)kind, style };
+		else
+			++it;
+	}
+	for (double &level : _levels)
+		s.syncAsDouble(level);
+	for (Effect &e : _effects) {
+		s.syncAsBool(e.active);
+		s.syncAsByte(e.r);
+		s.syncAsByte(e.g);
+		s.syncAsByte(e.b);
+		s.syncAsInt(e.percent);
+		s.syncAsUint32(e.fadeIn);
+		s.syncAsUint32(e.hold);
+		s.syncAsUint32(e.fadeOut);
+		s.syncAsUint32(e.elapsed);
+		s.syncAsUint16(e.notify);
+	}
+	s.syncAsInt(_shake);
+	s.syncAsDouble(_jolt);
+	s.syncAsUint32(_seed);
+	s.syncAsBool(_ripple);
 }
 
 } // End of namespace STG

@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "common/serializer.h"
+
 namespace STG {
 
 namespace {
@@ -78,6 +80,26 @@ Walker::Walker(const LevelFile &level) : _level(level) {
 		lines->push_back(line);
 	}
 	_walls = lines;
+}
+
+void Walker::sync(Common::Serializer &s) {
+	s.syncAsDouble(_x);
+	s.syncAsDouble(_y);
+	s.syncAsDouble(_feet);
+	s.syncAsDouble(_fallSpeed);
+	s.syncAsInt(_floor);
+	s.syncAsBool(_falls);
+	s.syncAsUint32(_ignoredFloors);
+	s.syncAsDouble(_eyeHeight);
+	s.syncAsDouble(_stepHeight);
+	s.syncAsDouble(_headroom);
+	s.syncAsDouble(_radius);
+	s.syncAsUint64(_zones);
+	s.syncAsBool(_collision);
+	if (s.isLoading()) {
+		_contactWall = -1;
+		_contactObstacle = -1;
+	}
 }
 
 void Walker::place(double x, double y, double feet) {

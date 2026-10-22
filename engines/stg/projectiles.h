@@ -136,6 +136,8 @@ public:
 	void getSprites(std::vector<SpriteDraw> &sprites);
 
 	int getCount() const { return (int)_shots.size(); }
+	/** Drop every shot in flight (loading a saved game). */
+	void clear() { _shots.clear(); }
 
 	/** Below and above the eye, the part of the player shots hit (0x57D98C, 0x57D990). */
 	static const double kPlayerBelowEye;

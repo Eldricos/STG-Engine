@@ -16,6 +16,10 @@
 #include "common/rect.h"
 #include "common/types.h"
 
+namespace Common {
+class Serializer;
+}
+
 namespace STG {
 
 /**
@@ -171,6 +175,9 @@ public:
 	/** VIEW_OVERLAY: the underwater ripple. */
 	void setRipple(bool on) { _ripple = on; }
 	bool hasRipple() const { return _ripple; }
+
+	/** Save or load everything above. */
+	void sync(Common::Serializer &s);
 
 	/**
 	 * Advance by ms: animations, effects (event 55), and panels whose

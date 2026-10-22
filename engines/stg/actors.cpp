@@ -13,6 +13,7 @@
 #include <cstdlib>
 
 #include "common/debug.h"
+#include "common/serializer.h"
 
 namespace STG {
 
@@ -126,6 +127,107 @@ Actors::Actors(const LevelFile &level, const Walker &prototype, const SpriteLoad
 }
 
 Actors::~Actors() {}
+
+void Actors::sync(Common::Serializer &s) {
+	s.syncCount((uint32)_actors.size());
+	for (std::unique_ptr<Actor> &pointer : _actors) {
+		if (s.err())
+			return;
+		Actor &a = *pointer;
+		LevelFile::Actor &d = a.data;
+		for (int32 *v : { &d.reach, &d.scale, &d.height, &d.radius, &d.bodyHeight, &d.outerRadius, &d.innerRadius,
+		                  &d.homeRadius, &d.minWalk, &d.maxWalk, &d.stepHeight })
+			s.syncAsSint32(*v);
+		s.syncAsUint32(d.flags);
+		s.syncAsUint16(d.minTurn);
+		s.syncAsUint16(d.maxTurn);
+		s.syncAsUint16(d.turnSpeed);
+		s.syncAsByte(d.followPlayer);
+		d.light.sync(s);
+		a.walker.sync(s);
+		s.syncAsDouble(a.x);
+		s.syncAsDouble(a.y);
+		s.syncAsDouble(a.z);
+		s.syncAsDouble(a.homeX);
+		s.syncAsDouble(a.homeY);
+		s.syncAsUint16(a.heading);
+		s.syncAsInt(a.mode);
+		s.syncAsUint16(a.target);
+		s.syncAsUint32(a.timer);
+		s.syncAsBool(a.fresh);
+		s.syncAsBool(a.announce);
+		s.syncAsBool(a.turning);
+		s.syncAsUint16(a.goal);
+		s.syncAsBool(a.returning);
+		s.syncAsDouble(a.walked);
+		s.syncAsDouble(a.nextTurn);
+		s.syncAsDouble(a.centreDistance);
+		s.syncAsBool(a.near);
+		s.syncAsBool(a.inRange);
+		s.syncAsInt(a.weapon);
+		s.syncAsBool(a.firing);
+	}
+
+	uint32 count = (uint32)_proximity.size();
+	s.syncAsUint32(count);
+	if (s.isLoading())
+		_proximity.clear();
+	auto proximity = _proximity.begin();
+	for (uint32 i = 0; i < count && !s.err(); i++) {
+		uint16 key = s.isSaving() ? proximity->first : 0;
+		std::vector<double> radii = s.isSaving() ? proximity->second : std::vector<double>();
+		s.syncAsUint16(key);
+		s.syncVector(radii, [](Common::Serializer &ser, double &v) { ser.syncAsDouble(v); });
+		if (s.isLoading())
+			_proximity[key] = radii;
+		else
+			++proximity;
+	}
+
+	count = (uint32)_combat.size();
+	s.syncAsUint32(count);
+	if (s.isLoading())
+		_combat.clear();
+	auto combat = _combat.begin();
+	for (uint32 i = 0; i < count && !s.err(); i++) {
+		uint16 id = s.isSaving() ? combat->first : 0;
+		CombatStats stats = s.isSaving() ? combat->second : CombatStats();
+		s.syncAsUint16(id);
+		for (int32 *v : { &stats.fullThreshold, &stats.stunThreshold, &stats.noticeThreshold, &stats.stunMax,
+		                  &stats.stun, &stats.hitPointsMax, &stats.hitPoints })
+			s.syncAsSint32(*v);
+		if (s.isLoading())
+			_combat[id] = stats;
+		else
+			++combat;
+	}
+
+	count = (uint32)_teams.size();
+	s.syncAsUint32(count);
+	if (s.isLoading())
+		_teams.clear();
+	auto team = _teams.begin();
+	for (uint32 i = 0; i < count && !s.err(); i++) {
+		uint16 id = s.isSaving() ? team->first : 0;
+		int16 value = s.isSaving() ? team->second : 0;
+		s.syncAsUint16(id);
+		s.syncAsSint16(value);
+		if (s.isLoading())
+			_teams[id] = value;
+		else
+			++team;
+	}
+	s.syncAsUint32(_seed);
+
+	if (s.isLoading()) {
+		_shots.clear();
+		for (size_t i = 0; i < _actors.size(); i++) {
+			const Actor &a = *_actors[i];
+			_obstacles[i] = { a.x, a.y, a.mode == kModeHidden ? 0 : fromFixed(a.data.radius), a.z,
+			                  a.z + fromFixed(a.data.bodyHeight) };
+		}
+	}
+}
 
 uint32 Actors::random() {
 	// The original's generator (0x57AA68).

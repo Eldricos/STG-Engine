@@ -12,6 +12,7 @@
 #include <cmath>
 
 #include "common/debug.h"
+#include "common/serializer.h"
 #include "engines/stg/opcodes.h"
 
 namespace STG {
@@ -88,6 +89,142 @@ std::vector<int> Mission::getStartOrder() const {
 	return order;
 }
 
+Mission::TransitionView Mission::getTransitionView() const {
+	TransitionView view;
+	if (!_transition.active)
+		return view;
+	view.active = true;
+	const uint32 *t = _transition.phase;
+	uint32 e = _transition.elapsed;
+	auto ratio = [](uint32 part, uint32 whole) { return whole ? std::min(1.0, (double)part / whole) : 1.0; };
+	if (_transition.ending) {
+		// From the screen as it is to black.
+		if (e >= t[0])
+			view.brightness = e < t[0] + t[1] ? 1.0 - ratio(e - t[0], t[1]) : 0.0;
+		return view;
+	}
+	// The briefing picture out of black, then the mission in its place.
+	if (e < t[0]) {
+		view.briefing = true;
+		view.brightness = ratio(e, t[0]);
+	} else if (e < t[0] + t[1]) {
+		uint32 half = t[1] / 2, into = e - t[0];
+		view.briefing = into < half;
+		view.brightness = view.briefing ? 1.0 - ratio(into, half) : ratio(into - half, t[1] - half);
+	}
+	return view;
+}
+
+void Mission::sync(Common::Serializer &s) {
+	_vm->sync(s);
+	_level.syncState(s);
+	_walker.sync(s);
+	bool hasActors = _actors != nullptr;
+	s.syncAsBool(hasActors);
+	if (hasActors != (_actors != nullptr)) {
+		s.fail();
+		return;
+	}
+	if (_actors)
+		_actors->sync(s);
+	if (s.err())
+		return;
+
+	s.syncAsUint32(_time);
+	uint32 count = (uint32)_timers.size();
+	s.syncAsUint32(count);
+	if (s.isLoading())
+		_timers.clear();
+	auto timer = _timers.begin();
+	for (uint32 i = 0; i < count && !s.err(); i++) {
+		uint16 id = s.isSaving() ? timer->first : 0;
+		Timer t = s.isSaving() ? timer->second : Timer();
+		s.syncAsUint16(id);
+		s.syncAsUint32(t.period);
+		s.syncAsUint32(t.due);
+		if (s.isLoading())
+			_timers[id] = t;
+		else
+			++timer;
+	}
+	s.syncVector(_listeners, [](Common::Serializer &ser, uint16 &v) { ser.syncAsUint16(v); });
+	s.syncVector(_array, [](Common::Serializer &ser, int16 &v) { ser.syncAsSint16(v); });
+
+	count = (uint32)_items.size();
+	s.syncAsUint32(count);
+	if (s.isLoading())
+		_items.clear();
+	auto item = _items.begin();
+	for (uint32 i = 0; i < count && !s.err(); i++) {
+		uint16 id = s.isSaving() ? item->first : 0;
+		Item it = s.isSaving() ? item->second : Item();
+		s.syncAsUint16(id);
+		s.syncAsSint16(it.kind);
+		s.syncAsSint16(it.b);
+		s.syncAsSint16(it.c);
+		s.syncAsSint32(it.charge);
+		s.syncAsSint32(it.maxCharge);
+		s.syncAsSint32(it.level);
+		s.syncAsSint32(it.maxLevel);
+		s.syncAsSint32(it.setting);
+		if (s.isLoading())
+			_items[id] = it;
+		else
+			++item;
+	}
+	// Shot damages follow the weapons' power levels.
+	s.syncCount((uint32)_projectiles->getTypeCount());
+	for (int type = 0; type < _projectiles->getTypeCount() && !s.err(); type++) {
+		int16 damage = _projectiles->getType(type).damage;
+		s.syncAsSint16(damage);
+		if (s.isLoading())
+			_projectiles->setDamage(type, damage);
+	}
+
+	_hud.sync(s);
+	s.syncAsInt(_leftPanelRequest);
+	s.syncAsUint16(_activeItem);
+	s.syncAsBool(_finished);
+	s.syncAsUint32(_objectives);
+	s.syncAsUint32(_objectivesDone);
+	s.syncAsBool(_accomplished);
+	s.syncAsBool(_transition.active);
+	s.syncAsBool(_transition.ending);
+	for (uint32 &phase : _transition.phase)
+		s.syncAsUint32(phase);
+	s.syncAsUint32(_transition.elapsed);
+	s.syncAsInt(_transitionSound);
+	s.syncAsInt(_transitionVolume);
+	s.syncString(_punch.image);
+	s.syncAsUint32(_punch.msPerFrame);
+	s.syncAsInt(_punch.hitFrame);
+	s.syncAsSint16(_punch.damage);
+	s.syncAsSint16(_punch.power);
+	s.syncAsInt(_punch.swingSound);
+	s.syncAsInt(_punch.swingVolume);
+	s.syncAsInt(_punch.hitSound);
+	s.syncAsInt(_punch.hitVolume);
+	s.syncAsSint16(_health);
+	s.syncAsSint16(_maxHealth);
+	s.syncAsInt(_touchedWall);
+	s.syncAsInt(_standingFlat);
+	s.syncAsInt(_billboard);
+	s.syncAsUint16(_touchedActor);
+	s.syncAsDouble(_currentYaw);
+	uint32 seed = _random.getSeed();
+	s.syncAsUint32(seed);
+
+	if (s.isLoading()) {
+		_random.setSeed(seed ^ _time);
+		_projectiles->clear();
+		_actorEvents.clear();
+		_soundsFinished.clear();
+		_sound->stopAll();
+		_hasYaw = true;
+		_yaw = _currentYaw;
+	}
+}
+
 void Mission::start() {
 	_listeners.clear();
 	for (int index : getStartOrder())
@@ -104,6 +241,24 @@ void Mission::update(uint32 ms) {
 	ms = std::max<uint32>(8, std::min<uint32>(ms, 1000));
 	_time += ms;
 	runTimers();
+
+	// 0x43AD04: once every objective is done, event 8, once.
+	if (_objectivesDone == _objectives && !_accomplished) {
+		_accomplished = true;
+		broadcast(kEventObjectivesDone);
+	}
+	// 0x43E13A: at its end the briefing gives way to the mission (event 7);
+	// the ending one ends it.
+	if (_transition.active) {
+		_transition.elapsed += ms;
+		if (_transition.elapsed >= _transition.phase[0] + _transition.phase[1] + _transition.phase[2]) {
+			_transition.active = false;
+			if (_transition.ending)
+				_finished = true;
+			else
+				broadcast(kEventBriefingDone);
+		}
+	}
 
 	if (_actors) {
 		_actorEvents.clear();
@@ -1203,16 +1358,41 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		vm.push(distance);
 		break;
 	}
-	case 0x99: // SET_MISSION_RESULT
-		// game+0x94; -1 until a script sets it.
-		_result = (int32)popRaw32(vm);
+	case 0x91: // BRIEFING_TRANSITION
+	case 0x92: { // END_TRANSITION
+		// 0x43D8FF / 0x43DC37: three phases, t1 then t2 then t3 ms.
+		uint32 t1 = popRaw32(vm), t2 = popRaw32(vm), t3 = popRaw32(vm);
+		bool ending = op == 0x92;
+		// The ending one waits for nothing; it is dropped while another runs.
+		if (ending && _transition.active)
+			break;
+		_transition.active = true;
+		_transition.ending = ending;
+		_transition.phase[0] = t1;
+		_transition.phase[1] = t2;
+		_transition.phase[2] = t3;
+		_transition.elapsed = 0;
+		if (_transitionSound >= 0)
+			_sound->playSound(_transitionSound, _transitionVolume);
 		break;
-	case 0x9A: // ADD_MISSION_FLAGS
-		_resultFlags |= popRaw32(vm);
+	}
+	case 0x96: // SET_TRANSITION_SOUND
+		_transitionSound = vm.pop();
+		_transitionVolume = vm.pop();
+		break;
+	case 0x99: // SET_OBJECTIVES
+		// game+0x94: the bits that must be done; -1 (none) until a script sets it.
+		_objectives = popRaw32(vm);
+		break;
+	case 0x9A: // OBJECTIVE_DONE
+		_objectivesDone |= popRaw32(vm);
+		break;
+	case 0x9B: // OBJECTIVE_UNDONE
+		_objectivesDone &= ~popRaw32(vm);
 		break;
 	case 0xBF: // END_MISSION
-		// The location's controller is done (0x443384 sets its +0x50): the
-		// original leaves the location with the result above.
+		// game.vt114: the location's controller is done (0x443384 sets its
+		// +0x50); whether it went well is only whether event 8 came.
 		_finished = true;
 		break;
 	case 0xC6: // GET_HEALTH
