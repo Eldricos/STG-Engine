@@ -91,6 +91,25 @@ void Font::drawString(Graphics::Surface &dst, const Common::String &str, int x, 
 	}
 }
 
+void Font::drawStringRgb(Graphics::Surface &dst, const Common::String &str, int x, int y, const uint32 *palette,
+                         const Common::Rect *clip) const {
+	Common::Rect area(dst.w, dst.h);
+	if (clip)
+		area.clip(*clip);
+	for (char c : str) {
+		if (const Glyph *glyph = findGlyph((byte)c)) {
+			for (int gy = 0; gy < glyph->height; gy++) {
+				for (int gx = 0; gx < glyph->width; gx++) {
+					byte pixel = glyph->pixels[gy * glyph->width + gx];
+					if (pixel != _transparent && area.contains(x + gx, y + gy))
+						*(uint32 *)dst.getBasePtr(x + gx, y + gy) = palette[pixel];
+				}
+			}
+		}
+		x += getCharWidth((byte)c);
+	}
+}
+
 Common::StringArray Font::wordWrap(const Common::String &str, int maxWidth) const {
 	Common::StringArray lines;
 	Common::String line;

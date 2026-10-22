@@ -18,6 +18,7 @@
 #include "common/random.h"
 #include "engines/engine.h"
 #include "engines/game.h"
+#include "engines/stg/bridge.h"
 #include "engines/stg/campaign.h"
 #include "engines/stg/font.h"
 #include "engines/stg/hudscreen.h"
@@ -37,10 +38,11 @@ namespace STG {
 const uint32 kSaveMagic = MKTAG('S', 'T', 'G', 'S');
 // 1: the viewer's place; 2: adds a mission in progress; 3: doors, lifts,
 // lights and the rest the other missions need; 4: the date saved and the
-// campaign. Missions saved by an older version can't be read.
-const uint32 kSaveVersion = 4;
+// campaign; 5: the bridge. Missions saved by an older version can't be read.
+const uint32 kSaveVersion = 5;
 const uint32 kFirstMissionSaveVersion = 3;
 const uint32 kFirstDatedSaveVersion = 4;
+const uint32 kFirstBridgeSaveVersion = 5;
 
 /**
  * Star Trek: Generations engine.
@@ -159,7 +161,13 @@ private:
 	/** The campaign's mission is over: on to whatever comes next. */
 	void campaignMissionEnded();
 	void openMenu(bool canReturn);
-	void closeMenu();
+	/** resume: back to what the menu was opened over (the bridge, say). */
+	void closeMenu(bool resume = true);
+	/** Show the bridge (true colour), or put it away. */
+	void setBridgeMode(bool on);
+	/** A frame of the bridge, with a command of the script. */
+	void updateBridge(uint32 delta);
+	void playSpaceCombat(int fleet);
 	void handleMenuEvent(const Common::Event &event);
 	void playMenuSound(int id);
 	std::vector<OptionsMenu::Slot> listSaves();
@@ -276,6 +284,10 @@ private:
 	Graphics::Palette _gamePalette;
 	GameSettings _settings;
 	Audio::SoundHandle _menuSound;
+	std::unique_ptr<Bridge> _bridge;
+	bool _bridgeMode = false;
+	bool _menuOverBridge = false;
+	Graphics::Surface _bridgeSurface;
 	Audio::SoundHandle _musicHandle;
 };
 

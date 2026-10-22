@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common/graphics/surface.h"
+#include "common/rect.h"
 #include "common/stream.h"
 #include "common/str.h"
 
@@ -57,6 +58,13 @@ public:
 	 */
 	void drawChar(Graphics::Surface &dst, uint16 c, int x, int y, const byte *remap = nullptr) const;
 	void drawString(Graphics::Surface &dst, const Common::String &str, int x, int y, const byte *remap = nullptr) const;
+
+	/**
+	 * Draw text on a true-colour (ARGB8888) surface, each glyph colour
+	 * looked up in palette (0xAARRGGBB).
+	 */
+	void drawStringRgb(Graphics::Surface &dst, const Common::String &str, int x, int y, const uint32 *palette,
+	                   const Common::Rect *clip = nullptr) const;
 
 	/** Split text into lines no wider than maxWidth, breaking at spaces. */
 	Common::StringArray wordWrap(const Common::String &str, int maxWidth) const;

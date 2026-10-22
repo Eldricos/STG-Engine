@@ -84,6 +84,11 @@ void Campaign::start(const Common::String &section) {
 	_objectFlags.clear();
 	_stack.clear();
 	_mission = 0;
+	_combat = 0;
+	_clue = false;
+	_onTransport.clear();
+	_onTactical.clear();
+	_deadline = 0;
 	_running = true;
 	jump(section);
 }
@@ -97,32 +102,120 @@ void Campaign::jump(const Common::String &section) {
 	}
 }
 
+void Campaign::restartSection() {
+	_line = 0;
+}
+
+void Campaign::setFlag(int flag, bool value) {
+	if (value)
+		_flags.insert(flag);
+	else
+		_flags.erase(flag);
+}
+
 Campaign::Action Campaign::next() {
 	Action action;
 	// A bound on lines run without an action, in case of a loop.
-	for (int steps = 0; _running && !_mission && steps < 10000; steps++) {
+	for (int steps = 0; _running && !_mission && !_combat && steps < 10000; steps++) {
 		const std::vector<std::vector<Common::String>> &lines = _sections[_section];
 		if (_line >= lines.size()) {
 			// The original waits on the bridge here, for the player to
-			// travel; with no bridge, nothing more can happen.
+			// beam down or engage; with no bridge, nothing more can happen.
+			if (_world && _world->isBridgeShown()) {
+				action.type = Action::kBridge;
+				return action;
+			}
 			warning("Campaign: [%s] ends without going on", _section.c_str());
 			_running = false;
 			break;
 		}
-		const std::vector<Common::String> &words = lines[_line++];
-		if (execute(words, action))
+		Common::String section = _section;
+		size_t line = _line++;
+		switch (execute(lines[line], action)) {
+		case kAction:
 			return action;
+		case kBlocked:
+			if (_section == section)
+				_line = line;
+			action.type = Action::kBridge;
+			return action;
+		case kNext:
+			break;
+		}
+		// While the bridge is up, one command a frame (GM state 7).
+		if (_world && _world->isBridgeShown()) {
+			action.type = Action::kBridge;
+			return action;
+		}
 	}
 	return Action();
 }
 
-void Campaign::missionEnded(bool accomplished) {
+void Campaign::missionEnded(bool accomplished, bool clue) {
 	if (!_mission)
 		return;
 	_played.insert(_mission);
 	(accomplished ? _won : _lost).insert(_mission);
+	_clue = clue;
 	_mission = 0;
 	jump(accomplished ? _wonSection : _lostSection);
+}
+
+void Campaign::combatEnded(CombatResult result) {
+	if (!_combat)
+		return;
+	int fleet = _combat;
+	_combat = 0;
+	// Combats are kept apart from away missions in the results.
+	_played.insert(100 + fleet);
+	(result == kCombatWon ? _won : _lost).insert(100 + fleet);
+	if (result == kEnterpriseDestroyed) {
+		jump("EnterpriseDestroyed");
+		return;
+	}
+	if (_world) {
+		// A fleet beaten stays beaten; a roaming one that got away attacks
+		// next time.
+		if (result == kCombatWon)
+			_world->bridgeCommand("setfleetflag", { std::to_string(fleet), "8", "TRUE" });
+		if (fleet > 12 && fleet < 25)
+			_world->bridgeCommand("fleetalert", { std::to_string(fleet), "Red" });
+	}
+	jump(result == kCombatWon ? _wonSection : _lostSection);
+}
+
+void Campaign::transport() {
+	if (!_onTransport.empty())
+		jump(_onTransport);
+}
+
+void Campaign::startCombat(int fleet) {
+	if (fleet < 0) {
+		if (!_onTactical.empty())
+			jump(_onTactical);
+	} else if (fleet > 12 && fleet < 25) {
+		// The roaming fleets' sections end with Pop, back to the line the
+		// script was on (0x41447D).
+		_stack.push_back({ _section, (int)_line });
+		jump(Common::format("FightFleet%d", fleet));
+	} else {
+		jump(Common::format("SpaceCombat%d", fleet));
+	}
+}
+
+bool Campaign::isWaitOver(const Common::String &kind) const {
+	// Without the bridge every Wait passes (0x4183E1).
+	if (!_world || !_world->isBridgeShown())
+		return true;
+	if (kind == "queaudio" || kind == "quemusic")
+		return _world->isAudioQueueEmpty();
+	if (kind == "timer")
+		return _world->getStardate() >= _deadline - 1e-6 && _world->isEnterpriseIdle();
+	if (kind == "warp")
+		return !_world->isWarping();
+	if (kind == "zoom")
+		return !_world->isZooming();
+	return false;
 }
 
 bool Campaign::test(const std::vector<Common::String> &words, size_t &i) const {
@@ -137,23 +230,29 @@ bool Campaign::test(const std::vector<Common::String> &words, size_t &i) const {
 		} else if (w == "ifnotflag") {
 			pass = !_flags.count(toInt(words, i + 1));
 			i += 2;
-		} else if (w == "ifactiongameplayed") {
-			pass = _played.count(toInt(words, i + 1)) != 0;
+		} else if (w == "ifactiongameplayed" || w == "ifactiongamewon" || w == "ifactiongamelost" ||
+		           w == "ifspacecombatplayed" || w == "ifspacecombatwon" || w == "ifspacecombatlost") {
+			int n = toInt(words, i + 1) + (w.compare(2, 5, "space") == 0 ? 100 : 0);
+			const std::set<int> &set = Common::hasSuffixIgnoreCase(w, "played") ? _played
+			                           : Common::hasSuffixIgnoreCase(w, "won")  ? _won
+			                                                                    : _lost;
+			pass = set.count(n) != 0;
 			i += 2;
 		} else if (w == "ifsunsdestroyed") {
+			// Equal, not at least (0x41732B).
 			pass = (int)_destroyed.size() == toInt(words, i + 1);
 			i += 2;
 		} else if (w == "ifenterpriseat") {
-			pass = false; // there's no bridge to have moved the ship
+			pass = _world && _world->isEnterpriseAt(word(words, i + 1));
 			i += 2;
 		} else if (w == "ifobjectflag" || w == "ifnotobjectflag") {
-			bool set = _objectFlags.count(word(words, i + 1) + " " + word(words, i + 2)) != 0;
+			bool set = _world ? _world->getObjectFlag(word(words, i + 1), toInt(words, i + 2))
+			                  : _objectFlags.count(word(words, i + 1) + " " + word(words, i + 2)) != 0;
 			pass = w == "ifobjectflag" ? set : !set;
 			i += 3;
 		} else if (w == "ifclue") {
-			// Which clue this tests isn't known; without it, the endings
-			// take their usual way.
-			pass = false;
+			// The last away mission left a clue (0x416FFB).
+			pass = _clue;
 			i += 1;
 		} else {
 			warning("Campaign: unknown condition %s", words[i].c_str());
@@ -165,12 +264,13 @@ bool Campaign::test(const std::vector<Common::String> &words, size_t &i) const {
 	return true;
 }
 
-bool Campaign::execute(const std::vector<Common::String> &words, Action &action) {
+Campaign::Result Campaign::execute(const std::vector<Common::String> &words, Action &action) {
 	size_t i = 0;
 	if (!test(words, i) || i >= words.size())
-		return false;
+		return kNext;
 	Common::String command = word(words, i);
 	size_t a = i + 1; // the first argument
+	std::vector<Common::String> args(words.begin() + a, words.end());
 
 	if (command == "jump") {
 		jump(words.size() > a ? words[a] : Common::String());
@@ -179,71 +279,94 @@ bool Campaign::execute(const std::vector<Common::String> &words, Action &action)
 		if (count > 0)
 			jump(words[a + (_random ? _random(count) : 0)]);
 	} else if (command == "call") {
-		_stack.push_back({ _section, (int)_line });
+		// The caller's place stays on the Call (0x4118E9 doesn't advance it).
+		_stack.push_back({ _section, (int)_line - 1 });
 		jump(words.size() > a ? words[a] : Common::String());
 	} else if (command == "pop" || command == "return") {
 		if (_stack.empty()) {
 			warning("Campaign: %s with nothing to return to in [%s]", words[i].c_str(), _section.c_str());
 			_running = false;
 		} else {
+			// Pop goes back to the line that was running; Return past it.
 			_section = _stack.back().first;
-			_line = _stack.back().second;
+			_line = _stack.back().second + (command == "return" ? 1 : 0);
 			_stack.pop_back();
 		}
-	} else if (command == "ontransport") {
-		// The player would beam down from the bridge: do it now.
-		jump(words.size() > a ? words[a] : Common::String());
-	} else if (command == "ontactical") {
-		// The player could engage a fleet from the bridge. With no space
-		// combat, they never do: the section goes on as when the chance
-		// passes.
+	} else if (command == "wait") {
+		if (!isWaitOver(word(words, a)))
+			return kBlocked;
+	} else if (command == "sdtimer") {
+		if (_world)
+			_deadline = _world->getStardate() + std::atof(word(words, a).c_str());
+	} else if (command == "ontransport" || command == "ontactical") {
+		Common::String target = word(words, a);
+		if (!_world) {
+			// No bridge to beam down from: do it now; and never engage.
+			if (command == "ontransport")
+				jump(target);
+			return kNext;
+		}
+		(command == "ontransport" ? _onTransport : _onTactical) = target;
+		_world->bridgeCommand(command, args);
 	} else if (command == "spacecombat") {
-		info("Campaign: space combat %d isn't implemented; taking it as lost", toInt(words, a));
-		jump(word(words, a + 2));
+		if (!_world) {
+			info("Campaign: space combat %d with no bridge; taking it as lost", toInt(words, a));
+			jump(word(words, a + 2));
+			return kNext;
+		}
+		_combat = toInt(words, a);
+		_wonSection = word(words, a + 1);
+		_lostSection = word(words, a + 2);
+		action.type = Action::kSpaceCombat;
+		action.number = _combat;
+		return kAction;
 	} else if (command == "actiongame") {
 		_mission = toInt(words, a);
 		_wonSection = word(words, a + 1);
 		_lostSection = word(words, a + 2);
 		action.type = Action::kActionGame;
 		action.number = _mission;
-		return true;
+		return kAction;
 	} else if (command == "setflag") {
-		if (Common::equalsIgnoreCase(word(words, a + 1), "true"))
-			_flags.insert(toInt(words, a));
-		else
-			_flags.erase(toInt(words, a));
+		setFlag(toInt(words, a), Common::equalsIgnoreCase(word(words, a + 1), "true"));
 	} else if (command == "setobjectflag") {
 		Common::String key = word(words, a) + " " + word(words, a + 1);
 		if (word(words, a + 2) == "true")
 			_objectFlags.insert(key);
 		else
 			_objectFlags.erase(key);
+		if (_world)
+			_world->bridgeCommand(command, args);
 	} else if (command == "setactiongameplayed") {
 		_played.insert(toInt(words, a));
 	} else if (command == "destroy") {
 		_destroyed.insert(word(words, a));
+		if (_world)
+			_world->bridgeCommand(command, args);
 	} else if (command == "intro") {
 		action.type = Action::kIntro;
-		return true;
+		return kAction;
 	} else if (command == "movie") {
 		action.type = Action::kMovie;
 		action.number = toInt(words, a);
-		return true;
+		return kAction;
 	} else if (command == "scrolltext") {
 		action.type = Action::kScrollText;
 		action.number = toInt(words, a);
-		return true;
+		return kAction;
 	} else if (command == "autosave") {
 		action.type = Action::kAutoSave;
-		return true;
+		return kAction;
 	} else if (command == "options" || command == "endgame") {
 		// Both end the game: the menu with nothing to go back to, or the credits.
 		action.type = command == "options" ? Action::kOptions : Action::kEndGame;
 		_running = false;
-		return true;
+		return kAction;
+	} else if (_world && command != "sectimer") {
+		// Anything else drives the bridge: the map, its sounds and timers.
+		_world->bridgeCommand(command, args);
 	}
-	// Anything else drives the bridge: the map, its sounds and timers.
-	return false;
+	return kNext;
 }
 
 void Campaign::sync(Common::Serializer &s) {
@@ -253,6 +376,7 @@ void Campaign::sync(Common::Serializer &s) {
 	_line = line;
 	s.syncAsBool(_running);
 	s.syncAsInt(_mission);
+	s.syncAsInt(_combat);
 	s.syncString(_wonSection);
 	s.syncString(_lostSection);
 	syncSet<int>(s, _flags, syncInt);
@@ -265,6 +389,10 @@ void Campaign::sync(Common::Serializer &s) {
 		ser.syncString(entry.first);
 		ser.syncAsInt(entry.second);
 	});
+	s.syncAsBool(_clue);
+	s.syncString(_onTransport);
+	s.syncString(_onTactical);
+	s.syncAsDouble(_deadline);
 	if (s.isLoading() && _running && !_sections.count(_section))
 		s.fail();
 }

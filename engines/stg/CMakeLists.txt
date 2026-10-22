@@ -1,10 +1,12 @@
 target_sources(stg_engines PRIVATE
 	actors.cpp
+	bridge.cpp
 	campaign.cpp
 	detection.cpp
 	disasm.cpp
 	font.cpp
 	framedimage.cpp
+	ini.cpp
 	frontend.cpp
 	level.cpp
 	mission.cpp
@@ -19,6 +21,7 @@ target_sources(stg_engines PRIVATE
 	hudscreen.cpp
 	projectiles.cpp
 	render3d.cpp
+	rgbimage.cpp
 	resources.cpp
 	screen.cpp
 	script.cpp

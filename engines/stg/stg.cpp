@@ -185,6 +185,25 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		handleMenuEvent(event);
 		return;
 	}
+	if (_bridgeMode) {
+		switch (event.type) {
+		case Common::EVENT_KEYDOWN:
+			_bridge->keyDown(event.kbd);
+			break;
+		case Common::EVENT_MOUSEMOVE:
+			_bridge->mouseMove(event.mouse.x, event.mouse.y);
+			break;
+		case Common::EVENT_LBUTTONDOWN:
+			_bridge->mouseDown(event.mouse.x, event.mouse.y);
+			break;
+		case Common::EVENT_LBUTTONUP:
+			_bridge->mouseUp(event.mouse.x, event.mouse.y);
+			break;
+		default:
+			break;
+		}
+		return;
+	}
 	bool walking = _level && _levelPage == kLevelPage3D;
 	bool bracket = event.kbd.keycode == Common::KEYCODE_LEFTBRACKET || event.kbd.keycode == Common::KEYCODE_RIGHTBRACKET;
 	if (walking && bracket && !(event.kbd.flags & Common::KBD_SHIFT) && _mission &&
@@ -344,6 +363,10 @@ void STGEngine::drawFrame(uint32 delta) {
 			_screen->update();
 			_dirty = false;
 		}
+		return;
+	}
+	if (_bridgeMode) {
+		updateBridge(delta);
 		return;
 	}
 	if (_playingMission && _mission && _mission->isFinished() && _frontEnd) {
@@ -1453,6 +1476,10 @@ Common::Error STGEngine::saveGameState(int slot, const Common::String &descripti
 	if (_frontEnd) {
 		Common::Serializer s(nullptr, out.get());
 		_campaign.sync(s);
+		bool bridge = _bridge != nullptr;
+		s.syncAsBool(bridge);
+		if (bridge)
+			_bridge->sync(s);
 	}
 	// A mission in progress: where, the view, then everything the mission holds.
 	bool inMission = _playingMission && _mission && _level;
@@ -1496,9 +1523,19 @@ Common::Error STGEngine::loadGameState(int slot) {
 	if (version >= kFirstDatedSaveVersion && in->readByte() != 0) {
 		if (!_frontEnd)
 			return Common::Error(Common::kReadingFailed, "a saved game, which the resource viewer can't load");
+		if (version < kFirstBridgeSaveVersion)
+			return Common::Error(Common::kReadingFailed, "saved by an older build, before the bridge; start a new game");
 		Campaign campaign = _campaign;
 		Common::Serializer s(in.get(), nullptr);
 		_campaign.sync(s);
+		bool bridge = false;
+		s.syncAsBool(bridge);
+		if (bridge && _bridge) {
+			_bridge->reset();
+			_bridge->sync(s);
+		} else if (bridge) {
+			s.fail();
+		}
 		if (s.err()) {
 			_campaign = campaign;
 			return Common::Error(Common::kReadingFailed, "damaged saved game");
@@ -1554,9 +1591,13 @@ Common::Error STGEngine::loadGameState(int slot) {
 	}
 
 	if (inCampaign) {
-		// Saved between missions: the story carries on from there.
+		// Saved between missions: the story carries on from there, the
+		// section starting again from its first line (0x419703).
 		if (_playingMission)
 			leaveMission("Loaded a saved game");
+		if (_bridge)
+			_bridge->afterLoad();
+		_campaign.restartSection();
 		info("Loaded slot %d: %s", slot, description.c_str());
 		runCampaign();
 		return Common::kNoError;

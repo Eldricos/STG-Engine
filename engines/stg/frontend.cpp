@@ -64,6 +64,14 @@ bool STGEngine::startFrontEnd() {
 		return false;
 	}
 	_campaign.setRandom([this](int count) { return (int)_random.getRandomNumber(count - 1); });
+	_bridge.reset(new Bridge(_resources, _mixer, _campaign, _random));
+	if (_bridge->load()) {
+		_bridge->reset();
+		_campaign.setWorld(_bridge.get());
+	} else {
+		warning("STELLAR.DAT has no star map; the story goes on without the bridge");
+		_bridge.reset();
+	}
 	_menu->setSoundCallback([this](int id) { playMenuSound(id); });
 	_frontEnd = true;
 	loadSettings();
@@ -103,7 +111,20 @@ void STGEngine::saveSettings() {
 void STGEngine::runCampaign() {
 	while (_frontEnd && !shouldQuit()) {
 		Campaign::Action action = _campaign.next();
+		if (action.type == Campaign::Action::kBridge) {
+			// The main loop runs the bridge, a command a frame.
+			setBridgeMode(true);
+			return;
+		}
+		// Anything else takes the screen from the bridge.
+		if (action.type != Campaign::Action::kAutoSave)
+			setBridgeMode(false);
 		switch (action.type) {
+		case Campaign::Action::kBridge:
+			break;
+		case Campaign::Action::kSpaceCombat:
+			playSpaceCombat(action.number);
+			break;
 		case Campaign::Action::kIntro:
 			showIntro();
 			break;
@@ -135,6 +156,62 @@ void STGEngine::runCampaign() {
 	}
 }
 
+void STGEngine::setBridgeMode(bool on) {
+	if (!_bridge || on == _bridgeMode)
+		return;
+	_bridgeMode = on;
+	if (on) {
+		// The bridge is drawn in true colour, as the original's 16-bit
+		// screen showed its many palettes.
+		const Graphics::PixelFormat format = Graphics::PixelFormat::createFormatARGB8888();
+		_system->initSize(Screen::kWidth, Screen::kHeight, &format);
+		_bridgeSurface.create(Screen::kWidth, Screen::kHeight, format);
+		_bridge->setSubtitles(_settings.subtitles);
+		setCursor(false);
+	} else {
+		_bridge->hide();
+		_system->initSize(Screen::kWidth, Screen::kHeight);
+		_screen->applyPalette();
+	}
+	_dirty = true;
+}
+
+void STGEngine::updateBridge(uint32 delta) {
+	_bridge->update(delta);
+	for (Bridge::Event event = _bridge->takeEvent(); event.type != Bridge::Event::kNone;
+	     event = _bridge->takeEvent()) {
+		switch (event.type) {
+		case Bridge::Event::kTransport:
+			_campaign.transport();
+			break;
+		case Bridge::Event::kTactical:
+			_campaign.startCombat(-1);
+			break;
+		case Bridge::Event::kCombat:
+			_campaign.startCombat(event.fleet);
+			break;
+		case Bridge::Event::kOptions:
+			openMenu(true);
+			return;
+		default:
+			break;
+		}
+	}
+	// One script command a frame while the bridge is up.
+	runCampaign();
+	if (!_bridgeMode || _menuOpen)
+		return;
+	_bridge->draw(_bridgeSurface);
+	_system->copyRectToScreen(_bridgeSurface.getPixels(), _bridgeSurface.pitch, 0, 0, Screen::kWidth, Screen::kHeight);
+	_system->updateScreen();
+}
+
+void STGEngine::playSpaceCombat(int fleet) {
+	// Space combat isn't there yet: the fight is taken as won.
+	info("Space combat %d isn't implemented yet; taking it as won", fleet);
+	_campaign.combatEnded(Campaign::kCombatWon);
+}
+
 bool STGEngine::startCampaignMission(int type) {
 	for (const Location &location : getLocations()) {
 		if (location.type != type)
@@ -156,7 +233,9 @@ void STGEngine::campaignMissionEnded() {
 	bool accomplished = _mission && _mission->isAccomplished();
 	leaveMission(Common::format("%s %s", _missions[_missionChoice].name.c_str(),
 	                            accomplished ? "accomplished" : "ended, objectives not met"));
-	_campaign.missionEnded(accomplished);
+	// Any outcome code the mission set is a clue for the story (IfClue).
+	bool clue = _mission && !_mission->getOutcomes().empty();
+	_campaign.missionEnded(accomplished, clue);
 	runCampaign();
 }
 
@@ -165,20 +244,32 @@ void STGEngine::openMenu(bool canReturn) {
 		return;
 	if (!_menuOpen)
 		_gamePalette = _screen->getPalette();
+	_menuOverBridge = _bridgeMode;
+	if (_bridgeMode) {
+		_system->initSize(Screen::kWidth, Screen::kHeight);
+		_bridgeMode = false;
+	}
 	_menuOpen = true;
 	_menu->setSlots(listSaves());
 	bool inMission = _playingMission && _mission;
-	_menu->open(_settings, canReturn, inMission, !inMission);
+	_menu->open(_settings, canReturn, inMission || _menuOverBridge, !inMission);
 	_screen->getPalette() = _menu->getPalette();
 	_screen->applyPalette();
 	setCursor(false);
 	_dirty = true;
 }
 
-void STGEngine::closeMenu() {
+void STGEngine::closeMenu(bool resume) {
 	_menuOpen = false;
 	_screen->getPalette() = _gamePalette;
 	_screen->applyPalette();
+	if (_menuOverBridge) {
+		_menuOverBridge = false;
+		if (resume)
+			setBridgeMode(true);
+		else if (_bridge)
+			_bridge->hide();
+	}
 	_dirty = true;
 }
 
@@ -213,6 +304,8 @@ void STGEngine::handleMenuEvent(const Common::Event &event) {
 		saveSettings();
 		if (_mission)
 			_mission->setDifficulty(_settings.difficulty);
+		if (_bridge)
+			_bridge->setSubtitles(_settings.subtitles);
 	}
 
 	switch (_menu->takeResult()) {
@@ -220,15 +313,17 @@ void STGEngine::handleMenuEvent(const Common::Event &event) {
 		closeMenu();
 		break;
 	case OptionsMenu::kNewGame:
-		closeMenu();
+		closeMenu(false);
 		if (_playingMission)
 			leaveMission("New game");
 		_carriedArray.clear();
+		if (_bridge)
+			_bridge->reset();
 		_campaign.start("NewGame");
 		runCampaign();
 		break;
 	case OptionsMenu::kLoad: {
-		closeMenu();
+		closeMenu(false);
 		Common::Error err = loadGameState(_menu->getSlot());
 		if (err.getCode() != Common::kNoError) {
 			warning("%s", err.getDesc().c_str());
@@ -244,7 +339,7 @@ void STGEngine::handleMenuEvent(const Common::Event &event) {
 		break;
 	}
 	case OptionsMenu::kQuit:
-		closeMenu();
+		closeMenu(false);
 		_mixer->stopAll();
 		showCredits();
 		quitGame();
