@@ -97,10 +97,18 @@ Mission::TransitionView Mission::getTransitionView() const {
 	const uint32 *t = _transition.phase;
 	uint32 e = _transition.elapsed;
 	auto ratio = [](uint32 part, uint32 whole) { return whole ? std::min(1.0, (double)part / whole) : 1.0; };
+	view.r = _transitionColour[0];
+	view.g = _transitionColour[1];
+	view.b = _transitionColour[2];
 	if (_transition.ending) {
-		// From the screen as it is to black.
+		// From the screen as it is to the colour.
 		if (e >= t[0])
 			view.brightness = e < t[0] + t[1] ? 1.0 - ratio(e - t[0], t[1]) : 0.0;
+		return view;
+	}
+	if (_transition.teleport) {
+		// Out over the first phase, back in over the rest.
+		view.brightness = e < t[0] ? 1.0 - ratio(e, t[0]) : ratio(e - t[0], t[1] + t[2]);
 		return view;
 	}
 	// The briefing picture out of black, then the mission in its place.
@@ -113,6 +121,21 @@ Mission::TransitionView Mission::getTransitionView() const {
 		view.brightness = view.briefing ? 1.0 - ratio(into, half) : ratio(into - half, t[1] - half);
 	}
 	return view;
+}
+
+void Mission::setTextureScroll(uint16 id, int16 u, int16 v) {
+	for (LevelFile::Wall &wall : _level.getWalls()) {
+		if (isObject(wall.objectId, kTypeWall, id)) {
+			wall.uScroll = u;
+			wall.vScroll = v;
+		}
+	}
+	for (LevelFile::Sector &flat : _level.getSectors()) {
+		if (isObject(flat.objectId, kTypeFlat, id)) {
+			flat.uScroll = u;
+			flat.vScroll = v;
+		}
+	}
 }
 
 void Mission::moveLift(uint16 id, int level) {
@@ -251,6 +274,23 @@ void Mission::sync(Common::Serializer &s) {
 	s.syncAsUint32(_push.hold);
 	s.syncAsUint32(_push.end);
 	s.syncAsUint32(_push.elapsed);
+	s.syncAsBool(_transition.teleport);
+	s.syncAsBool(_transition.moved);
+	s.syncAsDouble(_transition.x);
+	s.syncAsDouble(_transition.y);
+	s.syncAsDouble(_transition.z);
+	s.syncAsSint16(_transition.heading);
+	for (byte &c : _transitionColour)
+		s.syncAsByte(c);
+	s.syncAsUint32(_environmentPeriod);
+	s.syncAsUint32(_environmentElapsed);
+	s.syncAsUint16(_environmentSource);
+	s.syncAsUint16(_wornItem);
+	s.syncAsUint16(_gaugeItem);
+	s.syncAsInt(_spin);
+	s.syncString(_viewOverlay.image);
+	s.syncAsInt(_viewOverlay.frame);
+	s.syncVector(_outcomes, [](Common::Serializer &ser, int32 &v) { ser.syncAsSint32(v); });
 	s.syncAsUint16(_engaged);
 	s.syncAsDouble(_engagedX);
 	s.syncAsDouble(_engagedY);
@@ -347,12 +387,27 @@ void Mission::update(uint32 ms) {
 	// the ending one ends it.
 	if (_transition.active) {
 		_transition.elapsed += ms;
+		// The teleport happens in the dark, at the end of the first phase.
+		if (_transition.teleport && !_transition.moved && _transition.elapsed >= _transition.phase[0]) {
+			_transition.moved = true;
+			_walker.place(_transition.x, _transition.y, _transition.z);
+			setPlayerHeading(_transition.heading);
+		}
 		if (_transition.elapsed >= _transition.phase[0] + _transition.phase[1] + _transition.phase[2]) {
 			_transition.active = false;
 			if (_transition.ending)
 				_finished = true;
 			else
 				broadcast(kEventBriefingDone);
+		}
+	}
+	// SET_ENVIRONMENT_DAMAGE (0x43B310): past the shield, no lower than 1.
+	if (_environmentPeriod) {
+		_environmentElapsed += ms;
+		while (_environmentElapsed > _environmentPeriod) {
+			_environmentElapsed -= _environmentPeriod;
+			_health = (int16)std::max(1, _health - 1);
+			broadcast(kEventPlayerDamaged, { (int16)_environmentSource, 1, 1, 13 });
 		}
 	}
 
@@ -573,6 +628,15 @@ void Mission::damagePlayer(int16 source, int16 damage, int16 kind) {
 	// player has died (verid1 at health 1).
 	if (damage == 0)
 		return;
+	// A worn shield (SET_WORN_ITEM, kind 9) with charge soaks the whole
+	// hit (0x44B182), except damage kind 12; empty, it hears event 48.
+	auto worn = _items.find(_wornItem);
+	if (_wornItem && kind != 12 && worn != _items.end() && worn->second.charge > 0) {
+		worn->second.charge = std::max<int32>(0, worn->second.charge - damage);
+		if (worn->second.charge == 0)
+			send(_wornItem, kEventShieldEmpty);
+		return;
+	}
 	_health = (int16)std::max(1, std::min<int>(_maxHealth, _health - damage));
 	broadcast(kEventPlayerDamaged, { source, damage, damage, kind });
 }
@@ -1096,9 +1160,11 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 			int16 kind;
 			int32 charge, maxLevel, level;
 		};
+		// Kinds 9 (a worn shield) and 14 (a script-driven gauge) hold 30.
 		static const Charge kCharges[] = { { 2, 320, 16, 4 },   { 3, 200, 12, 4 },   { 4, 400, 16, 8 },
-		                                   { 5, 1200, 18, 18 }, { 6, 240, 12, 4 },   { 11, 100, 10, 10 },
-		                                   { 12, 100, 10, 10 }, { 13, 360, 9, 3 } };
+		                                   { 5, 1200, 18, 18 }, { 6, 240, 12, 4 },   { 9, 30, 0, 0 },
+		                                   { 11, 100, 10, 10 }, { 12, 100, 10, 10 }, { 13, 360, 9, 3 },
+		                                   { 14, 30, 0, 0 } };
 		item.charge = item.maxCharge = item.level = item.maxLevel = 0;
 		for (const Charge &charge : kCharges) {
 			if (charge.kind == item.kind) {
@@ -1543,6 +1609,211 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		setPlayerHeading((int16)(degrees + to.heading - from.heading));
 		break;
 	}
+	case 0x15: // ALLOC_GLOBALS
+		// 0x44F10A grows the globals; there are always 32768 here.
+		vm.pop();
+		break;
+	case 0x88: { // SET_ENVIRONMENT_DAMAGE
+		// 0x43A566: 1 health every period ms (0 stops), as damage kind 13.
+		_environmentPeriod = (uint16)vm.pop();
+		_environmentSource = self.object->id;
+		if (!_environmentPeriod)
+			_environmentElapsed = 0;
+		break;
+	}
+	case 0x8A: // SET_HEALTH
+		_health = (int16)std::min<int>(vm.pop(), _maxHealth);
+		break;
+	case 0x8B: { // SET_WORN_ITEM
+		uint16 id = (uint16)vm.pop();
+		_wornItem = id;
+		break;
+	}
+	case 0xE7: // SET_WORN_GAUGE
+		_gaugeItem = (uint16)vm.pop();
+		break;
+	case 0xCB: // SET_ITEM_CHARGE_MAX
+	case 0xE6: {
+		// 0x44EACC: the most it holds, then the charge, each kept for 0x8000.
+		uint16 id = (uint16)vm.pop();
+		uint16 charge = (uint16)vm.pop(), most = (uint16)vm.pop();
+		auto it = _items.find(id ? id : self.object->id);
+		if (it == _items.end())
+			break;
+		Item &item = it->second;
+		if (most != 0x8000)
+			item.maxCharge = op == 0xE6 ? most : (int16)most;
+		if (charge != 0x8000)
+			item.charge = op == 0xE6 ? charge : (int16)charge;
+		item.charge = std::max<int32>(0, std::min(item.charge, item.maxCharge));
+		break;
+	}
+	case 0xCC: { // GET_ITEM_VALUE
+		// Worn items' charge; for weapons their team (0x45A470 and kin).
+		uint16 id = (uint16)vm.pop();
+		auto it = _items.find(id ? id : self.object->id);
+		int16 value = 0;
+		if (it != _items.end()) {
+			const Item &item = it->second;
+			switch (item.kind) {
+			case 9:
+			case 14:
+				value = (int16)item.charge;
+				break;
+			case 2:
+				value = 3;
+				break;
+			case 3:
+			case 4:
+			case 5:
+				value = 4;
+				break;
+			case 6:
+				value = 5;
+				break;
+			case 11:
+			case 12:
+				value = 7;
+				break;
+			case 13:
+				value = 8;
+				break;
+			default:
+				break;
+			}
+		}
+		vm.push(value);
+		break;
+	}
+	case 0x93: { // TRANSITION_TELEPORT
+		// 0x43DE6F: out to the colour, the player moved, back in; event 7.
+		Position to = popPosition(vm);
+		uint32 t1 = popRaw32(vm), t2 = popRaw32(vm), t3 = popRaw32(vm);
+		if (_transition.active)
+			break;
+		_transition = Transition();
+		_transition.active = true;
+		_transition.teleport = true;
+		_transition.phase[0] = t1;
+		_transition.phase[1] = t2;
+		_transition.phase[2] = t3;
+		_transition.x = to.x;
+		_transition.y = to.y;
+		_transition.z = to.z;
+		_transition.heading = to.heading;
+		if (_transitionSound >= 0)
+			_sound->playSound(_transitionSound, _transitionVolume);
+		break;
+	}
+	case 0x94: // SET_TRANSITION_COLOUR
+		// 0x43E084: the colour transitions blend through.
+		_transitionColour[0] = (byte)vm.pop();
+		_transitionColour[1] = (byte)vm.pop();
+		_transitionColour[2] = (byte)vm.pop();
+		break;
+	case 0x97: { // SET_MISSION_OUTCOME
+		// 0x461251: up to five codes for the campaign, read when the mission ends.
+		int32 code = (int32)popRaw32(vm);
+		if (_outcomes.size() < 5)
+			_outcomes.push_back(code);
+		break;
+	}
+	case 0xA8: // LOAD_ACTOR_CLASS
+		// Loads a class's sprites (0x4B6560); every set is loaded here.
+		vm.pop();
+		break;
+	case 0xAB: { // SET_TEXTURE_SCROLL
+		uint16 id = (uint16)vm.pop();
+		int16 u = vm.pop(), v = vm.pop();
+		setTextureScroll(id ? id : self.object->id, u, v);
+		break;
+	}
+	case 0xAD: // SET_FLAT_FLAG_68
+		// A flat's +0x68 = 1 (0x45BA00); nothing found reads it.
+		vm.pop();
+		break;
+	case 0xAF: // SET_PLAYER_SPIN
+		// 0x440B90: the player turns this many degrees a second.
+		_spin = vm.pop();
+		break;
+	case 0xB6: // SET_SKY
+		// 0x431729: sky n, and the sky on. Missions only use sky 0.
+		vm.pop();
+		_renderer.setSkyEnabled(true);
+		break;
+	case 0xB8: { // SHOW_VIEW_OVERLAY
+		// 0x4415A7: a script resource's .OVR over the whole view, or -1 to remove it.
+		int16 image = vm.pop();
+		int16 frame = vm.pop();
+		const Common::StringArray &names = _script.getResourceNames();
+		_viewOverlay.image = image >= 0 && image < (int16)names.size() ? names[image] : Common::String();
+		_viewOverlay.frame = frame;
+		break;
+	}
+	case 0xC0: { // SET_FLAT_ZONES
+		uint16 id = (uint16)vm.pop();
+		uint64 low = popRaw32(vm), high = popRaw32(vm);
+		for (LevelFile::Sector &flat : _level.getSectors()) {
+			if (isObject(flat.objectId, kTypeFlat, id ? id : self.object->id))
+				flat.activeZones = high << 32 | low;
+		}
+		break;
+	}
+	case 0xC1: { // ADD_FLAT_ZONE_BAND
+		// 0x4590D9: zones in play by height, the flat's own below them all.
+		uint16 id = (uint16)vm.pop();
+		int32 height = (int32)popRaw32(vm);
+		uint64 low = popRaw32(vm), high = popRaw32(vm);
+		for (LevelFile::Sector &flat : _level.getSectors()) {
+			if (!isObject(flat.objectId, kTypeFlat, id ? id : self.object->id))
+				continue;
+			auto &bands = flat.zoneBands;
+			if (bands.empty())
+				bands.push_back({ INT32_MIN, flat.activeZones });
+			if (bands.size() >= 8)
+				continue;
+			bands.push_back({ height, high << 32 | low });
+			std::stable_sort(bands.begin(), bands.end(),
+			                 [](const std::pair<int32, uint64> &a, const std::pair<int32, uint64> &b) {
+				                 return a.first > b.first;
+			                 });
+		}
+		break;
+	}
+	case 0xC9: { // MAP_HEIGHT_BAND
+		// 0x4442DF: the heights the map shows, below and above the player.
+		uint32 below = popRaw32(vm), above = popRaw32(vm);
+		double levels[6];
+		for (int i = 0; i < 6; i++)
+			levels[i] = _hud.getMapLevels()[i];
+		auto pick = [](uint32 raw, double current, double fallback) {
+			return raw == 0x80000000 ? current : raw == 0x80000001 ? fallback : fromFixed((int32)raw);
+		};
+		levels[2] = pick(below, levels[2], -6.0);
+		levels[3] = pick(above, levels[3], 6.0);
+		_hud.setMapLevels(levels);
+		break;
+	}
+	case 0xE3: { // FIRE_PROJECTILE_AT_OBJECT
+		int type = vm.pop();
+		double fromX = pop32(vm), fromY = pop32(vm), fromZ = pop32(vm);
+		uint16 target = (uint16)vm.pop();
+		Position to;
+		if (getPosition(target, to) && type >= 0 && type < _projectiles->getTypeCount()) {
+			double dx = to.x - fromX, dy = to.y - fromY;
+			fire(type, fromX, fromY, fromZ, std::atan2(dy, dx),
+			     std::atan2(to.z - fromZ, std::sqrt(dx * dx + dy * dy)), Projectiles::kShooterNone);
+		}
+		break;
+	}
+	case 0xE5: // SET_PIXEL_PICK
+		// Flag 0x200: pick only opaque texels, which picking here does anyway.
+		vm.pop();
+		vm.pop();
+		break;
+	case 0xEF: // GET_ALERTED_COUNT
+		vm.push((int16)(_actors ? _actors->getAlertedCount() : 0));
+		break;
 	case 0x4C: { // ACTOR_GO_TO
 		uint16 id = (uint16)vm.pop();
 		double x = pop32(vm), y = pop32(vm), z = pop32(vm);
@@ -1702,6 +1973,7 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		// The ending one waits for nothing; it is dropped while another runs.
 		if (ending && _transition.active)
 			break;
+		_transition = Transition();
 		_transition.active = true;
 		_transition.ending = ending;
 		_transition.phase[0] = t1;

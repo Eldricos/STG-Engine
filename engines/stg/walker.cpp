@@ -116,7 +116,7 @@ void Walker::place(double x, double y, double feet) {
 	if (_floor >= 0) {
 		const LevelFile::Sector &flat = _level.getSectors()[_floor];
 		_feet = fromFixed(flat.height);
-		_zones = flat.activeZones ? flat.activeZones : kAllZones;
+		_zones = flat.getActiveZones() ? flat.getActiveZones() : kAllZones;
 	}
 }
 
@@ -318,7 +318,7 @@ void Walker::followFloor(double seconds) {
 	}
 
 	const LevelFile::Sector &flat = _level.getSectors()[floor];
-	_zones = flat.activeZones ? flat.activeZones : kAllZones;
+	_zones = flat.getActiveZones() ? flat.getActiveZones() : kAllZones;
 	double height = fromFixed(flat.height);
 	if (height >= _feet || !_falls) {
 		// Step up (or stay on the level).

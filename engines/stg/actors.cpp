@@ -306,6 +306,13 @@ void Actors::setFlag(uint16 id, uint32 flag, bool on) {
 	}
 }
 
+int Actors::getAlertedCount() const {
+	int count = 0;
+	for (const std::unique_ptr<Actor> &actor : _actors)
+		count += actor->near && actor->mode != kModeHidden;
+	return count;
+}
+
 void Actors::setTarget(uint16 id, uint16 target) {
 	for (int index : findAll(id)) {
 		_actors[index]->target = target;
@@ -700,7 +707,7 @@ void Actors::runProximity(Actor &actor, const Walker &player, bool frozen, std::
 		int floor = actor.walker.getFloor();
 		uint64 zones = player.getActiveZones();
 		if (floor >= 0)
-			zones |= _level.getSectors()[floor].activeZones;
+			zones |= _level.getSectors()[floor].getActiveZones();
 		return player.lineOfSight(actor.x, actor.y, eye, player.getX(), player.getY(), player.getEye(), zones);
 	};
 	if (!actor.near && r[1] > 0 && d < r[1] && sees()) {

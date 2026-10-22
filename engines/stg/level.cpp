@@ -48,6 +48,8 @@ void LevelFile::syncState(Common::Serializer &s) {
 	for (Wall &wall : _walls) {
 		if (s.err())
 			return;
+		s.syncAsSint16(wall.uScroll);
+		s.syncAsSint16(wall.vScroll);
 		s.syncAsUint16(wall.texture);
 		s.syncAsUint16(wall.frames);
 		s.syncAsUint16(wall.speed);
@@ -60,6 +62,13 @@ void LevelFile::syncState(Common::Serializer &s) {
 		if (s.err())
 			return;
 		s.syncAsSint32(sector.height);
+		s.syncAsUint64(sector.activeZones);
+		s.syncAsSint16(sector.uScroll);
+		s.syncAsSint16(sector.vScroll);
+		s.syncVector(sector.zoneBands, [](Common::Serializer &ser, std::pair<int32, uint64> &band) {
+			ser.syncAsSint32(band.first);
+			ser.syncAsUint64(band.second);
+		});
 		s.syncAsUint16(sector.texture);
 		s.syncAsUint16(sector.frames);
 		s.syncAsUint16(sector.speed);

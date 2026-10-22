@@ -18,6 +18,17 @@ namespace STG {
 
 namespace {
 
+/**
+ * SET_TEXTURE_SCROLL: the renderer offsets a texture by
+ * ((speed * ms) & 0x1FFFF) << 6 in 16.16, which wraps once round the
+ * texture's 128 units.
+ */
+double scrollOffset(int16 speed, uint32 time) {
+	if (!speed)
+		return 0;
+	return (double)(((int64)speed * time) & 0x1FFFF) / 1024.0;
+}
+
 const double kFixed = 65536.0;
 const double kNear = 0.05;
 const double kPi = 3.14159265358979323846;
@@ -293,7 +304,8 @@ void LevelRenderer::drawFlats(Graphics::Surface &dst, uint32 time) {
 			continue;
 
 		double uScale = fromFixed(flat.uScale), vScale = fromFixed(flat.vScale);
-		double uOffset = fromFixed(flat.uOffset), vOffset = fromFixed(flat.vOffset);
+		double uOffset = fromFixed(flat.uOffset) + scrollOffset(flat.uScroll, time);
+		double vOffset = fromFixed(flat.vOffset) + scrollOffset(flat.vScroll, time);
 		double c = 1, s = 0;
 		if (flat.rotation) {
 			double angle = flat.rotation * 2 * kPi / 65536.0;
@@ -344,7 +356,7 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 		bool mirror = (wall.flags & LevelFile::kWallMirror) != 0;
 		if (!front)
 			mirror = !(mirror != ((wall.flags & LevelFile::kWallMirrorBack) != 0));
-		double u0 = fromFixed(wall.uStart), u1, u2;
+		double u0 = fromFixed(wall.uStart) + scrollOffset(wall.uScroll, time), u1, u2;
 		if (wall.uEnd1 || wall.uEnd2) {
 			double sign = mirror ? 1 : -1;
 			u1 = u0 + sign * fromFixed(wall.uEnd2);
@@ -358,7 +370,8 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 		// v counts up from the bottom edge and from the bottom row of the
 		// texture, so walls stacked on one line carry a picture on from one
 		// to the next. Rows are stored top first: row = -v, wrapped.
-		double v1 = -fromFixed(wall.vStart) - fromFixed(wall.vLength), v2 = -fromFixed(wall.vStart);
+		double vStart = fromFixed(wall.vStart) + scrollOffset(wall.vScroll, time);
+		double v1 = -vStart - fromFixed(wall.vLength), v2 = -vStart;
 		// All in 128ths of the texture, whatever its size.
 		const Texture *texture = getTexture(wall.texture, wall.frames, wall.speed, time);
 		if (texture) {

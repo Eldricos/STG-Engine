@@ -60,6 +60,7 @@ public:
 		kEventStart = 6,
 		kEventBriefingDone = 7,
 		kEventObjectivesDone = 8,
+		kEventShieldEmpty = 48,
 		kEventPlayerDamaged = 9,
 		kEventPlayerHealed = 10,
 		kEventTouch = 14,
@@ -234,6 +235,8 @@ public:
 		bool active = false;
 		bool briefing = false;
 		double brightness = 1.0;
+		/** What it fades through (SET_TRANSITION_COLOUR, 0x94); black by default. */
+		byte r = 0, g = 0, b = 0;
 	};
 	TransitionView getTransitionView() const;
 
@@ -263,6 +266,20 @@ public:
 	}
 	/** GET_DIFFICULTY (0xD5) answers this; the original's default is 1. */
 	void setDifficulty(int difficulty) { _difficulty = difficulty; }
+
+	/** SET_PLAYER_SPIN (0xAF): degrees a second the player is turned. */
+	int getSpin() const { return _spin; }
+	/** SHOW_VIEW_OVERLAY (0xB8): an .OVR over the view, and its frame; no image for none. */
+	struct ViewOverlay {
+		Common::String image;
+		int frame = 0;
+	};
+	const ViewOverlay &getViewOverlay() const { return _viewOverlay; }
+	/** SET_MISSION_OUTCOME (0x97): codes left for the campaign. */
+	const std::vector<int32> &getOutcomes() const { return _outcomes; }
+	/** The worn shield (SET_WORN_ITEM) and the script gauge (SET_WORN_GAUGE), or 0. */
+	uint16 getWornItem() const { return _wornItem; }
+	uint16 getGaugeItem() const { return _gaugeItem; }
 
 	/** The item in use (SET_ACTIVE_ITEM), or 0. */
 	uint16 getActiveItem() const { return _activeItem; }
@@ -322,6 +339,7 @@ private:
 	void skipNative(ScriptVM &vm, uint16 op);
 	void runProjectiles(uint32 ms);
 	void runPush(uint32 ms);
+	void setTextureScroll(uint16 id, int16 u, int16 v);
 	/** LIFT_GO_TO: a lift's flats to one of its heights (1-based). */
 	void moveLift(uint16 id, int level);
 	void playSoundAt(int sound, double x, double y, double z);
@@ -359,9 +377,20 @@ private:
 	struct Transition {
 		bool active = false;
 		bool ending = false;
+		/** TRANSITION_TELEPORT: the player moves at the darkest point. */
+		bool teleport = false, moved = false;
+		double x = 0, y = 0, z = 0;
+		int16 heading = 0;
 		uint32 phase[3] = {};
 		uint32 elapsed = 0;
 	};
+	byte _transitionColour[3] = {};
+	uint32 _environmentPeriod = 0, _environmentElapsed = 0;
+	uint16 _environmentSource = 0;
+	uint16 _wornItem = 0, _gaugeItem = 0;
+	int _spin = 0;
+	ViewOverlay _viewOverlay;
+	std::vector<int32> _outcomes;
 	Transition _transition;
 	int _transitionSound = -1, _transitionVolume = 64;
 	Motion _motion;

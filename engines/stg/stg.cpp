@@ -323,8 +323,12 @@ void STGEngine::drawFrame(uint32 delta) {
 	}
 
 	if (_playingMission && _mission && _mission->isFinished()) {
-		leaveMission(Common::format("%s %s", _missions[_missionChoice].name.c_str(),
-		                            _mission->isAccomplished() ? "accomplished" : "ended, objectives not met"));
+		Common::String message = Common::format("%s %s", _missions[_missionChoice].name.c_str(),
+		                                        _mission->isAccomplished() ? "accomplished" : "ended, objectives not met");
+		// Codes left for the campaign (SET_MISSION_OUTCOME).
+		for (int32 code : _mission->getOutcomes())
+			message += Common::format(" [%d]", code);
+		leaveMission(message);
 		return;
 	}
 	if (_level && _levelPage == kLevelPage3D && _hudScreen) {
@@ -519,11 +523,12 @@ void STGEngine::applyScreenEffects() {
 		} else if (transition.briefing) {
 			transition.brightness = 0;
 		}
+		double k = transition.brightness;
 		for (int i = 0; i < 256; i++) {
 			byte r, g, b;
 			blended.get(i, r, g, b);
-			blended.set(i, (byte)(r * transition.brightness), (byte)(g * transition.brightness),
-			            (byte)(b * transition.brightness));
+			blended.set(i, (byte)(r * k + transition.r * (1 - k)), (byte)(g * k + transition.g * (1 - k)),
+			            (byte)(b * k + transition.b * (1 - k)));
 		}
 	}
 	if (any || _paletteBlended) {
@@ -965,9 +970,20 @@ void STGEngine::updateWalk(uint32 delta) {
 	double strafe = (_walkKeys[kWalkStrafeRight] ? 1 : 0) - (_walkKeys[kWalkStrafeLeft] ? 1 : 0);
 	double turn = (_walkKeys[kWalkTurnLeft] ? 1 : 0) - (_walkKeys[kWalkTurnRight] ? 1 : 0);
 	double look = (_walkKeys[kWalkLookDown] ? 1 : 0) - (_walkKeys[kWalkLookUp] ? 1 : 0);
-	// No moving while a transition holds the screen.
+	// No moving while a transition holds the screen, nor without the
+	// controls the scripts allow (SET_PLAYER_CONTROLS: 1 walk, 2 turn,
+	// 4 look; the rest gate jumping, running and swimming).
 	if (_mission && _mission->getTransitionView().active)
 		forward = strafe = turn = look = 0;
+	if (_mission) {
+		uint16 controls = _mission->getControls();
+		if (!(controls & 1))
+			forward = strafe = 0;
+		if (!(controls & 2))
+			turn = 0;
+		if (!(controls & 4))
+			look = 0;
+	}
 	// The scripts' motion settings (SET_PLAYER_MOTION) scale the viewer's
 	// speeds, the original's defaults giving these; cutscenes set 0.
 	double moveScale = 1, turnScale = 1, lookScale = 1;
@@ -980,6 +996,9 @@ void STGEngine::updateWalk(uint32 delta) {
 	}
 
 	_camera.yaw += turn * kTurnSpeed * turnScale * seconds;
+	// SET_PLAYER_SPIN: turned regardless, degrees a second (heading up is yaw down).
+	if (_mission && _mission->getSpin())
+		_camera.yaw -= _mission->getSpin() * kPi / 180 * seconds;
 	_camera.pitch = std::max(-1.0, std::min(1.0, _camera.pitch + look * kLookSpeed * lookScale * seconds));
 	double step = kSpeed * moveScale * seconds;
 	double dx = (std::cos(_camera.yaw) * forward + std::sin(_camera.yaw) * strafe) * step;
@@ -1038,7 +1057,31 @@ void STGEngine::prepareAim(int w, int h) {
 	          HeldItem::place(*HeldItem::getStyle(kind), _aimX, _aimY, w, h).usable);
 }
 
+void STGEngine::drawViewOverlay(Graphics::Surface &view) {
+	// SHOW_VIEW_OVERLAY: centred at the top of the view, like the punch.
+	const Mission::ViewOverlay &overlay = _mission->getViewOverlay();
+	if (overlay.image != _viewOverlayImage) {
+		_viewOverlayImage = overlay.image;
+		_viewOverlayLoaded = false;
+		if (!overlay.image.empty()) {
+			size_t slash = _levelRef.name.find_last_of("/\\");
+			Common::String folder = slash == Common::String::npos ? "" : _levelRef.name.substr(0, slash + 1);
+			std::unique_ptr<Common::SeekableReadStream> stream =
+				_resources.open({ _levelRef.archive, folder + overlay.image });
+			_viewOverlayLoaded = stream && _viewOverlay.load(*stream);
+			if (!_viewOverlayLoaded)
+				warning("Could not load the view overlay %s", overlay.image.c_str());
+		}
+	}
+	if (!_viewOverlayLoaded)
+		return;
+	int height = _viewOverlay.guessFrameHeight();
+	_viewOverlay.drawFrame(view, overlay.frame, height, (view.w - _viewOverlay.getWidth()) / 2, 0);
+}
+
 void STGEngine::drawHands(Graphics::Surface &view, uint32 delta) {
+	if (_mission)
+		drawViewOverlay(view);
 	if (_heldItem.getKind()) {
 		_heldItem.draw(view, _aimX, _aimY, _flashLeft > 0);
 		_flashLeft = _flashLeft > delta ? _flashLeft - delta : 0;

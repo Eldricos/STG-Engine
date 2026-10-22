@@ -139,6 +139,8 @@ public:
 	void goTo(uint16 id, double x, double y, double z);
 	/** Set or clear a flag on every part (0x400000 always active, 0x1000000 flyer). */
 	void setFlag(uint16 id, uint32 flag, bool on);
+	/** GET_ALERTED_COUNT (0xEF): how many actors see the player now. */
+	int getAlertedCount() const;
 	/** SET_ACTOR_TARGET (0x5B): a new target, in the same mode. */
 	void setTarget(uint16 id, uint16 target);
 	/** SET_ACTOR_ANIM_SPEED (0x5C): an animation's speed word (8.8). */

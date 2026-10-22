@@ -110,6 +110,8 @@ private:
 	void prepareAim(int w, int h);
 	/** After rendering it: the gun held up, or the punch and a crosshair at the centre. */
 	void drawHands(Graphics::Surface &view, uint32 delta);
+	/** The scripts' full-view overlay (SHOW_VIEW_OVERLAY), if any. */
+	void drawViewOverlay(Graphics::Surface &view);
 	/** The mouse cursor: a crosshair to aim with, or an arrow. */
 	void setCursor(bool target);
 	/** The player attacks: fires the weapon in use, or else punches. */
@@ -172,6 +174,9 @@ private:
 	uint32 _flashLeft = 0;
 	/** Set while a fire key is held: one attack per press. */
 	bool _fireHeld = false;
+	Overlay _viewOverlay;
+	Common::String _viewOverlayImage;
+	bool _viewOverlayLoaded = false;
 	// The bare-hand attack's overlay, as the original's view.vt130 runs it.
 	Overlay _punchOverlay;
 	Common::String _punchImage;

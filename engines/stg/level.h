@@ -155,6 +155,8 @@ public:
 		uint16 objectId;
 		/** Drawn at full brightness, as set by a script. */
 		bool fullbright = false;
+		/** SET_TEXTURE_SCROLL (0xAB): u and v speeds. */
+		int16 uScroll = 0, vScroll = 0;
 	};
 
 	/**
@@ -216,6 +218,21 @@ public:
 		uint64 activeZones;
 		/** The raw 292-byte record, for the fields still being decoded. */
 		std::vector<byte> raw;
+		int16 uScroll = 0, vScroll = 0;
+		/**
+		 * ADD_FLAT_ZONE_BAND (0xC1): zones in play by height, highest first;
+		 * standing here, the first at or below the flat's height counts.
+		 */
+		std::vector<std::pair<int32, uint64>> zoneBands;
+
+		/** The zones in play while the player stands here. */
+		uint64 getActiveZones() const {
+			for (const auto &band : zoneBands) {
+				if (band.first <= height)
+					return band.second;
+			}
+			return activeZones;
+		}
 
 		bool isCeiling() const { return (flags & kFlagCeiling) != 0; }
 	};
