@@ -17,6 +17,7 @@
 #include "engines/stg/actors.h"
 #include "engines/stg/level.h"
 #include "engines/stg/mission.h"
+#include "engines/stg/movers.h"
 #include "engines/stg/opcodes.h"
 #include "engines/stg/render3d.h"
 #include "engines/stg/walker.h"
@@ -1209,6 +1210,67 @@ TEST(mission_player_settings) {
 	CHECK(!mission.getHud().isSlotEnabled(3));
 	CHECK_EQ(mission.getItemIcon(0xE001), 8);
 	CHECK(mission.getMissingNatives().empty());
+}
+
+TEST(movers_open_and_close) {
+	using namespace STG;
+	// A door across a room, sliding up (mode 6): mover 5, opening in about
+	// a second (speed 25600), closing after about one (wait 256), the door
+	// its own button, and reversing when it meets the player.
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 40, 40, 0);
+	builder.addWall(20, 0, 20, 40, 0.5, 7.0);
+	std::vector<byte> &r = builder.walls.back();
+	WRITE_LE_UINT32(&r[0x6C], READ_LE_UINT32(&r[0x6C]) | LevelFile::kWallMoverReverses);
+	WRITE_LE_UINT16(&r[0x8A], 5);
+	WRITE_LE_UINT16(&r[0x8C], 6);
+	WRITE_LE_UINT16(&r[0x8E], 25600);
+	WRITE_LE_UINT16(&r[0x90], 256);
+	WRITE_LE_UINT16(&r[0x92], 5);
+	LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	Movers movers(level);
+	CHECK_EQ(movers.getCount(), 1);
+	Walker walker(level);
+	walker.place(5, 20, 0);
+
+	std::vector<int> moved;
+	std::vector<Movers::Notice> notices;
+	movers.bump(0, notices);
+	CHECK_EQ(notices.size(), (size_t)1);
+	CHECK_EQ(notices[0].object, 0x8005);
+	CHECK_EQ(notices[0].event, Movers::kEventOpening);
+	for (int t = 0; t < 1100; t += 100)
+		movers.update(100, walker, moved, notices);
+	CHECK_EQ(movers.getState(5), (int)Movers::kOpen);
+	CHECK_EQ(level.getWalls()[0].bottom, level.getWalls()[0].top);
+	CHECK(!moved.empty());
+	// It closes by itself...
+	for (int t = 0; t < 2500; t += 100)
+		movers.update(100, walker, moved, notices);
+	CHECK_EQ(movers.getPosition(5), 0);
+	CHECK_EQ(level.getWalls()[0].bottom, 1 << 15);
+	CHECK_EQ(notices.back().event, Movers::kEventClosed);
+
+	// ...but not onto the player, for whom it opens again.
+	movers.bump(0, notices);
+	for (int t = 0; t < 1100; t += 100)
+		movers.update(100, walker, moved, notices);
+	walker.place(20, 20, 0);
+	for (int t = 0; t < 1500; t += 100)
+		movers.update(100, walker, moved, notices);
+	CHECK(movers.getPosition(5) > 0);
+	CHECK(movers.getState(5) == Movers::kOpening || movers.getState(5) == Movers::kOpen);
+
+	// Locked, walking into it does nothing.
+	walker.place(5, 20, 0);
+	for (int t = 0; t < 4000; t += 100)
+		movers.update(100, walker, moved, notices);
+	CHECK_EQ(movers.getPosition(5), 0);
+	movers.setLocked(5, true);
+	notices.clear();
+	movers.bump(0, notices);
+	CHECK(notices.empty());
 }
 
 TEST(walker_line_of_sight) {

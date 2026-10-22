@@ -59,6 +59,7 @@ Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &rend
 	};
 	_sound.reset(new MissionSound(script, mixer, soundFiles, locate));
 	_projectiles.reset(new Projectiles(level, script.getSection(4)));
+	_movers.reset(new Movers(level));
 	_vm.reset(new ScriptVM(script, this));
 	_array.assign(kArraySize, 0);
 	for (const LevelFile::Wall &wall : level.getWalls())
@@ -138,6 +139,13 @@ void Mission::setTextureScroll(uint16 id, int16 u, int16 v) {
 	}
 }
 
+void Mission::refreshGeometry(const std::vector<int> &walls) {
+	if (walls.empty())
+		return;
+	_walker.refreshWalls(walls);
+	_projectiles->refreshWalls(walls);
+}
+
 void Mission::moveLift(uint16 id, int level) {
 	// 0x4583EA: every flat of the group jumps to the level's height, and
 	// the player's footing is looked at again.
@@ -179,6 +187,12 @@ void Mission::runPush(uint32 ms) {
 void Mission::sync(Common::Serializer &s) {
 	_vm->sync(s);
 	_level.syncState(s);
+	{
+		std::vector<int> moved;
+		_movers->sync(s, _walker, moved);
+		if (s.isLoading())
+			refreshGeometry(moved);
+	}
 	_walker.sync(s);
 	bool hasActors = _actors != nullptr;
 	s.syncAsBool(hasActors);
@@ -360,6 +374,15 @@ void Mission::update(uint32 ms) {
 	_time += ms;
 	runTimers();
 
+	// Doors (0x4B82E0), and what they tell their scripts.
+	{
+		std::vector<int> moved;
+		std::vector<Movers::Notice> notices;
+		_movers->update(ms, _walker, moved, notices);
+		refreshGeometry(moved);
+		for (const Movers::Notice &notice : notices)
+			send(notice.object, notice.event);
+	}
 	// Landing hard hurts (0x43A662), as damage kind 1.
 	double landing = _walker.takeLanding();
 	if (landing > 0 && _fallDivisor > 0) {
@@ -709,8 +732,14 @@ void Mission::checkPlayerContacts() {
 		if (_touchedWall >= 0)
 			send((uint16)(_level.getWalls()[_touchedWall].objectId | kTypeWall), kEventUntouch);
 		_touchedWall = wall;
-		if (wall >= 0)
+		if (wall >= 0) {
 			send((uint16)(_level.getWalls()[wall].objectId | kTypeWall), kEventTouch);
+			// Walking into a wall may start a door (0x4B94D0).
+			std::vector<Movers::Notice> notices;
+			_movers->bump(wall, notices);
+			for (const Movers::Notice &notice : notices)
+				send(notice.object, notice.event);
+		}
 	}
 
 	uint16 actor = _actors ? _actors->getObstacleObject(_walker.getContactObstacle()) : 0;
@@ -1814,6 +1843,38 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 	case 0xEF: // GET_ALERTED_COUNT
 		vm.push((int16)(_actors ? _actors->getAlertedCount() : 0));
 		break;
+	case 0x39: // MOVER_OPEN
+	case 0x3A: // MOVER_CLOSE
+	case 0x3E: // MOVER_SET_OPEN
+	case 0x3F: { // MOVER_SET_CLOSED
+		// 0x45643E: straight to the state, locked or not.
+		uint16 id = (uint16)vm.pop();
+		static const std::map<uint16, int> kStates = { { 0x39, Movers::kOpening }, { 0x3A, Movers::kClosing },
+		                                                { 0x3E, Movers::kOpen }, { 0x3F, Movers::kClosed } };
+		std::vector<int> moved;
+		std::vector<Movers::Notice> notices;
+		_movers->setState(id ? id : self.object->id, kStates.at(op), _walker, moved, notices);
+		refreshGeometry(moved);
+		for (const Movers::Notice &notice : notices)
+			send(notice.object, notice.event);
+		break;
+	}
+	case 0x3B: { // MOVER_TOGGLE
+		uint16 id = (uint16)vm.pop();
+		std::vector<int> moved;
+		std::vector<Movers::Notice> notices;
+		_movers->toggle(id ? id : self.object->id, _walker, moved, notices);
+		refreshGeometry(moved);
+		for (const Movers::Notice &notice : notices)
+			send(notice.object, notice.event);
+		break;
+	}
+	case 0x3C: // MOVER_LOCK
+	case 0x3D: { // MOVER_UNLOCK
+		uint16 id = (uint16)vm.pop();
+		_movers->setLocked(id ? id : self.object->id, op == 0x3C);
+		break;
+	}
 	case 0x4C: { // ACTOR_GO_TO
 		uint16 id = (uint16)vm.pop();
 		double x = pop32(vm), y = pop32(vm), z = pop32(vm);

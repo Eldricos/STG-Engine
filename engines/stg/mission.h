@@ -17,6 +17,7 @@
 #include "engines/stg/actors.h"
 #include "engines/stg/hud.h"
 #include "engines/stg/level.h"
+#include "engines/stg/movers.h"
 #include "engines/stg/projectiles.h"
 #include "engines/stg/render3d.h"
 #include "engines/stg/script.h"
@@ -340,6 +341,8 @@ private:
 	void runProjectiles(uint32 ms);
 	void runPush(uint32 ms);
 	void setTextureScroll(uint16 id, int16 u, int16 v);
+	/** Walls that doors moved: collisions and shots follow them. */
+	void refreshGeometry(const std::vector<int> &walls);
 	/** LIFT_GO_TO: a lift's flats to one of its heights (1-based). */
 	void moveLift(uint16 id, int level);
 	void playSoundAt(int sound, double x, double y, double z);
@@ -363,6 +366,7 @@ private:
 	Actors *_actors;
 	std::unique_ptr<MissionSound> _sound;
 	std::unique_ptr<Projectiles> _projectiles;
+	std::unique_ptr<Movers> _movers;
 
 	/** An item's behaviour (ATTACH_ITEM_BEHAVIOUR): its kind and two settings. */
 	std::map<uint16, Item> _items;

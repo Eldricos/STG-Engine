@@ -59,27 +59,33 @@ bool nearPolygon(const std::vector<LevelFile::Vertex> &vertices, const LevelFile
 } // End of anonymous namespace
 
 Walker::Walker(const LevelFile &level) : _level(level) {
-	const std::vector<LevelFile::Vertex> &vertices = level.getVertices();
-	std::shared_ptr<std::vector<WallLine>> lines(new std::vector<WallLine>());
-	const std::vector<LevelFile::Wall> &walls = level.getWalls();
-	for (size_t i = 0; i < walls.size(); i++) {
-		const LevelFile::Wall &wall = walls[i];
-		WallLine line;
-		line.index = (int)i;
-		line.x1 = fromFixed(vertices[wall.vertex1].x);
-		line.y1 = fromFixed(vertices[wall.vertex1].y);
-		line.x2 = fromFixed(vertices[wall.vertex2].x);
-		line.y2 = fromFixed(vertices[wall.vertex2].y);
-		line.nx = fromFixed(wall.normalX);
-		line.ny = fromFixed(wall.normalY);
-		line.d = fromFixed(wall.distance);
-		line.top = fromFixed(wall.top);
-		line.bottom = fromFixed(wall.bottom);
-		line.zones = wall.zones;
-		line.bothSides = (wall.flags & LevelFile::kWallSolidBothSides) != 0;
-		lines->push_back(line);
-	}
+	std::shared_ptr<std::vector<WallLine>> lines(new std::vector<WallLine>(level.getWalls().size()));
 	_walls = lines;
+	for (size_t i = 0; i < lines->size(); i++)
+		makeLine((int)i, (*lines)[i]);
+}
+
+void Walker::makeLine(int index, WallLine &line) const {
+	const std::vector<LevelFile::Vertex> &vertices = _level.getVertices();
+	const LevelFile::Wall &wall = _level.getWalls()[index];
+	line.index = index;
+	line.x1 = fromFixed(vertices[wall.vertex1].x);
+	line.y1 = fromFixed(vertices[wall.vertex1].y);
+	line.x2 = fromFixed(vertices[wall.vertex2].x);
+	line.y2 = fromFixed(vertices[wall.vertex2].y);
+	line.nx = fromFixed(wall.normalX);
+	line.ny = fromFixed(wall.normalY);
+	line.d = fromFixed(wall.distance);
+	line.top = fromFixed(wall.top);
+	line.bottom = fromFixed(wall.bottom);
+	line.zones = wall.zones;
+	line.bothSides = (wall.flags & LevelFile::kWallSolidBothSides) != 0;
+}
+
+void Walker::refreshWalls(const std::vector<int> &walls) {
+	// Every copy of this walker (the actors' too) shares the lines.
+	for (int index : walls)
+		makeLine(index, (*_walls)[index]);
 }
 
 void Walker::sync(Common::Serializer &s) {

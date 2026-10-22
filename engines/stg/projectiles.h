@@ -136,6 +136,8 @@ public:
 	void getSprites(std::vector<SpriteDraw> &sprites);
 
 	int getCount() const { return (int)_shots.size(); }
+	/** Walls a door moved: take their new places. */
+	void refreshWalls(const std::vector<int> &walls);
 	/** Drop every shot in flight (loading a saved game). */
 	void clear() { _shots.clear(); }
 
@@ -164,6 +166,7 @@ private:
 		double nx, ny, d;
 	};
 
+	void makeLine(int index);
 	Hit sweep(const Shot &shot, double x0, double y0, double z0, double x1, double y1, double z1, uint64 zones,
 	          const std::vector<Target> &targets, double playerX, double playerY, double playerEye,
 	          double playerRadius, double &t, double &normalX, double &normalY) const;

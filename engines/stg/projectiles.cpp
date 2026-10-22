@@ -92,18 +92,27 @@ Projectiles::Projectiles(const LevelFile &level, const std::vector<byte> &sectio
 		_types.push_back(type);
 	}
 
-	const std::vector<LevelFile::Vertex> &vertices = level.getVertices();
-	for (const LevelFile::Wall &wall : level.getWalls()) {
-		Line line;
-		line.x1 = fromFixed(vertices[wall.vertex1].x);
-		line.y1 = fromFixed(vertices[wall.vertex1].y);
-		line.x2 = fromFixed(vertices[wall.vertex2].x);
-		line.y2 = fromFixed(vertices[wall.vertex2].y);
-		line.nx = fromFixed(wall.normalX);
-		line.ny = fromFixed(wall.normalY);
-		line.d = fromFixed(wall.distance);
-		_walls.push_back(line);
-	}
+	_walls.resize(level.getWalls().size());
+	for (size_t i = 0; i < _walls.size(); i++)
+		makeLine((int)i);
+}
+
+void Projectiles::makeLine(int index) {
+	const std::vector<LevelFile::Vertex> &vertices = _level.getVertices();
+	const LevelFile::Wall &wall = _level.getWalls()[index];
+	Line &line = _walls[index];
+	line.x1 = fromFixed(vertices[wall.vertex1].x);
+	line.y1 = fromFixed(vertices[wall.vertex1].y);
+	line.x2 = fromFixed(vertices[wall.vertex2].x);
+	line.y2 = fromFixed(vertices[wall.vertex2].y);
+	line.nx = fromFixed(wall.normalX);
+	line.ny = fromFixed(wall.normalY);
+	line.d = fromFixed(wall.distance);
+}
+
+void Projectiles::refreshWalls(const std::vector<int> &walls) {
+	for (int index : walls)
+		makeLine(index);
 }
 
 Projectiles::~Projectiles() {}

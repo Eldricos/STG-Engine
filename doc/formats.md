@@ -428,6 +428,10 @@ heading in degrees.
     GET_ALERTED_COUNT (0xEF, actors seeing the player now).
   - No effect here: ALLOC_GLOBALS (0x15), the logging natives 0x27-0x2A (0x28 pops only its count
     and logs the words under it), LOAD_ACTOR_CLASS (0xA8), 0xAD, SET_PIXEL_PICK (0xE5).
+- **Doors** (movers, `engines/stg/movers.h`): built at load (`0x4B7CA0`) from walls with a mover id
+  and run every tick (`0x4B82E0`). See "Movers" below. MOVER_OPEN (0x39), MOVER_CLOSE (0x3A),
+  MOVER_TOGGLE (0x3B), MOVER_LOCK (0x3C), MOVER_UNLOCK (0x3D), MOVER_SET_OPEN (0x3E),
+  MOVER_SET_CLOSED (0x3F) id: set the state at once, locked or not (`0x45643E`).
 - **Sound** (see Sounds):
   - PLAY_SOUND sound, volume (0–64)
   - PLAY_SOUND_DELAYED, PLAY_SOUND_FADE_IN, PLAY_SOUND_CUE
@@ -610,6 +614,41 @@ sends 45 (no buttons) or 47 with the button hit (0 for none), a right click
 62, and Space sends 45; the panel's object gets 35 every frame once the
 player is 2 units from where it opened. Screen effects blend the palette:
 `c = (c (128 - k) + colour k) >> 7` per slot, slot 3 first and slot 0 last.
+
+### Movers (doors)
+
+Doors are built from fields of the wall records (152 bytes) and flat records (292 bytes):
+
+| record | offset | meaning |
+|--------|--------|---------|
+| wall | 0x8A | mover id (0 for none) |
+| wall | 0x8C | mode: how the part moves; also ties followers to a leader |
+| wall | 0x8E | speed: the mover's rate is speed · 64 / 100 (default 0x4000) |
+| wall | 0x90 | wait: the door closes by itself after wait · 4 ms (default 0x100, only if set) |
+| wall | 0x92 | the mover walking into this wall starts (`0x4B94D0`) |
+| wall | 0x94 | how: 0 open if shut and not locked (every file), 1 open the other way, 2 close, 3 toggle |
+| wall | 0x6C | flag 0x2000: a follower part; 0x80000: reverses when it meets the player |
+| flat | 0x106, 0x108 | mover id and mode (6 or 7), for flats with flag 0x2000 |
+
+Walls with a mover id and no 0x2000 are the mover's leaders; followers (walls and flats with 0x2000)
+go with the leader of the same mover whose mode is theirs. A mover's position runs from 0 (shut) to
+±0x4000, by rate · ms >> 10 a tick. Every part is placed from its original geometry with
+f = position / 0x4000, A and B the leader's ends and H its height:
+
+| mode | the part |
+|------|----------|
+| 0, 1 | slides by f · (B − A) towards A, or B |
+| 2, 3 | swings by f · 90° about A, one way or the other |
+| 4, 5 | swings about B |
+| 6 | slides up: the leader's bottom rises by f · H (its v length shrinking); followers' tops rise; flats rise by f · H |
+| 7 | slides down: the leader's top sinks, its texture with it; followers' bottoms sink; flats sink |
+
+Moved walls take normals recomputed as (dy, −dx) / length, distance −(n · v2), as every wall in the
+files has. States: 0 idle, 1 open, 2 opening, 3 closed, 4 closing, 5–7 the same the other way. Open
+movers with a wait count it down and close; changes send the script object 0x8000 | id event 22
+(opening), 23 (open), 24 (closing) or 25 (closed); doors' scripts play their own sounds. A step that
+brings a part nearer the player once within 1 unit, or a ceiling down onto their head, is undone, and
+a closing door that reverses opens again. The player rides floors that move. Actors aren't checked.
 
 ## Level data (`GAME.LV2`): decoded enough to render, `engines/stg/level.h`, `render3d.h`
 

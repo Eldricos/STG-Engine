@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <cmath>
 #include <cstdlib>
 #include <map>
 
@@ -36,6 +37,19 @@ LevelFile::LightInfo readLight(const byte *record) {
 }
 
 } // End of anonymous namespace
+
+void LevelFile::updateWallGeometry(int index) {
+	Wall &wall = _walls[index];
+	double x1 = _vertices[wall.vertex1].x / 65536.0, y1 = _vertices[wall.vertex1].y / 65536.0;
+	double x2 = _vertices[wall.vertex2].x / 65536.0, y2 = _vertices[wall.vertex2].y / 65536.0;
+	double dx = x2 - x1, dy = y2 - y1, length = std::sqrt(dx * dx + dy * dy);
+	if (length <= 0)
+		return;
+	double nx = dy / length, ny = -dx / length;
+	wall.normalX = (int32)std::lround(nx * 65536);
+	wall.normalY = (int32)std::lround(ny * 65536);
+	wall.distance = (int32)std::lround(-(nx * x2 + ny * y2) * 65536);
+}
 
 void LevelFile::LightInfo::sync(Common::Serializer &s) {
 	s.syncAsSint16(group);
@@ -220,6 +234,12 @@ bool LevelFile::loadTables() {
 		wall.texture = READ_LE_UINT16(r + 0x96);
 		wall.light = readLight(r);
 		wall.zones = READ_LE_UINT64(r + 0x3C);
+		wall.moverId = (int16)READ_LE_UINT16(r + 0x8A);
+		wall.moverMode = (int16)READ_LE_UINT16(r + 0x8C);
+		wall.moverSpeed = READ_LE_UINT16(r + 0x8E);
+		wall.moverWait = READ_LE_UINT16(r + 0x90);
+		wall.bumpMover = (int16)READ_LE_UINT16(r + 0x92);
+		wall.bumpMode = (int16)READ_LE_UINT16(r + 0x94);
 		if (wall.vertex1 >= _vertices.size() || wall.vertex2 >= _vertices.size()) {
 			warning("LevelFile: wall %u refers to a missing vertex", i);
 			return false;
@@ -234,6 +254,8 @@ bool LevelFile::loadTables() {
 		Sector sector;
 		sector.flags = READ_LE_UINT32(r + 108);
 		sector.height = (int32)READ_LE_UINT32(r + 0x20);
+		sector.moverId = (int16)READ_LE_UINT16(r + 0x106);
+		sector.moverMode = (int16)READ_LE_UINT16(r + 0x108);
 		sector.uOffset = (int32)READ_LE_UINT32(r + 0x44);
 		sector.uScale = (int32)READ_LE_UINT32(r + 0x48);
 		sector.vOffset = (int32)READ_LE_UINT32(r + 0x4C);

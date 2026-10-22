@@ -157,7 +157,20 @@ public:
 		bool fullbright = false;
 		/** SET_TEXTURE_SCROLL (0xAB): u and v speeds. */
 		int16 uScroll = 0, vScroll = 0;
+		/**
+		 * Doors (see Movers): the mover this wall is part of (0x8A, 0 for
+		 * none), how it moves (0x8C), the mover's speed and wait (0x8E,
+		 * 0x90), and the mover walking into it starts, with how (0x92, 0x94).
+		 */
+		int16 moverId = 0, moverMode = 0;
+		uint16 moverSpeed = 0, moverWait = 0;
+		int16 bumpMover = 0, bumpMode = 0;
 	};
+
+	/** Wall and flat flag: a mover's follower part, not a leader. */
+	static const uint32 kFlagMoverFollower = 0x2000;
+	/** Wall flag: a closing door that meets the player opens again. */
+	static const uint32 kWallMoverReverses = 0x80000;
 
 	/**
 	 * Wall flag: drawn from behind too (0x4C936A); otherwise only from the
@@ -219,6 +232,8 @@ public:
 		/** The raw 292-byte record, for the fields still being decoded. */
 		std::vector<byte> raw;
 		int16 uScroll = 0, vScroll = 0;
+		/** A mover follower: the mover (0x106) and mode 6 or 7 (0x108). */
+		int16 moverId = 0, moverMode = 0;
 		/**
 		 * ADD_FLAT_ZONE_BAND (0xC1): zones in play by height, highest first;
 		 * standing here, the first at or below the flat's height counts.
@@ -385,6 +400,10 @@ public:
 	void syncState(Common::Serializer &s);
 
 	std::vector<Wall> &getWalls() { return _walls; }
+	/** Doors move vertices. */
+	std::vector<Vertex> &getVertices() { return _vertices; }
+	/** Recompute a wall's normal and distance from its vertices, as 0x4B76F0 does. */
+	void updateWallGeometry(int index);
 	std::vector<Sector> &getSectors() { return _sectors; }
 	std::vector<Billboard> &getBillboards() { return _billboards; }
 

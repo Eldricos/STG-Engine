@@ -59,6 +59,8 @@ public:
 
 	/** Put the player's feet at (x, y, feet) and settle onto the floor there. */
 	void place(double x, double y, double feet);
+	/** Walls a door moved: take their new places, for this walker and every copy of it. */
+	void refreshWalls(const std::vector<int> &walls);
 	/** Save or load the position and the settings scripts change. */
 	void sync(Common::Serializer &s);
 
@@ -172,11 +174,12 @@ private:
 		int index;
 	};
 
+	void makeLine(int index, WallLine &line) const;
 	void collideAndSlide(double dx, double dy);
 	void followFloor(double seconds);
 
 	const LevelFile &_level;
-	std::shared_ptr<const std::vector<WallLine>> _walls;
+	std::shared_ptr<std::vector<WallLine>> _walls;
 	double _x = 0, _y = 0, _feet = 0;
 	double _fallSpeed = 0;
 	double _gravity = kGravity, _maxFallSpeed = kMaxFallSpeed;
