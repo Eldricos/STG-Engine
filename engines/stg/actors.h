@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "engines/stg/level.h"
+#include "engines/stg/projectiles.h"
 #include "engines/stg/render3d.h"
 #include "engines/stg/sprite.h"
 #include "engines/stg/walker.h"
@@ -163,6 +164,17 @@ public:
 	/** The projectile type it fires in attack mode, or -1 for none. */
 	void setWeapon(uint16 id, int weapon);
 
+	/** A shot an actor fired: where from and which way (radians, as Projectiles::fire). */
+	struct Shot {
+		uint16 shooter;
+		int weapon;
+		double x, y, z, yaw, pitch;
+	};
+	/** Move the shots fired since the last call into shots. */
+	void takeShots(std::vector<Shot> &shots);
+	/** The actors, as things shots can hit. */
+	void getTargets(std::vector<Projectiles::Target> &targets) const;
+
 	/** Headings: 65536 is a full turn, 0 faces +y and 16384 faces -x. */
 	static uint16 headingTowards(double dx, double dy);
 
@@ -178,6 +190,7 @@ private:
 	void runWalkTo(Actor &actor, double step, const Walker &player, uint32 ms, std::vector<ScriptEvent> &events);
 	void moveForward(Actor &actor, double distance, uint32 ms);
 	bool turnTowards(Actor &actor, uint16 goal, uint32 ms);
+	Shot aim(const Actor &actor, const Walker &player) const;
 	uint32 random();
 
 	const LevelFile &_level;
@@ -189,6 +202,7 @@ private:
 	/** By script object id: stats belong to the object, not its parts. */
 	std::map<uint16, CombatStats> _combat;
 	std::map<uint16, int16> _teams;
+	std::vector<Shot> _shots;
 	uint32 _seed = 1;
 };
 

@@ -912,6 +912,96 @@ TEST(actors_take_hits) {
 	CHECK(mission.getMissingNatives().empty());
 }
 
+namespace {
+
+/** A section 4 record: kind, speed in units per second, damage and team. */
+std::vector<byte> projectileType(int kind, double unitsPerSecond, int damage, int team, int count = 0,
+                                 double spacing = 0, int impact = -1, uint32 lifetime = 5000) {
+	std::vector<byte> r(100);
+	WRITE_LE_UINT32(&r[0x00], (uint32)kind);
+	WRITE_LE_UINT32(&r[0x08], lifetime);
+	WRITE_LE_UINT32(&r[0x10], 0x2000);                // half width 1/8
+	WRITE_LE_UINT32(&r[0x14], 0x4000);                // height 1/4
+	WRITE_LE_UINT32(&r[0x1C], 1);                     // keyed
+	WRITE_LE_UINT32(&r[0x34], 1);                     // frames
+	WRITE_LE_UINT32(&r[0x3C], (uint32)(int32)(unitsPerSecond * 65.536 * 65536));
+	WRITE_LE_UINT32(&r[0x40], (uint32)-1);
+	WRITE_LE_UINT32(&r[0x44], (uint32)-1);
+	WRITE_LE_UINT32(&r[0x48], (uint32)damage);
+	WRITE_LE_UINT32(&r[0x4C], (uint32)team);
+	WRITE_LE_UINT32(&r[0x54], (uint32)count);
+	WRITE_LE_UINT32(&r[0x58], kind == 3 ? 0x1555 : (uint32)(int32)(spacing * 65536));
+	WRITE_LE_UINT32(&r[0x5C], (uint32)impact);
+	return r;
+}
+
+} // End of anonymous namespace
+
+TEST(projectiles_fly_and_hit) {
+	using STG::Projectiles;
+	// Type 0: a bolt at 50 units/s; 1: a beam with a 10-sprite trail 0.5
+	// apart that throws type 2, a burst of 8 sparks lasting 300 ms, where
+	// it hits.
+	std::vector<byte> section;
+	for (const std::vector<byte> &r : { projectileType(2, 50, 6, 4), projectileType(1, 100, 3, 5, 10, 0.5, 2),
+	                                    projectileType(3, 10, 0, 7, 8, 0, -1, 300) })
+		section.insert(section.end(), r.begin(), r.end());
+	section.resize(section.size() + 100); // the end of the table
+
+	STG::LevelFile level;
+	CHECK(loadLevel(level, makeRoom().build())); // a wall along x = 10, facing -x
+	Projectiles shots(level, section);
+	CHECK_EQ(shots.getTypeCount(), 3);
+	std::vector<Projectiles::Target> none;
+	std::vector<Projectiles::Report> reports;
+	auto run = [&](int ms, double playerX = 100) {
+		for (int t = 0; t < ms; t += 40)
+			shots.update(40, ~0ull, none, playerX, 10, 6, 1.2, reports);
+	};
+
+	// A bolt stops at the wall's face...
+	shots.fire(0, 5, 10, 5, 0, 0, 0xA001);
+	run(400);
+	CHECK_EQ(reports.size(), (size_t)1);
+	CHECK(reports[0].hit.target == Projectiles::Hit::kWall);
+	CHECK(std::fabs(reports[0].hit.x - 10) < 1e-6);
+	CHECK_EQ(shots.getCount(), 0);
+
+	// ...but passes through it from behind.
+	reports.clear();
+	shots.fire(0, 15, 10, 5, 3.14159265358979, 0, 0xA001);
+	run(400);
+	CHECK(reports.empty());
+	CHECK_EQ(shots.getCount(), 1);
+	run(5000);
+	CHECK_EQ(shots.getCount(), 0);
+
+	// A beam hits the player, throwing sparks; its trail drains into the
+	// hit point and goes.
+	reports.clear();
+	shots.fire(1, 2, 10, 5.5, 0, 0, 0xA001);
+	run(80, 8);
+	CHECK_EQ(reports.size(), (size_t)1);
+	CHECK(reports[0].hit.target == Projectiles::Hit::kPlayer);
+	CHECK(std::fabs(reports[0].hit.x - (8 - 1.2)) < 1e-6);
+	CHECK_EQ(shots.getCount(), 1 + 8);
+	run(400, 8);
+	CHECK_EQ(shots.getCount(), 0);
+
+	// Shooters don't hit themselves.
+	reports.clear();
+	std::vector<Projectiles::Target> actors = { { 0xA001, 4, 10, 0, 6, 1 } };
+	shots.fire(0, 4, 10, 5, 0, 0, 0xA001);
+	shots.update(40, ~0ull, actors, 100, 10, 6, 1.2, reports);
+	CHECK_EQ(shots.getCount(), 1);
+	CHECK(reports.empty());
+	shots.fire(0, 1, 10, 5, 0, 0, 0xA002);
+	shots.update(40, ~0ull, actors, 100, 10, 6, 1.2, reports);
+	CHECK_EQ(reports.size(), (size_t)1);
+	CHECK(reports[0].hit.target == Projectiles::Hit::kActor);
+	CHECK_EQ(reports[0].hit.index, 0xA001);
+}
+
 TEST(walker_line_of_sight) {
 	STG::LevelFile level;
 	CHECK(loadLevel(level, makeRoom(12).build()));

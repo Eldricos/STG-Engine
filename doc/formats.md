@@ -124,7 +124,7 @@ char[]   resource names, NUL separated, to the end of the file
 - **Section 2** is the sound cue table and **section 3** the sound table,
   both handed to the sound manager (`0x41EB62` / `0x41EA4B`); see Sounds
   below.
-- **Section 4** holds 100-byte projectile records (+0x40: impact sound).
+- **Section 4** holds 100-byte projectile types, ending at a kind of 0 (see Projectiles below).
   Section 5 is unexplored.
 
 ### Sounds
@@ -394,6 +394,48 @@ To get a full listing of a script:
 stg --extract --path=DATA/VERID1.DAT --pattern='verid1/game.bin' -o out
 stg --probe --path=out/verid1/game.bin
 ```
+
+### Projectiles
+
+Section 4's records become projectile types (`0x43FE9C`), numbered from 0;
+`SET_ACTOR_WEAPON` gives an actor one to fire in attack mode, and weapon
+items name one too. `engines/stg/projectiles.h`.
+
+| Offset | Meaning |
+|--------|---------|
+| 0x00 | kind: 1 beam (a head and a trail), 2 bolt, 3 burst (sparks), 4 nothing; 0 ends the table |
+| 0x04 | animation rate: frame = age in ms × rate / 65536, wrapped by the frame count |
+| 0x08 | lifetime in ms |
+| 0x0C | first texture (level texture id) |
+| 0x10, 0x14 | 16.16 half width (also the radius it hits with) and height; drawn centred on the shot |
+| 0x18 | mirrored view directions |
+| 0x1C, 0x20 | keyed (index 255 transparent), see-through |
+| 0x24–0x30 | u, v start and length, in 128ths of the texture |
+| 0x34, 0x38 | frames, view directions |
+| 0x3C | 16.16 speed S: S × 1000 / 65536 units a second (verid1's phaser 106.8) |
+| 0x40, 0x44 | fire sound, sounded where the shot starts; impact sound, where it hits; −1 none |
+| 0x48, 0x4C | damage, team |
+| 0x54, 0x58 | beams: trail sprites and their 16.16 spacing; bursts: sparks and the cone's half angle (1/65536 turns) |
+| 0x5C | type thrown where it hits or runs out, or −1 (sparks) |
+
+Shots fly straight without gravity (`0x4C4C70`). Each frame they sweep from
+where they were to where they are (`0x4BA9E0`) and stop at the nearest of:
+a wall crossed from its front, or either way if it is solid on both sides,
+within its height give or take the shot's radius; a floor crossed going
+down or a ceiling going up; and, as upright cylinders, billboards
+(+0x54 radius, +0x58 high), actors other than the shooter and the player
+(radius 1.2 from 6 below the eye to 0.51 above it). Walls, floors and
+billboards count only in the zones in play.
+
+A beam strings its trail out behind the head from the muzzle; when the head
+hits, the trail runs on into the hit point and vanishes there. Bolts and
+beam heads report hits (engine code 20, `0x43696F`): the impact sounds, a
+player hit is damage (`game.vt34C`: health falls but never below 1, then
+broadcast 9 with source 0, damage, damage, team), and anything else gets
+event 16 (damage, damage, team) while everyone hears event 59 (the id,
+damage, damage, team). The impact type's sparks fly off what was hit: off
+a wall mirrored about it, off a floor with the pitch turned over, off
+anything else straight back. Sparks bounce and do no harm.
 
 ## Level data (`GAME.LV2`): decoded enough to render, `engines/stg/level.h`, `render3d.h`
 

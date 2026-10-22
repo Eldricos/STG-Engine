@@ -240,8 +240,11 @@ void STGEngine::drawFrame(uint32 delta) {
 		updateWalk(delta);
 		Graphics::Surface view;
 		view.create(Screen::kWidth, Screen::kHeight - kTextPanelHeight, Graphics::PixelFormat::createFormatCLUT8());
+		_actorSprites.clear();
 		if (_actors)
 			_actors->getSprites(_camera.x, _camera.y, _walker->getActiveZones(), _actorSprites);
+		if (_mission)
+			_mission->getProjectiles().getSprites(_actorSprites);
 		_levelRenderer->render(_camera, view, _levelTime);
 		_screen->getSurface().copyRectToSurface(view, 0, 0, Common::Rect(view.w, view.h));
 		_screen->getSurface().fillRect(Common::Rect(0, view.h, Screen::kWidth, Screen::kHeight),

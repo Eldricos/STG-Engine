@@ -16,6 +16,7 @@
 #include "common/random.h"
 #include "engines/stg/actors.h"
 #include "engines/stg/level.h"
+#include "engines/stg/projectiles.h"
 #include "engines/stg/render3d.h"
 #include "engines/stg/script.h"
 #include "engines/stg/sound.h"
@@ -60,6 +61,7 @@ public:
 		kEventUntouch = 15,
 		kEventActivate = 45,
 		kEventEffectDone = 55,
+		kEventHitReport = 59,
 		kEventFloorLeft = 54,
 		kEventFloorEntered = 53
 	};
@@ -110,6 +112,12 @@ public:
 	const std::map<uint16, int> &getMissingNatives() const { return _missing; }
 
 	int16 getHealth() const { return _health; }
+	/** Hurt the player (game.vt34C): source object, damage, and a kind (a shot's team). */
+	void damagePlayer(int16 source, int16 damage, int16 kind);
+
+	/** Fire a projectile of the given type (see Projectiles::fire), sounding it. */
+	void fire(int type, double x, double y, double z, double yaw, double pitch, int shooter);
+	Projectiles &getProjectiles() { return *_projectiles; }
 
 	// ScriptHost
 	void callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) override;
@@ -160,6 +168,8 @@ private:
 	/** Set an actor's mode from a native that pops the actor's id. */
 	void setActorMode(ScriptVM &vm, int mode, bool popTarget);
 	void skipNative(ScriptVM &vm, uint16 op);
+	void runProjectiles(uint32 ms);
+	void playSoundAt(int sound, double x, double y, double z);
 
 	LevelFile &_level;
 	const ScriptFile &_script;
@@ -180,6 +190,7 @@ private:
 	std::vector<uint16> _wallTextures, _flatTextures, _billboardTextures;
 	Actors *_actors;
 	std::unique_ptr<MissionSound> _sound;
+	std::unique_ptr<Projectiles> _projectiles;
 	std::vector<MissionSound::Finished> _soundsFinished;
 
 	int16 _health = 100;

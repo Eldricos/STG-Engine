@@ -83,6 +83,7 @@ struct Actors::Actor {
 	bool near = false, inRange = false;
 	/** Projectile type fired in attack mode, or -1. */
 	int weapon = -1;
+	bool firing = false;
 };
 
 Actors::Actors(const LevelFile &level, const Walker &prototype, const SpriteLoader &loader) : _level(level) {
@@ -336,6 +337,47 @@ bool Actors::getTarget(const Actor &actor, const Walker &player, double &x, doub
 	return true;
 }
 
+Actors::Shot Actors::aim(const Actor &actor, const Walker &player) const {
+	// 0x4C4460: from the muzzle, turned with the actor, at the target: the
+	// player's eyes, or halfway up another actor.
+	double angle = actor.heading * 2 * kPi / 65536;
+	double s = std::sin(angle), c = std::cos(angle);
+	double ox = fromFixed(actor.data.muzzleX), oy = fromFixed(actor.data.muzzleY);
+	Shot shot;
+	shot.shooter = (uint16)(actor.data.objectId | kObjectType);
+	shot.weapon = actor.weapon;
+	shot.x = actor.x + ox * c - oy * s;
+	shot.y = actor.y + oy * c + ox * s;
+	shot.z = actor.z + fromFixed(actor.data.drawOffset) + fromFixed(actor.data.muzzleZ);
+	double tx = player.getX(), ty = player.getY(), tz = player.getEye();
+	if (actor.target != 0) {
+		uint16 heading;
+		std::vector<int> parts = findAll(actor.target);
+		if (getPosition(actor.target, tx, ty, tz, heading) && !parts.empty())
+			tz += fromFixed(_actors[parts[0]]->data.bodyHeight) / 2;
+	}
+	double dx = tx - shot.x, dy = ty - shot.y;
+	shot.yaw = std::atan2(dy, dx);
+	shot.pitch = std::atan2(tz - shot.z, std::sqrt(dx * dx + dy * dy));
+	return shot;
+}
+
+void Actors::takeShots(std::vector<Shot> &shots) {
+	shots.insert(shots.end(), _shots.begin(), _shots.end());
+	_shots.clear();
+}
+
+void Actors::getTargets(std::vector<Projectiles::Target> &targets) const {
+	targets.clear();
+	for (size_t i = 0; i < _actors.size(); i++) {
+		const Actor &actor = *_actors[i];
+		if (actor.mode == kModeHidden)
+			continue;
+		targets.push_back({ (uint16)(actor.data.objectId | kObjectType), actor.x, actor.y, _obstacles[i].bottom,
+		                    _obstacles[i].top, _obstacles[i].radius });
+	}
+}
+
 bool Actors::turnTowards(Actor &actor, uint16 goal, uint32 ms) {
 	int32 limit = (int32)((uint32)actor.data.turnSpeed * ms / 1024);
 	int16 diff = (int16)(goal - actor.heading);
@@ -378,9 +420,11 @@ double Actors::runAnimation(Actor &actor, uint32 ms, std::vector<ScriptEvent> &e
 		fire = actor.mode == kModeAttack;
 	}
 	// Attackers fire at the start of each cycle, which is reported like an
-	// arrival (engine code 18). The shots themselves aren't implemented.
-	if (fire)
+	// arrival (engine code 18).
+	if (fire) {
 		events.push_back({ object, kEventArrived });
+		actor.firing = true;
+	}
 
 	// Walking keeps pace with the animation: speed (8.8 units) per frame.
 	return (double)anim.speed * delta / (256.0 * 256.0);
@@ -522,6 +566,11 @@ void Actors::update(uint32 ms, const Walker &player, std::vector<ScriptEvent> &e
 
 		double step = runAnimation(actor, ms, events);
 		uint16 object = (uint16)(actor.data.objectId | kObjectType);
+		if (actor.firing) {
+			actor.firing = false;
+			if (actor.weapon >= 0)
+				_shots.push_back(aim(actor, player));
+		}
 		switch (actor.mode) {
 		case kModeFace:
 		case kModeAttack: {

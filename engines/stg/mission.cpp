@@ -56,6 +56,7 @@ Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &rend
 		return true;
 	};
 	_sound.reset(new MissionSound(script, mixer, soundFiles, locate));
+	_projectiles.reset(new Projectiles(level, script.getSection(4)));
 	_vm.reset(new ScriptVM(script, this));
 	_array.assign(kArraySize, 0);
 	for (const LevelFile::Wall &wall : level.getWalls())
@@ -108,7 +109,12 @@ void Mission::update(uint32 ms) {
 		_actors->update(ms, _walker, _actorEvents);
 		for (const Actors::ScriptEvent &event : _actorEvents)
 			send(event.object, event.event);
+		std::vector<Actors::Shot> shots;
+		_actors->takeShots(shots);
+		for (const Actors::Shot &shot : shots)
+			fire(shot.weapon, shot.x, shot.y, shot.z, shot.yaw, shot.pitch, shot.shooter);
 	}
+	runProjectiles(ms);
 
 	while (!_effects.empty() && _effects.begin()->first <= _time) {
 		uint16 id = _effects.begin()->second;
@@ -123,6 +129,72 @@ void Mission::update(uint32 ms) {
 	_sound->update(ms, listener, _soundsFinished);
 	for (const MissionSound::Finished &done : _soundsFinished)
 		send(done.object, MissionSound::kEventFinished);
+}
+
+void Mission::fire(int type, double x, double y, double z, double yaw, double pitch, int shooter) {
+	if (type < 0 || type >= _projectiles->getTypeCount())
+		return;
+	// The spawn wrapper (0x440334) sounds the shot where it starts.
+	playSoundAt(_projectiles->getType(type).fireSound, x, y, z);
+	_projectiles->fire(type, x, y, z, yaw, pitch, shooter);
+}
+
+void Mission::playSoundAt(int sound, double x, double y, double z) {
+	if (sound < 0 || sound >= _sound->getSoundCount())
+		return;
+	_sound->setPosition((uint32)sound, x, y, z);
+	_sound->play(sound);
+}
+
+void Mission::runProjectiles(uint32 ms) {
+	std::vector<Projectiles::Target> targets;
+	if (_actors)
+		_actors->getTargets(targets);
+	std::vector<Projectiles::Report> reports;
+	_projectiles->update(ms, _walker.getActiveZones(), targets, _walker.getX(), _walker.getY(), _walker.getEye(),
+	                     _walker.getRadius(), reports);
+	for (const Projectiles::Report &report : reports) {
+		const Projectiles::Hit &hit = report.hit;
+		const Projectiles::Type &type = _projectiles->getType(hit.type);
+		if (report.what == Projectiles::Report::kFired) {
+			playSoundAt(type.fireSound, hit.x, hit.y, hit.z);
+			continue;
+		}
+		// 0x43696F: the impact sounds where it hit; the player takes the
+		// damage, anything else is told (16) and everyone hears of it (59).
+		playSoundAt(type.impactSound, hit.x, hit.y, hit.z);
+		uint16 id = 0;
+		switch (hit.target) {
+		case Projectiles::Hit::kPlayer:
+			damagePlayer(0, type.damage, type.team);
+			continue;
+		case Projectiles::Hit::kWall:
+			id = _level.getWalls()[hit.index].objectId ? _level.getWalls()[hit.index].objectId | kTypeWall : 0;
+			break;
+		case Projectiles::Hit::kBillboard:
+			id = _level.getBillboards()[hit.index].objectId ? _level.getBillboards()[hit.index].objectId |
+			                                                     kTypeBillboard : 0;
+			break;
+		case Projectiles::Hit::kActor:
+			id = (uint16)hit.index;
+			break;
+		default:
+			break;
+		}
+		if (!id)
+			continue;
+		broadcast(kEventHitReport, { (int16)id, type.damage, type.damage, type.team });
+		send(id, kEventHit, { type.damage, type.damage, type.team });
+	}
+}
+
+void Mission::damagePlayer(int16 source, int16 damage, int16 kind) {
+	// 0x43A42B: health never drops below 1 here; scripts decide when the
+	// player has died (verid1 at health 1).
+	if (damage == 0)
+		return;
+	_health = (int16)std::max(1, std::min<int>(_maxHealth, _health - damage));
+	broadcast(kEventPlayerDamaged, { source, damage, damage, kind });
 }
 
 bool Mission::takePlayerYaw(double &yaw) {
@@ -674,8 +746,7 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 	case 0x87: { // DAMAGE_PLAYER
 		int16 amount = vm.pop();
 		int16 type = vm.pop();
-		_health = (int16)std::max(1, _health - std::max<int>(amount, 0));
-		broadcast(kEventPlayerDamaged, { (int16)self.object->id, amount, amount, type });
+		damagePlayer((int16)self.object->id, amount, type);
 		break;
 	}
 	case 0x89: { // ADD_HEALTH

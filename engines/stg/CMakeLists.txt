@@ -7,6 +7,7 @@ target_sources(stg_engines PRIVATE
 	mission.cpp
 	opcodes.cpp
 	overlay.cpp
+	projectiles.cpp
 	render3d.cpp
 	resources.cpp
 	screen.cpp
