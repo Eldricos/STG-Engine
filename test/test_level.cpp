@@ -1062,6 +1062,38 @@ TEST(mission_punch) {
 	CHECK(mission.getMissingNatives().empty());
 }
 
+TEST(mission_ends) {
+	using namespace STG;
+	// A logic object reports a result (0x99) and two flags (0x9A), then
+	// ends the mission (0xBF), as verid1's last scene does.
+	std::vector<uint16> program = {
+		1, 0xE001,
+		0x8000,
+		kEventEnterState, 0xFFFF, OP_PUSH32, 2, 0, 0x99, OP_PUSH32, 4, 0, 0x9A, OP_PUSH32, 1, 0, 0x9A, 0xBF, OP_END,
+		0x3000,
+		0x2000,
+		0x1000
+	};
+	std::vector<byte> scriptBytes = makeScriptFile(program);
+	Common::MemoryReadStream scriptStream(scriptBytes.data(), (uint32)scriptBytes.size());
+	ScriptFile script;
+	CHECK(script.load(scriptStream));
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 40, 40, 0);
+	LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	LevelRenderer renderer(level);
+	Walker walker(level);
+	Mission mission(level, script, renderer, walker, nullptr);
+	CHECK(!mission.isFinished());
+	CHECK_EQ(mission.getResult(), -1);
+	mission.start();
+	CHECK(mission.isFinished());
+	CHECK_EQ(mission.getResult(), 2);
+	CHECK_EQ(mission.getResultFlags(), 5u);
+	CHECK(mission.getMissingNatives().empty());
+}
+
 TEST(walker_line_of_sight) {
 	STG::LevelFile level;
 	CHECK(loadLevel(level, makeRoom(12).build()));

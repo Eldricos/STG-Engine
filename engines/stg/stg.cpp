@@ -16,6 +16,7 @@
 #include "common/debug.h"
 #include "common/savefile.h"
 #include "common/system.h"
+#include "engines/stg/locations.h"
 
 namespace STG {
 
@@ -63,6 +64,11 @@ Common::Error STGEngine::run() {
 	_resources.scan();
 	_resources.logInventory();
 	loadFont();
+	for (const Location &location : getLocations()) {
+		ResourceRef ref;
+		if (findLocationLevel(_resources, location, ref))
+			_missions.push_back({ location.folder, ref });
+	}
 
 	if (_game.unknownVariant)
 		warning("This version of %s is not known; only the resource viewer is available", _game.description.c_str());
@@ -71,7 +77,7 @@ Common::Error STGEngine::run() {
 	info("Controls: Left/Right = image, PgUp/PgDn = archive, Up/Down = sound, Space = replay sound,");
 	info("          Home = starfield, click = test tone, F5/F7 = save/load, Alt+Enter = fullscreen, Esc = quit");
 	info("          On a level: [ ] = floor plan, 3D view, textures; in 3D, arrows/WASD move, PgUp/PgDn look, L lighting, C collision");
-	_status = "Left/Right: images   PgUp/PgDn: archives   Tab: levels   Up/Down: sounds   Esc: quit";
+	_status = "Up/Down, Enter: missions   Left/Right: images   PgUp/PgDn: archives   Tab: levels   Esc: quit";
 
 	for (int i = 0; i < kNumStars; i++)
 		_stars.push_back({ (int32)_random.getRandomNumberRng(0, 2000) - 1000,
@@ -196,7 +202,16 @@ void STGEngine::handleEvent(const Common::Event &event) {
 	case Common::EVENT_KEYDOWN:
 		switch (event.kbd.keycode) {
 		case Common::KEYCODE_ESCAPE:
+			// Out of a mission back to the list; from anywhere else, quit.
+			if (_playingMission) {
+				leaveMission(Common::format("Left %s", _missions[_missionChoice].name.c_str()));
+				break;
+			}
 			quitGame();
+			break;
+		case Common::KEYCODE_RETURN:
+			if (isOnStarfield() && !_missions.empty())
+				playMission(_missionChoice);
 			break;
 		case Common::KEYCODE_RIGHT:
 			showImage(_imageIndex + 1);
@@ -214,11 +229,18 @@ void STGEngine::handleEvent(const Common::Event &event) {
 			jumpLevel((event.kbd.flags & Common::KBD_SHIFT) ? -1 : 1);
 			break;
 		case Common::KEYCODE_DOWN:
-			playSound(_soundIndex + 1);
+		case Common::KEYCODE_UP: {
+			int step = event.kbd.keycode == Common::KEYCODE_DOWN ? 1 : -1;
+			// On the starfield they pick a mission; elsewhere, a sound.
+			if (isOnStarfield() && !_missions.empty()) {
+				int count = (int)_missions.size();
+				_missionChoice = ((_missionChoice + step) % count + count) % count;
+				_dirty = true;
+			} else {
+				playSound(_soundIndex + step);
+			}
 			break;
-		case Common::KEYCODE_UP:
-			playSound(_soundIndex - 1);
-			break;
+		}
 		case Common::KEYCODE_SPACE:
 			playSound(std::max(_soundIndex, 0));
 			break;
@@ -298,6 +320,11 @@ void STGEngine::drawFrame(uint32 delta) {
 		_dirty = true;
 	}
 
+	if (_playingMission && _mission && _mission->isFinished()) {
+		leaveMission(Common::format("%s is over: result %d, flags %x", _missions[_missionChoice].name.c_str(),
+		                            _mission->getResult(), _mission->getResultFlags()));
+		return;
+	}
 	if (_level && _levelPage == kLevelPage3D && _hudScreen) {
 		drawMissionScreen(delta);
 		_screen->update();
@@ -382,6 +409,7 @@ void STGEngine::drawFrame(uint32 delta) {
 		drawStarfield(delta);
 		Graphics::Surface &s = _screen->getSurface();
 		s.frameRect(Common::Rect(8, 8, Screen::kWidth - 8, Screen::kHeight - kTextPanelHeight - 8), kColorFrame);
+		drawMissionList();
 	}
 
 	drawTextPanel();
@@ -510,6 +538,55 @@ void STGEngine::drawTextPanel() {
 		_font.drawString(s, line, margin, y, remap);
 		y += _font.getHeight();
 	}
+}
+
+bool STGEngine::isOnStarfield() const {
+	return !_level && !_imageLoaded && !_overlayLoaded && !_spritesLoaded;
+}
+
+void STGEngine::drawMissionList() {
+	if (!_font.isLoaded() || _missions.empty())
+		return;
+	const Graphics::Palette &pal = _screen->getPalette();
+	byte remap[256];
+	for (int i = 0; i < 256; i++) {
+		byte r, g, b;
+		if (_hasFontPalette)
+			_fontPalette.get(i, r, g, b);
+		else
+			r = g = b = (byte)i;
+		remap[i] = pal.findBestColor(r, g, b);
+	}
+	Graphics::Surface &s = _screen->getSurface();
+	int x = 40, y = 32;
+	_font.drawString(s, "Away missions (Up/Down, Enter):", x, y, remap);
+	y += _font.getHeight() * 3 / 2;
+	for (int i = 0; i < (int)_missions.size(); i++) {
+		if (i == _missionChoice)
+			s.frameRect(Common::Rect(x - 4, y - 1, x + 160, y + _font.getHeight() + 1), kColorFrame);
+		_font.drawString(s, _missions[i].name, x, y, remap);
+		y += _font.getHeight() + 2;
+	}
+	if (!_missionMessage.empty())
+		_font.drawString(s, _missionMessage, x, y + _font.getHeight(), remap);
+}
+
+void STGEngine::playMission(int index) {
+	_missionChoice = index;
+	_missionMessage.clear();
+	showLevel(_missions[index].level);
+	if (!_level)
+		return;
+	_playingMission = true;
+	showLevelPage(kLevelPage3D);
+}
+
+void STGEngine::leaveMission(const Common::String &message) {
+	_playingMission = false;
+	_missionMessage = message;
+	info("%s", message.c_str());
+	_mixer->stopAll();
+	showStarfield();
 }
 
 void STGEngine::drawStarfield(uint32 delta) {
@@ -1111,7 +1188,7 @@ void STGEngine::showStarfield() {
 	_level.reset();
 	_imageIndex = -1;
 	initPalette();
-	_status = "Left/Right: images   PgUp/PgDn: archives   Up/Down: sounds   Esc: quit";
+	_status = "Up/Down, Enter: missions   Left/Right: images   PgUp/PgDn: archives   Tab: levels   Esc: quit";
 	_dirty = true;
 }
 

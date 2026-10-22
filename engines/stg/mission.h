@@ -204,6 +204,12 @@ public:
 		_leftPanelRequest = 0;
 		return request;
 	}
+	/** END_MISSION (0xBF) ran: the location is over. */
+	bool isFinished() const { return _finished; }
+	/** What the scripts left for the game: a value (0x99, -1 if unset) and flags (0x9A). */
+	int32 getResult() const { return _result; }
+	uint32 getResultFlags() const { return _resultFlags; }
+
 	/** The item in use (SET_ACTIVE_ITEM), or 0. */
 	uint16 getActiveItem() const { return _activeItem; }
 
@@ -288,6 +294,9 @@ private:
 	Hud _hud;
 	int _leftPanelRequest = 0;
 	uint16 _activeItem = 0;
+	bool _finished = false;
+	int32 _result = -1;
+	uint32 _resultFlags = 0;
 	Punch _punch;
 	std::vector<MissionSound::Finished> _soundsFinished;
 

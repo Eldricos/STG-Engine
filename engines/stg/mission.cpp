@@ -1203,6 +1203,18 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		vm.push(distance);
 		break;
 	}
+	case 0x99: // SET_MISSION_RESULT
+		// game+0x94; -1 until a script sets it.
+		_result = (int32)popRaw32(vm);
+		break;
+	case 0x9A: // ADD_MISSION_FLAGS
+		_resultFlags |= popRaw32(vm);
+		break;
+	case 0xBF: // END_MISSION
+		// The location's controller is done (0x443384 sets its +0x50): the
+		// original leaves the location with the result above.
+		_finished = true;
+		break;
 	case 0xC6: // GET_HEALTH
 		vm.push(_health);
 		break;

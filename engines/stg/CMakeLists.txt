@@ -9,6 +9,7 @@ target_sources(stg_engines PRIVATE
 	overlay.cpp
 	hud.cpp
 	helditem.cpp
+	locations.cpp
 	hudscreen.cpp
 	projectiles.cpp
 	render3d.cpp

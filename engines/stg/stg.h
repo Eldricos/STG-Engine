@@ -98,6 +98,13 @@ private:
 	/** Show the next (1) or previous (-1) 3D level, GAME.LV2. */
 	void jumpLevel(int direction);
 	void showStarfield();
+	/** The starfield with nothing loaded over it, where the mission list is. */
+	bool isOnStarfield() const;
+	void drawMissionList();
+	/** Start an away mission from the list, in the 3D view. */
+	void playMission(int index);
+	/** Back to the list, saying why. */
+	void leaveMission(const Common::String &message);
 	/** Before rendering a w x h view: where to aim, the item held up, what to pick. */
 	void prepareAim(int w, int h);
 	/** After rendering it: the gun held up, or the punch and a crosshair at the centre. */
@@ -178,6 +185,15 @@ private:
 	/** The subtitle is a mission's, shown until _subtitleUntil (level time). */
 	bool _missionSubtitle = false;
 	uint32 _subtitleUntil = 0;
+	// The away missions installed, and the one chosen or being played.
+	struct MissionEntry {
+		Common::String name;
+		ResourceRef level;
+	};
+	std::vector<MissionEntry> _missions;
+	int _missionChoice = 0;
+	bool _playingMission = false;
+	Common::String _missionMessage;
 	bool _dirty = true;
 };
 

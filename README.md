@@ -114,9 +114,13 @@ Useful options: `-f` for fullscreen, `--filtering`, `--integer-scaling`,
 recognise.
 
 In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
+The starting screen lists the away missions found in the game's data (the
+fifteen locations sgens.exe knows, from AMARGOS1 to VERID1): Up/Down choose
+one and Enter plays it in the 3D view. Esc leaves a mission for the list, and
+a mission that ends itself returns there too, showing how it ended.
 In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
 archives. Tab and Shift+Tab jump to the next and previous 3D level (`GAME.LV2`),
-whose name the 3D view shows on its status line. Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
+whose name the 3D view shows on its status line. Away from the starting screen, Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
 from the floor plan to a 3D view and then through the textures. In the 3D view, the
 arrows or WASD move, PgUp/PgDn look up and down, End levels the view, L switches
 the lighting off and on, and C lets you walk through walls. Ctrl or the left
@@ -132,7 +136,8 @@ use them (right click to have them described), drag them to another slot or
 out of the inventory to drop them, click the close-up panel the scripts open
 (Space uses it), and switch the left panel with its tabs or B (life), H (map)
 and O (object). Home
-returns to the starfield, F5/F7 save and load, and Esc quits.
+returns to the starfield, F5/F7 save and load, and Esc quits (or, in a
+mission, leaves it).
 
 Settings and saves go in the per-user directory SDL picks for the platform:
 `~/.local/share/STG-Engine/stg/` on Linux, `%APPDATA%\STG-Engine\stg\` on

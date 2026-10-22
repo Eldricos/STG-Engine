@@ -339,6 +339,12 @@ reported on change only: the old thing gets 15 and the new one 14.
 
 ### Natives
 
+The away-team locations are a table in sgens.exe (`0x545600`, 15 records of
+132 bytes: a game class number, then the folder): AMARGOS1, AMARGOS2, ANTILIOS,
+ARVADA1, ARVADA2, BERSUS, ENTERP, EPSION, GUERN, HALEE1, HALEE2, QURASH,
+GALORN1, GALORN2, VERID1. The location's game object is built by `0x4331FA`
+with the controller as its +0x4C.
+
 Natives that verid1 uses, by purpose. Arguments are listed as popped, top
 of the stack first. A *position* is x, y, z (32-bit 16.16 each) and a
 heading in degrees.
@@ -380,6 +386,13 @@ heading in degrees.
   - STOP_SOUND, STOP_ONE_SOUND, FADE_OUT_SOUND
   - SET_SOUND_VOLUME, SET_SOUND_LOOP, SET_SOUND_PRIORITY, SET_SOUND_POSITION, SET_SOUND_OBJECT, SET_SOUND_MAX_DISTANCE, MUTE_SOUND
   - PRELOAD_SOUND
+- **The mission:**
+  - SET_MISSION_RESULT (0x99) v: a 32-bit value for the game, game+0x94 (-1 until set)
+  - ADD_MISSION_FLAGS (0x9A) f: game+0x90 |= f (32 bits)
+  - END_MISSION (0xBF): the location's controller (game+0x4C) is done (`0x443384` sets its +0x50).
+    verid1's last scene fades to black over 4 s (SCREEN_FLASH), and on the fade's event 55 calls it.
+  - The player never dies in the engine: damage leaves at least 1 health and broadcasts event 9, and
+    the scripts decide (verid1's hypospray steps in at 1 on the easiest setting).
 - **Interface:**
   - the close-up panel (PANEL_*)
   - the automap (MAP_*)
