@@ -1040,3 +1040,51 @@ the automatic save's at 303. Every picture's colours are matched to
 slot, accept/cancel) and `M_2000`..`M_2002` (cancelled, confirmed, return).
 The original keeps its settings in `SGENS.CFG` (two 256-byte key maps, then
 music and effects volume 0..29, difficulty, window size, subtitles).
+
+## The bridge (`STELLAR.DAT`): `engines/stg/bridge.h`
+
+`DESIGN/UNIVERSE.INI` describes the map: `[Universe]` (the ten suns, 25
+fleets), `[Display]` (MinZ = zoom distance, MaxZ = world scale and the sector
+camera's height, SizeMagnification, DistanceMagnification, CenterX/Y), each
+sun (`Location=x,y,z`: with z = 0 a screen position in the sector view; its
+texture, destruction and scan pictures, GotoSound, SimDestructionSound,
+planets), each planet and moon (`Distance`, `Speed` in seconds an orbit,
+`OrbitPitch`/`OrbitIntersect`), `[SpaceStation]`, `[FleetN]` (`Type`,
+`NumShips`, `Cloaked`, `Alert`), `[DataN]`/`[PicardN]` (frames and
+`SequenceK=frame,ms`) and `[Nexus]`. Most sections appear again at the end
+with the scan texts; lookups see both. The projection (0x46CD96) is
+`x = CenterX + (X - camera.x) / d`, `r = Size / 2 * SizeMagnification / d`
+(1..63) with `d = |Z - camera.z|`, the sun at
+`((x + 320 - CenterX) * MaxZ, (y + 180 - CenterY) * MaxZ, 10 z)`.
+
+The fleets' and the Nexus's `.RLE` files are OVERLAY data (frames top down,
+each frame's rows bottom up), in `FLEET\ENTSIN.BMP`'s and `NEXUS\NEXUS.BMP`'s
+palettes. Every other picture has its own palette, so the bridge is drawn in
+true colour; index 254 is see-through.
+
+The stardate (48623.4 on a new game) only moves as the player acts: a warp
+1.0, a simulated destruction 0.3, a scan or a zoom 0.1; the display climbs a
+tenth every 500 ms. `SDTimer d` sets a deadline d past the stardate shown, and
+`Wait Timer` holds until it's passed with the Enterprise at a star.
+`OnTransport`/`OnTactical` don't wait: they arm the panel's button, which
+lights when a short-range scan has found Soran in the Enterprise's system.
+`IfClue` is true when the last away mission set any outcome code.
+
+## Space combat (`COMBAT.DAT`): `engines/stg/combatdata.h`, `combat.h`
+
+| File | Format |
+|------|--------|
+| `.3DV`, `.3DR`, `.PCn` | DRE object v1.10: parts of triangles with a material, 16.16 UVs, face normals; x across, y up, z forward |
+| `.MTL`, `.MTR`, `.DMG` | 36-byte materials: RGB555 colour, flags (1 textured, 2 effect, 3 flat), texture name |
+| `.IMG` | GIF87a textures, each with its own palette |
+| `.LBM` | IFF PBM effect textures |
+| `.RAS` | Sun rasterfiles: the console; colour (255,0,163) is see-through |
+| `.SPR` | animations ('SPRT', 'TIME', 'COMP' frames packed four ways) in `STANDARD.PAL` (6-bit) |
+| `.MET` | big-endian glyph cells into `SCANNER.RAS` / `A-Z_0-9.RAS` |
+| `SYSTEMS.DAT` | ship classes: speed, agility, 27 systems (shields 1-4, weapons, life support, engines, power, computer, sensors, damage control, cloak, 10 phaser banks with firing octants, 4 photon tubes), the shields' leak tables, phaser and photon range and damage |
+| `SCn.MIS` | `SpaceCombat n`: `:wave` and ship lines `id type x y z yaw pitch velocity AI ...` (x, y the plane, z altitude; AI `soran`, `quarash` or `standard-N` to aim at system N) |
+| `COMBATn.BMP`, `PROCEED.BMP` | the briefing; PROCEED's position is a table in the exe (0x548618) |
+
+The console is COMBAT.RAS with the 3D view in its hole at (52,10), 532 x 231,
+60 degrees across. The game reads the module's result as 0 the Enterprise
+destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).

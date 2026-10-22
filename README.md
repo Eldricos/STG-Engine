@@ -129,10 +129,28 @@ story makes), New, Quit (the credits, then out), Settings (effects and music
 volume, difficulty, subtitles) and Controls (the keys, which can't be changed
 yet). Settings are kept in the settings file.
 
-The bridge (the strategic map) and space combat aren't implemented. The story
-takes every away mission it offers and never engages a fleet, so the parts of
-the game that only happen in combat are passed over. The credits are read from
-the game's `SGENS.EXE`; movies come from the discs' `MOVIE` folders.
+Between missions the story runs on the bridge, the star map of the ten
+stars. Click a star, planet, station or fleet to select it; SET COURSE warps
+the Enterprise there, FULL SECTOR VIEW / SYSTEM VIEW zoom, LONG / SHORT RANGE
+SCAN reads what's there (short range only in the same system), SIM.
+DESTRUCTION shows where the Nexus would go if a star died, and the button
+under SET COURSE offers TRANSPORT (beam down), TACTICAL (engage) or the
+COMPUTER LOG (the current hint). Time passes only as you act: a warp takes a
+stardate, a scan a tenth, and the story's deadlines run on stardates. Space
+skips the speech playing; Esc or OPTIONS opens the menu.
+
+Space combat starts from the bridge, or when a hostile fleet is where the
+Enterprise arrives. After the briefing (PROCEED), fly by hand with the arrows
+(Up dives, Down climbs), Ctrl / Q and Num 0 / E to roll, Num + and Num - (or
+= and -) for speed, or give the helm an order with 1-7 (Close on target,
+Evade, Maintain distance, Full stop, Stand by, Warp out, Maintain status) or
+the menu on the right. Shift (or F) fires phasers, Enter (or G) photon
+torpedoes; T or the button by the radar picks the next target, V switches
+between the forward and enemy views, and clicking the target's schematic
+picks a system to aim at. Win by destroying or driving off every ship (or
+beating Soran's); warping out loses the fight, and losing the Enterprise
+ends the game. The enemies fly simple built-in tactics, not the original's
+scripted manoeuvres.
 
 `--viewer` starts the resource viewer instead, which is also what runs when
 the story's data isn't there.
