@@ -603,6 +603,8 @@ void STGEngine::drawMissionList() {
 void STGEngine::playMission(int index) {
 	_missionChoice = index;
 	_missionMessage.clear();
+	_subtitle.clear();
+	_missionSubtitle = false;
 	showLevel(_missions[index].level);
 	if (!_level)
 		return;
@@ -614,6 +616,8 @@ void STGEngine::leaveMission(const Common::String &message) {
 	if (_mission)
 		_carriedArray = _mission->getCarriedArray();
 	_playingMission = false;
+	_subtitle.clear();
+	_missionSubtitle = false;
 	_missionMessage = message;
 	info("%s", message.c_str());
 	_mixer->stopAll();
