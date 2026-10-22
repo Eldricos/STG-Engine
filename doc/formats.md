@@ -547,7 +547,7 @@ records.
 
 | Type | Record | Contents |
 |------|--------|----------|
-| 1 | 4 | palette, 256 × (R, G, B, 0) |
+| 1 | 4 | palette, 256 Windows RGBQUADs (B, G, R, 0); the console bitmaps use the same indices |
 | 2 | 8 | vertices: int32 x, y in 16.16 fixed point. The floor plan, y up |
 | 3 | 292 | flats: floor and ceiling polygons (see below) |
 | 4 | 152 | walls (see below) |

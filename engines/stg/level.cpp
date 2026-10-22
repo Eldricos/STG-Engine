@@ -127,8 +127,10 @@ bool LevelFile::loadTables() {
 
 	if (!table(kChunkPalette, 4, p, count))
 		return false;
+	// Windows RGBQUADs: blue, green, red, unused. The console's bitmaps
+	// share these indices, which is how their colours were matched up.
 	for (uint32 i = 0; i < std::min<uint32>(count, Graphics::Palette::kSize); i++)
-		_palette.set(i, p[i * 4], p[i * 4 + 1], p[i * 4 + 2]);
+		_palette.set(i, p[i * 4 + 2], p[i * 4 + 1], p[i * 4]);
 
 	if (!table(kChunkVertices, kRecordSizes[1], p, count))
 		return false;

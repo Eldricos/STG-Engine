@@ -55,7 +55,7 @@ std::vector<Chunk> makeSquareLevel() {
 	std::vector<Chunk> chunks;
 
 	Chunk palette = { STG::LevelFile::kChunkPalette, 1, 256, std::vector<byte>(1024) };
-	palette.data[4 * 7] = 200;
+	palette.data[4 * 7] = 200; // blue: entries are B, G, R, 0
 	chunks.push_back(palette);
 
 	// A 2x2 unit square, in 16.16.
@@ -110,7 +110,8 @@ TEST(level_tables) {
 	CHECK_EQ(level.getDirectory().size(), (size_t)5);
 	byte r, g, b;
 	level.getPalette().get(7, r, g, b);
-	CHECK_EQ(r, 200);
+	CHECK_EQ(b, 200);
+	CHECK_EQ(r, 0);
 
 	CHECK_EQ(level.getVertices().size(), (size_t)4);
 	CHECK_EQ(level.getVertices()[2].x, 2 << 16);
