@@ -205,12 +205,15 @@ bool Walker::sweep(double x, double y, double dx, double dy, Hit &hit) const {
 			}
 		}
 
-		// The wall's ends, as posts the player's circle can catch on.
+		// The wall's ends, as posts the player's circle can catch on. They
+		// are a little slimmer than the player, so a gap exactly as wide as
+		// the player (enterp's archways for its width of 3) lets them by.
 		const double ends[2][2] = { { w.x1, w.y1 }, { w.x2, w.y2 } };
+		double post = std::max(0.0, _radius - kPostSlack);
 		for (const auto &end : ends) {
 			double px = x - end[0], py = y - end[1];
 			double b = 2 * (dx * px + dy * py);
-			double c = px * px + py * py - _radius * _radius;
+			double c = px * px + py * py - post * post;
 			if (b >= 0)
 				continue; // moving away
 			double t;

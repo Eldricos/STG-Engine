@@ -46,6 +46,8 @@ public:
 	static constexpr double kHeadroom = 0.51;
 	static constexpr double kStepHeight = 2.0;
 	static constexpr double kRadius = 1.2;
+	/** How much slimmer than the player wall ends are as posts. */
+	static constexpr double kPostSlack = 0.1;
 	/** Units per second squared; the original's falling is not decoded yet. */
 	/** The original's defaults (game+0x10C): 64.4 (2 x 32.2) and 200. */
 	static constexpr double kGravity = 64.4;

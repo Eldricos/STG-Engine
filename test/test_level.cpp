@@ -1273,6 +1273,36 @@ TEST(movers_open_and_close) {
 	CHECK(notices.empty());
 }
 
+TEST(walker_fits_a_gap_its_width) {
+	// enterp's archways are exactly as wide as its player (width 3): two
+	// walls across a corridor with a 3-unit gap between their ends.
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 40, 40, 0);
+	builder.addWall(0, 20, 18.5, 20, 0, 10);
+	builder.addWall(21.5, 20, 40, 20, 0, 10);
+	STG::LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	STG::Walker walker(level);
+	walker.setRadius(1.5);
+	walker.place(20, 10, 0);
+	for (int i = 0; i < 40; i++)
+		walker.move(0, 0.5, 0.04);
+	CHECK(walker.getY() > 25);
+	// A narrower gap still stops them.
+	LevelBuilder narrow;
+	narrow.addFloor(0, 0, 40, 40, 0);
+	narrow.addWall(0, 20, 18.7, 20, 0, 10);
+	narrow.addWall(21.3, 20, 40, 20, 0, 10);
+	STG::LevelFile level2;
+	CHECK(loadLevel(level2, narrow.build()));
+	STG::Walker walker2(level2);
+	walker2.setRadius(1.5);
+	walker2.place(20, 10, 0);
+	for (int i = 0; i < 40; i++)
+		walker2.move(0, 0.5, 0.04);
+	CHECK(walker2.getY() < 20);
+}
+
 TEST(walker_line_of_sight) {
 	STG::LevelFile level;
 	CHECK(loadLevel(level, makeRoom(12).build()));
