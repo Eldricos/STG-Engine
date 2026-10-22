@@ -138,7 +138,7 @@ use them (right click to have them described), drag them to another slot or
 out of the inventory to drop them, click the close-up panel the scripts open
 (Space uses it), and switch the left panel with its tabs or B (life), H (map)
 and O (object). Home
-returns to the starfield, F5/F7 save and load, and Esc quits (or, in a
+returns to the starfield, F8 plays the movies in turn, F5/F7 save and load, and Esc quits (or, in a
 mission, leaves it).
 
 Settings and saves go in the per-user directory SDL picks for the platform:

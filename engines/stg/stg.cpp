@@ -18,6 +18,7 @@
 #include "common/serializer.h"
 #include "common/system.h"
 #include "engines/stg/locations.h"
+#include "engines/stg/movie.h"
 
 namespace STG {
 
@@ -252,6 +253,13 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		case Common::KEYCODE_HOME:
 			showStarfield();
 			break;
+		case Common::KEYCODE_F8: {
+			// Play the movies in turn.
+			static const char *const kMovies[] = { "MOVIE/MOV_01.AVI", "MOVIE/MOV_02.AVI" };
+			playMovie(kMovies[_movieChoice++ % 2]);
+			_dirty = true;
+			break;
+		}
 		case Common::KEYCODE_RIGHTBRACKET:
 			showLevelPage(_levelPage + 1);
 			break;
@@ -1339,6 +1347,66 @@ void STGEngine::playBeep(int frequency) {
 	}
 	_mixer->playStream(Audio::Mixer::kSFXSoundType, nullptr,
 	                   Audio::makeRawStream(std::move(data), rate, Audio::FLAG_16BITS | Audio::FLAG_LITTLE_ENDIAN));
+}
+
+bool STGEngine::playMovie(const Common::String &name) {
+	Movie movie;
+	if (!movie.load(_resources.open({ "", name }))) {
+		warning("Can't play the movie %s", name.c_str());
+		return false;
+	}
+
+	// The movies are true colour: the screen leaves 8-bit mode while they
+	// play, letterboxed in the middle of it.
+	const Graphics::PixelFormat format = Graphics::PixelFormat::createFormatARGB8888();
+	_system->initSize(Screen::kWidth, Screen::kHeight, &format);
+	_system->showMouse(false);
+
+	Audio::SoundHandle sound;
+	if (!movie.getAudio().empty() && movie.getAudioBits() == 16) {
+		std::vector<byte> data = movie.getAudio();
+		byte flags = Audio::FLAG_16BITS | Audio::FLAG_LITTLE_ENDIAN;
+		if (movie.getAudioChannels() == 2)
+			flags |= Audio::FLAG_STEREO;
+		_mixer->playStream(Audio::Mixer::kMusicSoundType, &sound,
+		                   Audio::makeRawStream(std::move(data), movie.getAudioRate(), flags));
+	}
+
+	int x = (Screen::kWidth - std::min(movie.getWidth(), (int)Screen::kWidth)) / 2;
+	int y = (Screen::kHeight - std::min(movie.getHeight(), (int)Screen::kHeight)) / 2;
+	int w = std::min(movie.getWidth(), (int)Screen::kWidth), h = std::min(movie.getHeight(), (int)Screen::kHeight);
+	uint32 start = _system->getMillis();
+	bool done = false;
+	while (!done && !shouldQuit()) {
+		Common::Event event;
+		while (_eventMan->pollEvent(event)) {
+			if (event.type == Common::EVENT_LBUTTONDOWN ||
+			    (event.type == Common::EVENT_KEYDOWN &&
+			     (event.kbd.keycode == Common::KEYCODE_ESCAPE || event.kbd.keycode == Common::KEYCODE_SPACE ||
+			      event.kbd.keycode == Common::KEYCODE_RETURN)))
+				done = true;
+		}
+
+		// Keep to the clock, dropping frames if decoding falls behind.
+		int due = (int)((uint64)(_system->getMillis() - start) * 1000 / movie.getFrameTime());
+		bool drawn = false;
+		while (!done && movie.getCurrentFrame() < due) {
+			if (!movie.nextFrame())
+				done = true;
+			drawn = true;
+		}
+		if (drawn && movie.getCurrentFrame() >= 0) {
+			_system->copyRectToScreen(movie.getPicture().data(), movie.getWidth() * 4, x, y, w, h);
+			_system->updateScreen();
+		}
+		_system->delayMillis(5);
+	}
+
+	_mixer->stopHandle(sound);
+	_system->initSize(Screen::kWidth, Screen::kHeight);
+	_screen->applyPalette();
+	_system->showMouse(true);
+	return true;
 }
 
 Common::String STGEngine::getSaveFileName(int slot) const {

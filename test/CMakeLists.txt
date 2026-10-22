@@ -7,6 +7,7 @@ add_executable(stg_tests
 	test_graphics.cpp
 	test_hud.cpp
 	test_level.cpp
+	test_movie.cpp
 	test_script.cpp
 	test_sound.cpp
 	test_zip.cpp

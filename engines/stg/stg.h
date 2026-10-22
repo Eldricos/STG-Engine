@@ -120,6 +120,12 @@ private:
 	void updatePunch(uint32 delta, Graphics::Surface &view);
 	void playSound(int index);
 	void playBeep(int frequency);
+	/**
+	 * Play one of the movies (e.g. "MOVIE/MOV_01.AVI") full screen, with
+	 * its sound, until it ends or a key or click skips it. False if it
+	 * can't be found or read.
+	 */
+	bool playMovie(const Common::String &name);
 
 	Common::String getSaveFileName(int slot) const;
 
@@ -200,6 +206,7 @@ private:
 		ResourceRef level;
 	};
 	std::vector<MissionEntry> _missions;
+	int _movieChoice = 0;
 	int _missionChoice = 0;
 	bool _playingMission = false;
 	Common::String _missionMessage;

@@ -11,6 +11,7 @@ target_sources(stg_engines PRIVATE
 	helditem.cpp
 	locations.cpp
 	movers.cpp
+	movie.cpp
 	hudscreen.cpp
 	projectiles.cpp
 	render3d.cpp
