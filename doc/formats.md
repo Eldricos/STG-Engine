@@ -437,6 +437,25 @@ damage, damage, team). The impact type's sparks fly off what was hit: off
 a wall mirrored about it, off a floor with the pitch turned over, off
 anything else straight back. Sparks bounce and do no harm.
 
+### The player's attack
+
+Ctrl (or the left mouse button) attacks once per press (`0x43CF95`).
+
+- **With a weapon in use**, the active item (`SET_ACTIVE_ITEM`; items use it
+  when the player uses them, event 45), it fires (`0x43FDC4`). Weapon items
+  are `ATTACH_ITEM_BEHAVIOUR` kinds 2–6 and 11–13, with c the projectile
+  type; `SET_ITEM_SETTING` sets that type's damage (`0x44A03A`; verid1's
+  phaser: 300). A shot costs its damage in charge and is broadcast as event
+  50; it leaves the player's eye for what the crosshair shows, or a point 320
+  ahead (`0x4B4E10`), and never hits the player.
+- **Otherwise** the player punches (`SET_PUNCH`: overlay, ms per frame, hit
+  frame, damage, power, swing sound and volume, hit sound and volume). The
+  overlay plays over the view, at most a frame a tick, and on the hit frame
+  the blow lands on what the centre of the view shows (`0x43A39F`, code 19,
+  `0x4364B8`): within the player's radius plus half a unit, plus the radius
+  of a billboard or actor, it gets event 16 (damage, power, team 2) and the
+  hit sounds. Event 59 reports the hit, or 0 for something out of reach.
+
 ## Level data (`GAME.LV2`): decoded enough to render, `engines/stg/level.h`, `render3d.h`
 
 Loaded by the routine at `0x4BD130` in `sgens.exe`. All values are little endian.

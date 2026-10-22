@@ -45,6 +45,8 @@ struct SpriteDraw {
 	bool fullbright;
 	/** Drawn see-through; see LevelFile::kFlagTranslucent. */
 	bool translucent = false;
+	/** The actor's script object, for picking; 0 for none. */
+	uint16 object = 0;
 };
 
 /**
@@ -85,6 +87,31 @@ public:
 
 	/** Without the sky, the background is the fog colour. */
 	void setSkyEnabled(bool enabled) { _skyEnabled = enabled; }
+
+	/** What the next frame shows at a point (the original's pick, 0x4BC770). */
+	struct Pick {
+		enum Kind {
+			kNone,
+			kWall,
+			kFlat,
+			kBillboard,
+			kSprite
+		};
+		Kind kind = kNone;
+		/** Index into the level's walls, flats or billboards, or into the sprites. */
+		int index = -1;
+		/** A sprite's object. */
+		uint16 object = 0;
+		/** Distance ahead of the camera. */
+		double depth = 0;
+	};
+	/** Find what is drawn at (x, y) in the frames to come; x < 0 stops. */
+	void setPickPoint(int x, int y) {
+		_pickX = x;
+		_pickY = y;
+	}
+	/** What the last frame showed at the pick point. */
+	const Pick &getPick() const { return _pick; }
 
 	/** Sprites to draw in the next frames; the vector must stay alive. */
 	void setSprites(const std::vector<SpriteDraw> *sprites) { _sprites = sprites; }
@@ -160,6 +187,7 @@ private:
 		const byte *shade;
 		Wrap wrap;
 		double depth;
+		Pick owner;
 	};
 	std::vector<Translucent> _translucent;
 
@@ -178,6 +206,10 @@ private:
 	uint64 _zones = ~(uint64)0;
 	std::map<int16, int> _groupBrightness;
 	std::vector<float> _depth;
+	int _pickX = -1, _pickY = -1;
+	Pick _pick;
+	/** What is being drawn, for the pick. */
+	Pick _owner;
 
 	// Per-frame view parameters.
 	double _cos = 1, _sin = 0;

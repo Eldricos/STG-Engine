@@ -92,6 +92,10 @@ private:
 	/** Show the next (1) or previous (-1) 3D level, GAME.LV2. */
 	void jumpLevel(int direction);
 	void showStarfield();
+	/** The player attacks: fires the weapon in use, or else punches. */
+	void attack();
+	/** Run the punch animation by delta ms and draw it over view. */
+	void updatePunch(uint32 delta, Graphics::Surface &view);
 	void playSound(int index);
 	void playBeep(int frequency);
 
@@ -117,6 +121,7 @@ private:
 	bool _spritesLoaded = false;
 	std::unique_ptr<LevelFile> _level;
 	Common::String _levelName;
+	ResourceRef _levelRef;
 	std::vector<uint16> _levelTextures;
 	int _levelPage = 0;
 	std::unique_ptr<LevelRenderer> _levelRenderer;
@@ -131,6 +136,17 @@ private:
 	enum WalkKey { kWalkForward, kWalkBack, kWalkTurnLeft, kWalkTurnRight, kWalkStrafeLeft, kWalkStrafeRight,
 	               kWalkLookUp, kWalkLookDown, kWalkKeyCount };
 	bool _walkKeys[kWalkKeyCount] = {};
+	/** Set while a fire key is held: one attack per press. */
+	bool _fireHeld = false;
+	// The bare-hand attack's overlay, as the original's view.vt130 runs it.
+	Overlay _punchOverlay;
+	Common::String _punchImage;
+	int _punchFrameHeight = 0;
+	bool _punching = false;
+	bool _punchLanded = false;
+	int _punchFrame = 0;
+	uint32 _punchTime = 0;
+	int16 _shownHealth = -1;
 	int _imageIndex = -1;
 	int _soundIndex = -1;
 	Audio::SoundHandle _soundHandle;

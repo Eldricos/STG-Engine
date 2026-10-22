@@ -208,6 +208,10 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		}
 		break;
 	case Common::EVENT_LBUTTONDOWN:
+		if (_level && _levelPage == kLevelPage3D) {
+			attack();
+			break;
+		}
 		// Pitch rises from left to right across the screen.
 		playBeep(220 + event.mouse.x * 2);
 		break;
@@ -245,7 +249,19 @@ void STGEngine::drawFrame(uint32 delta) {
 			_actors->getSprites(_camera.x, _camera.y, _walker->getActiveZones(), _actorSprites);
 		if (_mission)
 			_mission->getProjectiles().getSprites(_actorSprites);
+		// The punch and weapons act on what the centre of the view shows.
+		_levelRenderer->setPickPoint(view.w / 2, view.h / 2);
 		_levelRenderer->render(_camera, view, _levelTime);
+		updatePunch(delta, view);
+		byte cross = _screen->getPalette().findBestColor(255, 255, 255);
+		for (int d = 2; d <= 5; d++) {
+			view.setPixel(view.w / 2 - d, view.h / 2, cross);
+			view.setPixel(view.w / 2 + d, view.h / 2, cross);
+			view.setPixel(view.w / 2, view.h / 2 - d, cross);
+			view.setPixel(view.w / 2, view.h / 2 + d, cross);
+		}
+		if (_mission && _mission->getHealth() != _shownHealth)
+			updateWalkStatus();
 		_screen->getSurface().copyRectToSurface(view, 0, 0, Common::Rect(view.w, view.h));
 		_screen->getSurface().fillRect(Common::Rect(0, view.h, Screen::kWidth, Screen::kHeight),
 		                               _screen->getPalette().findBestColor(0, 0, 0));
@@ -431,6 +447,9 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 		return;
 	}
 	_levelName = ref.toString();
+	_levelRef = ref;
+	_punching = false;
+	_punchImage.clear();
 	_levelTextures = _level->getTextureIds();
 	_levelRenderer.reset(new LevelRenderer(*_level));
 	_walker.reset(new Walker(*_level));
@@ -608,6 +627,28 @@ bool STGEngine::handleWalkKey(Common::KeyCode key, bool down) {
 			updateWalkStatus();
 		}
 		return true;
+	case Common::KEYCODE_LCTRL:
+	case Common::KEYCODE_RCTRL:
+		// The original's default fire key; one attack per press.
+		if (down && !_fireHeld)
+			attack();
+		_fireHeld = down;
+		return true;
+	case Common::KEYCODE_1:
+	case Common::KEYCODE_2:
+	case Common::KEYCODE_3:
+	case Common::KEYCODE_4:
+	case Common::KEYCODE_5:
+	case Common::KEYCODE_6:
+	case Common::KEYCODE_7:
+	case Common::KEYCODE_8:
+	case Common::KEYCODE_9:
+		// Until there is an inventory panel: use the item in that slot.
+		if (down && _mission) {
+			_mission->useItem(key - Common::KEYCODE_1);
+			updateWalkStatus();
+		}
+		return true;
 	default:
 		return false;
 	}
@@ -661,6 +702,54 @@ void STGEngine::updateWalk(uint32 delta) {
 		updateWalkStatus();
 }
 
+void STGEngine::attack() {
+	if (!_mission || _punching)
+		return;
+	if (_mission->fireWeapon(_camera, _levelRenderer->getPick()))
+		return;
+
+	// Bare hands: play the punch overlay (SET_PUNCH), which lands on its
+	// hit frame. It sits beside GAME.LV2.
+	const Mission::Punch &punch = _mission->getPunch();
+	if (punch.image != _punchImage) {
+		_punchImage = punch.image;
+		_punchFrameHeight = 0;
+		size_t slash = _levelRef.name.find_last_of("/\\");
+		Common::String folder = slash == Common::String::npos ? "" : _levelRef.name.substr(0, slash + 1);
+		std::unique_ptr<Common::SeekableReadStream> stream = _resources.open({ _levelRef.archive, folder + punch.image });
+		if (stream && _punchOverlay.load(*stream))
+			_punchFrameHeight = _punchOverlay.guessFrameHeight();
+		else if (!punch.image.empty())
+			warning("Could not load the punch overlay %s", punch.image.c_str());
+	}
+	_mission->swing();
+	_punching = true;
+	_punchLanded = false;
+	_punchFrame = 0;
+	_punchTime = 0;
+}
+
+void STGEngine::updatePunch(uint32 delta, Graphics::Surface &view) {
+	if (!_punching || !_mission)
+		return;
+	const Mission::Punch &punch = _mission->getPunch();
+	int frames = _punchFrameHeight ? _punchOverlay.getRowCount() / _punchFrameHeight : 0;
+	// One frame per tick at most (0x431E57); the blow lands on the first
+	// frame showing the hit frame.
+	_punchTime += delta;
+	_punchFrame = std::min<int>(_punchTime / punch.msPerFrame, _punchFrame + 1);
+	if (!_punchLanded && (_punchFrame >= punch.hitFrame || frames == 0)) {
+		_punchLanded = true;
+		_mission->punch(_levelRenderer->getPick());
+	}
+	if (_punchFrame >= frames) {
+		_punching = false;
+		return;
+	}
+	_punchOverlay.drawFrame(view, _punchFrame, _punchFrameHeight, (view.w - _punchOverlay.getWidth()) / 2,
+	                        view.h - _punchFrameHeight);
+}
+
 void STGEngine::updateWalkStatus() {
 	double degrees = std::fmod(_camera.yaw * 180 / 3.14159265358979323846, 360.0);
 	if (degrees < 0)
@@ -673,6 +762,12 @@ void STGEngine::updateWalkStatus() {
 	                         _camera.x, _camera.y, _camera.z, degrees,
 	                         _levelRenderer->isLightingEnabled() ? "on" : "off",
 	                         _walker->isCollisionEnabled() ? "on" : "off");
+	if (_mission) {
+		_shownHealth = _mission->getHealth();
+		_status += Common::format("  health %d", _shownHealth);
+		if (_mission->getActiveItem())
+			_status += Common::format("  item %04x", _mission->getActiveItem());
+	}
 }
 
 void STGEngine::showSprites(const ResourceRef &ref) {

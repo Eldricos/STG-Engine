@@ -188,6 +188,93 @@ void Mission::runProjectiles(uint32 ms) {
 	}
 }
 
+void Mission::swing() {
+	if (_punch.swingSound < 0)
+		return;
+	if (_punch.swingVolume >= 0)
+		_sound->playSound(_punch.swingSound, _punch.swingVolume);
+	else
+		_sound->play(_punch.swingSound);
+}
+
+void Mission::punch(const LevelRenderer::Pick &pick) {
+	// 0x4364B8: within reach (the player's radius and half a unit, plus
+	// the radius of a billboard or actor), what was hit gets event 16 and
+	// everyone hears of it (59); out of reach, everyone hears of a miss.
+	const int16 kTeam = 2;
+	double reach = _walker.getRadius() + 0.5;
+	uint16 id = 0;
+	switch (pick.kind) {
+	case LevelRenderer::Pick::kNone:
+		return;
+	case LevelRenderer::Pick::kWall:
+		id = _level.getWalls()[pick.index].objectId | kTypeWall;
+		break;
+	case LevelRenderer::Pick::kFlat:
+		id = _level.getSectors()[pick.index].objectId | kTypeFlat;
+		break;
+	case LevelRenderer::Pick::kBillboard:
+		id = _level.getBillboards()[pick.index].objectId | kTypeBillboard;
+		reach += fromFixed(_level.getBillboards()[pick.index].radius);
+		break;
+	case LevelRenderer::Pick::kSprite:
+		if (!pick.object || !_actors)
+			return;
+		id = pick.object;
+		reach += _actors->getRadius(id);
+		break;
+	}
+	bool inReach = pick.depth <= reach;
+	broadcast(kEventHitReport, { (int16)(inReach ? id : 0), _punch.damage, _punch.power, kTeam });
+	if (!inReach)
+		return;
+	send(id, kEventHit, { _punch.damage, _punch.power, kTeam });
+	if (_punch.hitSound >= 0) {
+		if (_punch.hitVolume >= 0)
+			_sound->playSound(_punch.hitSound, _punch.hitVolume);
+		else
+			_sound->play(_punch.hitSound);
+	}
+}
+
+bool Mission::fireWeapon(const Camera &camera, const LevelRenderer::Pick &pick) {
+	auto it = _items.find(_activeItem);
+	if (it == _items.end())
+		return false;
+	Item &item = it->second;
+	bool weapon = (item.kind >= 2 && item.kind <= 6) || (item.kind >= 11 && item.kind <= 13);
+	if (!weapon || item.c < 0 || item.c >= _projectiles->getTypeCount())
+		return false;
+	// Each shot costs its damage in charge (vt38); without enough, the
+	// trigger does nothing.
+	int16 cost = std::max<int16>(1, _projectiles->getType(item.c).damage);
+	if (item.charged) {
+		if (item.charge < cost)
+			return true;
+		item.charge -= cost;
+	}
+	broadcast(kEventItemUsed, { cost });
+
+	// 0x4B4E10: aim from the eye at what the crosshair shows, or at a point
+	// far ahead if that is nothing or too close.
+	double depth = pick.kind != LevelRenderer::Pick::kNone ? pick.depth : 0;
+	if (depth <= _walker.getRadius())
+		depth = 320;
+	double c = std::cos(camera.yaw), s = std::sin(camera.yaw);
+	double tx = camera.x + c * depth, ty = camera.y + s * depth, tz = camera.z + camera.pitch * depth;
+	// The shot leaves from just in front of the eye.
+	double ox = camera.x + c * 0.5, oy = camera.y + s * 0.5, oz = camera.z - 0.5;
+	double dx = tx - ox, dy = ty - oy;
+	fire(item.c, ox, oy, oz, std::atan2(dy, dx), std::atan2(tz - oz, std::sqrt(dx * dx + dy * dy)),
+	     Projectiles::kShooterPlayer);
+	return true;
+}
+
+void Mission::useItem(int slot) {
+	if (slot >= 0 && slot < (int)_inventory.size())
+		send(_inventory[slot], kEventActivate);
+}
+
 void Mission::damagePlayer(int16 source, int16 damage, int16 kind) {
 	// 0x43A42B: health never drops below 1 here; scripts decide when the
 	// player has died (verid1 at health 1).
@@ -703,6 +790,75 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		int16 team = vm.pop();
 		if (_actors)
 			_actors->setTeam(id, team);
+		break;
+	}
+	case 0x82: { // ATTACH_ITEM_BEHAVIOUR
+		uint16 id = (uint16)vm.pop();
+		Item &item = _items[id];
+		item.kind = vm.pop();
+		item.b = vm.pop();
+		item.c = vm.pop();
+		break;
+	}
+	case 0x84: { // INVENTORY_ADD
+		uint16 id = (uint16)vm.pop();
+		int16 slot = vm.pop();
+		if (std::find(_inventory.begin(), _inventory.end(), id) == _inventory.end()) {
+			if (slot >= 0 && slot < (int16)_inventory.size())
+				_inventory.insert(_inventory.begin() + slot, id);
+			else
+				_inventory.push_back(id);
+		}
+		break;
+	}
+	case 0x85: { // INVENTORY_REMOVE
+		uint16 id = (uint16)vm.pop();
+		_inventory.erase(std::remove(_inventory.begin(), _inventory.end(), id), _inventory.end());
+		if (_activeItem == id)
+			_activeItem = 0;
+		break;
+	}
+	case 0x8C: // SET_ACTIVE_ITEM
+		if (vm.pop())
+			_activeItem = self.object->id;
+		else if (_activeItem == self.object->id)
+			_activeItem = 0;
+		break;
+	case 0xB4: { // ADD_ITEM_CHARGE
+		uint16 id = (uint16)vm.pop();
+		int16 delta = vm.pop();
+		Item &item = _items[id ? id : self.object->id];
+		item.charge += delta;
+		item.charged = true;
+		break;
+	}
+	case 0xE9: { // SET_ITEM_SETTING
+		uint16 id = (uint16)vm.pop();
+		int16 value = vm.pop();
+		// A weapon's setting is the damage of what it fires (0x44A03A).
+		auto it = _items.find(id ? id : self.object->id);
+		if (it != _items.end() && it->second.c >= 0 && it->second.c < _projectiles->getTypeCount())
+			_projectiles->setDamage(it->second.c, value);
+		break;
+	}
+	case 0xC7: { // GET_ITEM_CHARGE
+		uint16 id = (uint16)vm.pop();
+		auto it = _items.find(id ? id : self.object->id);
+		vm.push(it == _items.end() ? 0 : (int16)it->second.charge);
+		break;
+	}
+	case 0xC4: { // SET_PUNCH
+		int16 image = vm.pop();
+		const Common::StringArray &names = _script.getResourceNames();
+		_punch.image = image >= 0 && image < (int16)names.size() ? names[image] : Common::String();
+		_punch.msPerFrame = (uint32)std::max<int16>(1, vm.pop());
+		_punch.hitFrame = vm.pop();
+		_punch.damage = vm.pop();
+		_punch.power = vm.pop();
+		_punch.swingSound = vm.pop();
+		_punch.swingVolume = vm.pop();
+		_punch.hitSound = vm.pop();
+		_punch.hitVolume = vm.pop();
 		break;
 	}
 	case 0x4D: { // SET_POSITION

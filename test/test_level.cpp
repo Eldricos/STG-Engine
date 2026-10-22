@@ -1002,6 +1002,65 @@ TEST(projectiles_fly_and_hit) {
 	CHECK_EQ(reports[0].hit.index, 0xA001);
 }
 
+TEST(mission_punch) {
+	using namespace STG;
+	const uint16 P = OP_PUSH;
+	// A logic object sets the punch (damage 3, power 9) and counts hit
+	// reports for actor 1 (global 0) and misses (global 1); actor 1 stuns
+	// above power 6 and records being stunned in global 2.
+	std::vector<uint16> program = {
+		1, 0xE001,
+		0x8000,
+		kEventEnterState, 0xFFFF, OP_PUSH_SELF, 0x31, P, 0, P, 0xFFFF, P, 63, P, 21, P, 9, P, 3, P, 3, P, 100,
+		P, 0xFFFF, 0xC4, OP_END,
+		Mission::kEventHitReport, 0xFFFF, P, 0xA001, OP_IF_EQ, P, 0, OP_GET_GLOBAL, OP_INC, P, 0, OP_SET_GLOBAL,
+		OP_ELSE, P, 1, OP_GET_GLOBAL, OP_INC, P, 1, OP_SET_GLOBAL, OP_ENDIF, OP_END,
+		0x3000,
+		0x2000,
+		1, 0xA001,
+		0x8000,
+		kEventEnterState, 0xFFFF, P, 10, P, 10, P, 10, P, 10, P, 40, P, 6, P, 11, 0x41, OP_END,
+		Actors::kEventStunned, 0xFFFF, P, 1, P, 2, OP_SET_GLOBAL, OP_END,
+		0x3000,
+		0x2000,
+		0x1000
+	};
+	std::vector<byte> scriptBytes = makeScriptFile(program);
+	Common::MemoryReadStream scriptStream(scriptBytes.data(), (uint32)scriptBytes.size());
+	ScriptFile script;
+	CHECK(script.load(scriptStream));
+
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 40, 40, 0);
+	builder.addActor(1, 10, 10, 0, Actors::kModeIdle, 0);
+	LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	LevelRenderer renderer(level);
+	Walker walker(level);
+	walker.place(12, 10, 0);
+	Actors actors(level, walker, loadTestSprites);
+	Mission mission(level, script, renderer, walker, &actors);
+	mission.start();
+	CHECK_EQ(mission.getPunch().damage, 3);
+	CHECK_EQ(mission.getPunch().hitFrame, 3);
+
+	// Within reach (1.2 + 0.5 + the actor's radius of 1), it lands...
+	LevelRenderer::Pick pick;
+	pick.kind = LevelRenderer::Pick::kSprite;
+	pick.object = 0xA001;
+	pick.depth = 2.5;
+	mission.punch(pick);
+	CHECK_EQ(mission.getVM().getGlobal(0), 1);
+	CHECK_EQ(mission.getVM().getGlobal(2), 1);
+	CHECK_EQ(actors.getCombatStats(0xA001).stun, 7);
+	// ...beyond it, everyone hears of a miss.
+	pick.depth = 3;
+	mission.punch(pick);
+	CHECK_EQ(mission.getVM().getGlobal(1), 1);
+	CHECK_EQ(actors.getCombatStats(0xA001).stun, 7);
+	CHECK(mission.getMissingNatives().empty());
+}
+
 TEST(walker_line_of_sight) {
 	STG::LevelFile level;
 	CHECK(loadLevel(level, makeRoom(12).build()));

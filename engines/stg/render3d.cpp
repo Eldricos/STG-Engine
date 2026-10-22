@@ -188,6 +188,8 @@ void LevelRenderer::render(const Camera &camera, Graphics::Surface &dst, uint32 
 	_centerY = (dst.h - 1) / 2.0 + camera.pitch * _focal;
 
 	_depth.assign((size_t)dst.w * dst.h, 0.0f);
+	_pick = Pick();
+	_owner = Pick();
 	drawSky(camera, dst);
 	drawFlats(dst, time);
 	drawWalls(dst, time);
@@ -205,15 +207,17 @@ void LevelRenderer::queuePolygon(std::vector<Vertex> &poly, const Texture *textu
 	double depth = 0;
 	for (const Vertex &v : poly)
 		depth += v.z;
-	_translucent.push_back({ poly, texture, shade, wrap, depth / poly.size() });
+	_translucent.push_back({ poly, texture, shade, wrap, depth / poly.size(), _owner });
 }
 
 void LevelRenderer::drawTranslucent(Graphics::Surface &dst) {
 	// The original paints far to near; what is behind must be there first.
 	std::stable_sort(_translucent.begin(), _translucent.end(),
 	                 [](const Translucent &a, const Translucent &b) { return a.depth > b.depth; });
-	for (Translucent &t : _translucent)
+	for (Translucent &t : _translucent) {
+		_owner = t.owner;
 		drawPolygon(t.poly, t.texture, t.shade, dst, t.wrap, true);
+	}
 	_translucent.clear();
 }
 
@@ -243,9 +247,14 @@ void LevelRenderer::drawSky(const Camera &camera, Graphics::Surface &dst) {
 void LevelRenderer::drawFlats(Graphics::Surface &dst, uint32 time) {
 	const std::vector<LevelFile::Vertex> &vertices = _level.getVertices();
 	std::vector<Vertex> poly;
-	for (const LevelFile::Sector &flat : _level.getSectors()) {
+	const std::vector<LevelFile::Sector> &flats = _level.getSectors();
+	for (size_t i = 0; i < flats.size(); i++) {
+		const LevelFile::Sector &flat = flats[i];
 		if (!(flat.flags & LevelFile::kFlagVisible) || (flat.flags & LevelFile::kFlagNotDrawn) || !(flat.zones & _zones))
 			continue;
+		_owner = Pick();
+		_owner.kind = Pick::kFlat;
+		_owner.index = (int)i;
 		double height = fromFixed(flat.height);
 		// Floors are only seen from above and ceilings from below.
 		if (flat.isCeiling() ? height <= _camZ : height >= _camZ)
@@ -280,9 +289,14 @@ void LevelRenderer::drawFlats(Graphics::Surface &dst, uint32 time) {
 void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 	const std::vector<LevelFile::Vertex> &vertices = _level.getVertices();
 	std::vector<Vertex> poly(4);
-	for (const LevelFile::Wall &wall : _level.getWalls()) {
+	const std::vector<LevelFile::Wall> &walls = _level.getWalls();
+	for (size_t i = 0; i < walls.size(); i++) {
+		const LevelFile::Wall &wall = walls[i];
 		if (!(wall.flags & LevelFile::kFlagVisible) || (wall.flags & LevelFile::kFlagNotDrawn) || !(wall.zones & _zones))
 			continue;
+		_owner = Pick();
+		_owner.kind = Pick::kWall;
+		_owner.index = (int)i;
 		double x1 = fromFixed(vertices[wall.vertex1].x), y1 = fromFixed(vertices[wall.vertex1].y);
 		double x2 = fromFixed(vertices[wall.vertex2].x), y2 = fromFixed(vertices[wall.vertex2].y);
 		// Walls face the side their normal points to and, like the
@@ -345,9 +359,14 @@ void LevelRenderer::drawWalls(Graphics::Surface &dst, uint32 time) {
 
 void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 	std::vector<Vertex> poly(4);
-	for (const LevelFile::Billboard &billboard : _level.getBillboards()) {
+	const std::vector<LevelFile::Billboard> &billboards = _level.getBillboards();
+	for (size_t i = 0; i < billboards.size(); i++) {
+		const LevelFile::Billboard &billboard = billboards[i];
 		if (billboard.hidden || !(billboard.zones & _zones))
 			continue;
+		_owner = Pick();
+		_owner.kind = Pick::kBillboard;
+		_owner.index = (int)i;
 		const Texture *texture = getTexture(billboard.texture, billboard.frames, billboard.speed, time);
 		if (!texture)
 			continue;
@@ -390,9 +409,14 @@ void LevelRenderer::drawSprites(Graphics::Surface &dst) {
 	if (!_sprites)
 		return;
 	std::vector<Vertex> poly(4);
-	for (const SpriteDraw &sprite : *_sprites) {
+	for (size_t i = 0; i < _sprites->size(); i++) {
+		const SpriteDraw &sprite = (*_sprites)[i];
 		if (!sprite.surface || sprite.surface->w == 0 || sprite.surface->h == 0)
 			continue;
+		_owner = Pick();
+		_owner.kind = Pick::kSprite;
+		_owner.index = (int)i;
+		_owner.object = sprite.object;
 		const Texture *texture = getSpriteTexture(sprite.surface);
 		Vertex centre;
 		toCamera(sprite.x, sprite.y, sprite.bottom, centre);
@@ -531,6 +555,10 @@ void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *textur
 			}
 			out[x] = shade ? shade[color] : color;
 			depth[x] = (float)iz;
+			if (x == _pickX && y == _pickY) {
+				_pick = _owner;
+				_pick.depth = 1.0 / iz;
+			}
 		}
 	}
 }

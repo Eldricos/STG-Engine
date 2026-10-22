@@ -292,6 +292,11 @@ uint16 Actors::takeHit(uint16 id, int damage, int power) {
 	return 0;
 }
 
+double Actors::getRadius(uint16 id) const {
+	std::vector<int> parts = findAll(id);
+	return parts.empty() ? 0 : fromFixed(_actors[parts[0]]->data.radius);
+}
+
 void Actors::setWeapon(uint16 id, int weapon) {
 	for (int index : findAll(id))
 		_actors[index]->weapon = weapon;
@@ -656,6 +661,7 @@ void Actors::getSprites(double cameraX, double cameraY, uint64 visibleZones, std
 		sprite.fullbright = (actor.data.flags & kFlagFullbright) != 0;
 		const uint32 seeThrough = LevelFile::kFlagTranslucent | LevelFile::kFlagColumnTests;
 		sprite.translucent = (actor.data.flags & seeThrough) == seeThrough;
+		sprite.object = (uint16)(actor.data.objectId | kObjectType);
 		sprites.push_back(sprite);
 	}
 }

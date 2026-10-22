@@ -114,6 +114,8 @@ public:
 
 	int getTypeCount() const { return (int)_types.size(); }
 	const Type &getType(int type) const { return _types[type]; }
+	/** Weapon items set the damage of the type they fire (0x44A03A); everything firing it is affected. */
+	void setDamage(int type, int16 damage) { _types[type].damage = damage; }
 
 	/**
 	 * Fire a shot of the given type from (x, y, z) towards heading yaw

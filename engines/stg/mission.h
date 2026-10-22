@@ -62,6 +62,8 @@ public:
 		kEventActivate = 45,
 		kEventEffectDone = 55,
 		kEventHitReport = 59,
+		/** Broadcast when the player fires a weapon: its cost. */
+		kEventItemUsed = 50,
 		kEventFloorLeft = 54,
 		kEventFloorEntered = 53
 	};
@@ -114,6 +116,39 @@ public:
 	int16 getHealth() const { return _health; }
 	/** Hurt the player (game.vt34C): source object, damage, and a kind (a shot's team). */
 	void damagePlayer(int16 source, int16 damage, int16 kind);
+
+	/**
+	 * The bare-hand attack (SET_PUNCH): an overlay played over the view, a
+	 * frame at which it lands, what it does, and its sounds.
+	 */
+	struct Punch {
+		/** Overlay file name, from the script's resources; empty for none. */
+		Common::String image;
+		uint32 msPerFrame = 100;
+		int hitFrame = 0;
+		int16 damage = 0, power = 0;
+		int swingSound = -1, swingVolume = -1;
+		int hitSound = -1, hitVolume = -1;
+	};
+	const Punch &getPunch() const { return _punch; }
+	/** The punch starts: its swing sounds. */
+	void swing();
+	/** The punch lands on what the view shows at its centre (code 19, 0x4364B8). */
+	void punch(const LevelRenderer::Pick &pick);
+
+	/**
+	 * Fire the active item if it is a weapon (0x43FDC4), at what the view
+	 * shows at its centre (pick, depth ahead), seen through camera. Returns
+	 * false if there is no weapon to fire, so the player punches instead.
+	 */
+	bool fireWeapon(const Camera &camera, const LevelRenderer::Pick &pick);
+
+	/** The items carried (INVENTORY_ADD), in order. */
+	const std::vector<uint16> &getInventory() const { return _inventory; }
+	/** Use a carried item, as clicking it does: it gets event 45. */
+	void useItem(int slot);
+	/** The item in use (SET_ACTIVE_ITEM), or 0. */
+	uint16 getActiveItem() const { return _activeItem; }
 
 	/** Fire a projectile of the given type (see Projectiles::fire), sounding it. */
 	void fire(int type, double x, double y, double z, double yaw, double pitch, int shooter);
@@ -191,6 +226,18 @@ private:
 	Actors *_actors;
 	std::unique_ptr<MissionSound> _sound;
 	std::unique_ptr<Projectiles> _projectiles;
+
+	/** An item's behaviour (ATTACH_ITEM_BEHAVIOUR): its kind and two settings. */
+	struct Item {
+		int16 kind = 0, b = 0, c = 0;
+		int32 charge = 0;
+		/** Charge is only checked once a script has set some. */
+		bool charged = false;
+	};
+	std::map<uint16, Item> _items;
+	std::vector<uint16> _inventory;
+	uint16 _activeItem = 0;
+	Punch _punch;
 	std::vector<MissionSound::Finished> _soundsFinished;
 
 	int16 _health = 100;

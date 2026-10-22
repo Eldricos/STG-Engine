@@ -161,6 +161,8 @@ public:
 	 * (kEventHurt and so on), or 0 if it doesn't notice.
 	 */
 	uint16 takeHit(uint16 id, int damage, int power);
+	/** The radius it collides and is hit with. */
+	double getRadius(uint16 id) const;
 	/** The projectile type it fires in attack mode, or -1 for none. */
 	void setWeapon(uint16 id, int weapon);
 

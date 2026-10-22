@@ -119,7 +119,11 @@ archives. Tab and Shift+Tab jump to the next and previous 3D level (`GAME.LV2`),
 whose name the 3D view shows on its status line. Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
 from the floor plan to a 3D view and then through the textures. In the 3D view, the
 arrows or WASD move, PgUp/PgDn look up and down, End levels the view, L switches
-the lighting off and on, and C lets you walk through walls. Home
+the lighting off and on, and C lets you walk through walls. Ctrl or the left
+mouse button attacks at the crosshair: with the weapon in use (verid1 starts
+with the phaser) or, with none, bare-handed. Until there is an inventory panel,
+1-9 use the items carried, as clicking them would; the status line shows health
+and the item in use. Home
 returns to the starfield, F5/F7 save and load, and Esc quits.
 
 Settings and saves go in the per-user directory SDL picks for the platform:
