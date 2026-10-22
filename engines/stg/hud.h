@@ -54,7 +54,10 @@ public:
 	uint16 getSlot(int slot) const { return _slots[slot]; }
 	/** The slot an item is in, or -1. */
 	int findItem(uint16 id) const;
-	/** Move an item to another slot (dragging), swapping with what is there. */
+	/**
+	 * Move an item from a slot of 1-11 to another (dragging); what was there moves
+	 * to the first free slot. Any other slot means the first free one.
+	 */
 	void moveItem(int from, int to);
 
 	// --- Close-up panels (0x6C..0x6F, 0x9D..0xA1, 0x8F, 0x90): one per

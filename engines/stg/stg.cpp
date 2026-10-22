@@ -120,17 +120,43 @@ void STGEngine::initPalette() {
 }
 
 void STGEngine::initCursor() {
-	// A 15x15 crosshair; index 0 is transparent.
+	_targetCursor = true;
+	setCursor(false);
+	_system->showMouse(true);
+}
+
+void STGEngine::setCursor(bool target) {
+	// A crosshair to aim with (the original's target.bmp) or an arrow
+	// (select.bmp), drawn in the palette's white on its black. Index 0 is
+	// transparent.
+	if (target == _targetCursor)
+		return;
+	_targetCursor = target;
+	const Graphics::Palette &palette = _screen->getPalette();
+	byte white = palette.findBestColor(255, 255, 255), black = palette.findBestColor(0, 0, 0);
+	if (!white)
+		white = 1;
+	if (!black)
+		black = white;
 	const int size = 15;
 	byte cursor[size * size] = {};
-	for (int i = 0; i < size; i++) {
-		if (i == size / 2)
-			continue;
-		cursor[(size / 2) * size + i] = kColorWhite;
-		cursor[i * size + size / 2] = kColorWhite;
+	if (target) {
+		for (int i = 0; i < size; i++) {
+			if (i == size / 2)
+				continue;
+			cursor[(size / 2) * size + i] = white;
+			cursor[i * size + size / 2] = white;
+		}
+		_system->setMouseCursor(cursor, size, size, size / 2, size / 2, 0);
+		return;
 	}
-	_system->setMouseCursor(cursor, size, size, size / 2, size / 2, 0);
-	_system->showMouse(true);
+	// An arrow 11 rows tall, outlined.
+	for (int y = 0; y < 11; y++) {
+		int width = y < 8 ? y + 1 : 11 - y;
+		for (int x = 0; x < width; x++)
+			cursor[y * size + x] = x == 0 || x == width - 1 || y == 10 ? black : white;
+	}
+	_system->setMouseCursor(cursor, size, size, 0, 0, 0);
 }
 
 void STGEngine::loadFont() {
@@ -148,6 +174,20 @@ void STGEngine::loadFont() {
 
 void STGEngine::handleEvent(const Common::Event &event) {
 	bool walking = _level && _levelPage == kLevelPage3D;
+	bool bracket = event.kbd.keycode == Common::KEYCODE_LEFTBRACKET || event.kbd.keycode == Common::KEYCODE_RIGHTBRACKET;
+	if (walking && bracket && !(event.kbd.flags & Common::KBD_SHIFT) && _mission &&
+	    (event.type == Common::EVENT_KEYDOWN || event.type == Common::EVENT_KEYUP)) {
+		// The weapon's power level (0x44A1B7 and 0x44A159), if it has one;
+		// with Shift, or without, they change pages.
+		const Mission::Item *item = _mission->getItem(_mission->getActiveItem());
+		if (item && item->maxLevel > 0) {
+			if (event.type == Common::EVENT_KEYDOWN) {
+				_mission->setItemLevel(item->level + (event.kbd.keycode == Common::KEYCODE_RIGHTBRACKET ? 1 : -1));
+				updateWalkStatus();
+			}
+			return;
+		}
+	}
 	if (walking && (event.type == Common::EVENT_KEYDOWN || event.type == Common::EVENT_KEYUP) &&
 	    handleWalkKey(event.kbd.keycode, event.type == Common::EVENT_KEYDOWN))
 		return;
@@ -207,12 +247,24 @@ void STGEngine::handleEvent(const Common::Event &event) {
 			break;
 		}
 		break;
+	case Common::EVENT_MOUSEMOVE:
+		_mouseX = event.mouse.x;
+		_mouseY = event.mouse.y;
+		if (_hudScreen)
+			_hudScreen->mouseMove(event.mouse.x, event.mouse.y);
+		break;
+	case Common::EVENT_LBUTTONUP:
+		if (_hudScreen && _mission)
+			_hudScreen->mouseUp(*_mission, event.mouse.x, event.mouse.y);
+		break;
 	case Common::EVENT_LBUTTONDOWN:
 	case Common::EVENT_RBUTTONDOWN:
+		_mouseX = event.mouse.x;
+		_mouseY = event.mouse.y;
 		if (_level && _levelPage == kLevelPage3D) {
 			bool right = event.type == Common::EVENT_RBUTTONDOWN;
 			if (_hudScreen && _mission && event.mouse.y >= HudScreen::kView.bottom)
-				_hudScreen->click(*_mission, event.mouse.x, event.mouse.y, right);
+				_hudScreen->mouseDown(*_mission, event.mouse.x, event.mouse.y, right);
 			else if (!right)
 				attack();
 			break;
@@ -262,17 +314,9 @@ void STGEngine::drawFrame(uint32 delta) {
 			_actors->getSprites(_camera.x, _camera.y, _walker->getActiveZones(), _actorSprites);
 		if (_mission)
 			_mission->getProjectiles().getSprites(_actorSprites);
-		// The punch and weapons act on what the centre of the view shows.
-		_levelRenderer->setPickPoint(view.w / 2, view.h / 2);
+		prepareAim(view.w, view.h);
 		_levelRenderer->render(_camera, view, _levelTime);
-		updatePunch(delta, view);
-		byte cross = _screen->getPalette().findBestColor(255, 255, 255);
-		for (int d = 2; d <= 5; d++) {
-			view.setPixel(view.w / 2 - d, view.h / 2, cross);
-			view.setPixel(view.w / 2 + d, view.h / 2, cross);
-			view.setPixel(view.w / 2, view.h / 2 - d, cross);
-			view.setPixel(view.w / 2, view.h / 2 + d, cross);
-		}
+		drawHands(view, delta);
 		if (_mission && _mission->getHealth() != _shownHealth)
 			updateWalkStatus();
 		_screen->getSurface().copyRectToSurface(view, 0, 0, Common::Rect(view.w, view.h));
@@ -357,16 +401,9 @@ void STGEngine::drawMissionScreen(uint32 delta) {
 	if (_actors)
 		_actors->getSprites(_camera.x, _camera.y, _walker->getActiveZones(), _actorSprites);
 	_mission->getProjectiles().getSprites(_actorSprites);
-	_levelRenderer->setPickPoint(view.w / 2, view.h / 2);
+	prepareAim(view.w, view.h);
 	_levelRenderer->render(_camera, view, _levelTime);
-	updatePunch(delta, view);
-	byte cross = _screen->getPalette().findBestColor(255, 255, 255);
-	for (int d = 2; d <= 5; d++) {
-		view.setPixel(view.w / 2 - d, view.h / 2, cross);
-		view.setPixel(view.w / 2 + d, view.h / 2, cross);
-		view.setPixel(view.w / 2, view.h / 2 - d, cross);
-		view.setPixel(view.w / 2, view.h / 2 + d, cross);
-	}
+	drawHands(view, delta);
 
 	// Shaking moves the whole view; the underwater ripple (VIEW_OVERLAY)
 	// shifts each row, a wave 168 rows long rolling down a row every 64 ms.
@@ -390,6 +427,7 @@ void STGEngine::drawMissionScreen(uint32 delta) {
 
 	_hudScreen->draw(screen, *_mission, *_level, _walker->getX(), _walker->getY(), _walker->getFeet(), _camera.yaw,
 	                 _levelTime);
+	_hudScreen->drawDrag(screen, *_mission);
 	if (_mission->getHealth() != _shownHealth)
 		updateWalkStatus();
 
@@ -509,6 +547,7 @@ void STGEngine::showImage(int index) {
 	const ResourceRef &ref = images[index];
 	_imageLoaded = _overlayLoaded = _spritesLoaded = false;
 	_hudScreen.reset();
+	_heldItem.load(_resources, _levelRef, 0);
 	_mission.reset();
 	_actors.reset();
 	_walker.reset();
@@ -543,6 +582,7 @@ void STGEngine::showImage(int index) {
 void STGEngine::showLevel(const ResourceRef &ref) {
 	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
 	_hudScreen.reset();
+	_heldItem.load(_resources, _levelRef, 0);
 	_mission.reset();
 	_actors.reset();
 	_walker.reset();
@@ -566,6 +606,7 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 	_walker->place(_camera.x, _camera.y, _camera.z - Walker::kEyeHeight);
 	startMission(ref);
 	_hudScreen.reset();
+	_heldItem.load(_resources, _levelRef, 0);
 	if (_mission) {
 		_hudScreen.reset(new HudScreen(_resources, ref, *_levelScript));
 		if (!_hudScreen->isAvailable())
@@ -836,11 +877,68 @@ void STGEngine::updateWalk(uint32 delta) {
 		updateWalkStatus();
 }
 
+void STGEngine::prepareAim(int w, int h) {
+	// The original aims at the cursor while it is over the view, else at
+	// the centre (view.vtD8 0x430756).
+	_viewW = w;
+	_viewH = h;
+	bool inView = _mouseX >= 0 && _mouseX < w && _mouseY >= 0 && _mouseY < h;
+	_aimX = inView ? _mouseX : w / 2;
+	_aimY = inView ? _mouseY : h / 2;
+
+	int kind = 0;
+	if (_mission && _mission->getActiveItem() && _mission->isWeapon(_mission->getActiveItem()))
+		kind = _mission->getItemKind(_mission->getActiveItem());
+	if (kind != _heldItem.getKind())
+		_heldItem.load(_resources, _levelRef, kind);
+
+	// Weapons act on what the cursor points at, the punch on the centre.
+	if (kind)
+		_levelRenderer->setPickPoint(_aimX, _aimY);
+	else
+		_levelRenderer->setPickPoint(w / 2, h / 2);
+	setCursor(kind && inView && HeldItem::getStyle(kind) &&
+	          HeldItem::place(*HeldItem::getStyle(kind), _aimX, _aimY, w, h).usable);
+}
+
+void STGEngine::drawHands(Graphics::Surface &view, uint32 delta) {
+	if (_heldItem.getKind()) {
+		_heldItem.draw(view, _aimX, _aimY, _flashLeft > 0);
+		_flashLeft = _flashLeft > delta ? _flashLeft - delta : 0;
+		return;
+	}
+	updatePunch(delta, view);
+	byte cross = _screen->getPalette().findBestColor(255, 255, 255);
+	for (int d = 2; d <= 5; d++) {
+		view.setPixel(view.w / 2 - d, view.h / 2, cross);
+		view.setPixel(view.w / 2 + d, view.h / 2, cross);
+		view.setPixel(view.w / 2, view.h / 2 - d, cross);
+		view.setPixel(view.w / 2, view.h / 2 + d, cross);
+	}
+}
+
 void STGEngine::attack() {
 	if (!_mission || _punching)
 		return;
-	if (_mission->fireWeapon(_camera, _levelRenderer->getPick()))
-		return;
+	if (_heldItem.getKind()) {
+		// From the gun's muzzle, which follows the cursor; below the gun's
+		// line it can't be used.
+		double ahead = 1.5, up = -0.5, left = 0;
+		if (const HeldItem::Style *style = HeldItem::getStyle(_heldItem.getKind())) {
+			if (!HeldItem::place(*style, _aimX, _aimY, _viewW, _viewH).usable)
+				return;
+			HeldItem::getMuzzle(*style, _aimX, _aimY, _viewW, _viewH, ahead, up, left);
+		}
+		Mission::FireResult result = _mission->fireWeapon(_camera, _levelRenderer->getPick(), _aimX, _aimY, _viewW,
+		                                                  _viewH, ahead, up, left);
+		if (result == Mission::kFired) {
+			const Mission::Item *item = _mission->getItem(_mission->getActiveItem());
+			_flashLeft = item && item->setting > 0 ? item->setting : 150;
+			updateWalkStatus();
+		}
+		if (result != Mission::kNoWeapon)
+			return;
+	}
 
 	// Bare hands: play the punch overlay (SET_PUNCH), which lands on its
 	// hit frame. It sits beside GAME.LV2.
@@ -901,6 +999,9 @@ void STGEngine::updateWalkStatus() {
 		_status += Common::format("  health %d", _shownHealth);
 		if (_mission->getActiveItem())
 			_status += Common::format("  item %04x", _mission->getActiveItem());
+		const Mission::Item *item = _mission->getItem(_mission->getActiveItem());
+		if (item && item->maxLevel > 0)
+			_status += Common::format(" power %d charge %d/%d", item->level, item->charge, item->maxCharge);
 	}
 }
 
@@ -1002,6 +1103,7 @@ void STGEngine::showStarfield() {
 	_overlayLoaded = false;
 	_spritesLoaded = false;
 	_hudScreen.reset();
+	_heldItem.load(_resources, _levelRef, 0);
 	_mission.reset();
 	_actors.reset();
 	_walker.reset();

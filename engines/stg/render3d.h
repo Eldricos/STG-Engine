@@ -114,6 +114,13 @@ public:
 	const Pick &getPick() const { return _pick; }
 
 	/**
+	 * The world point that shows at pixel (x, y) of a w x h view, depth
+	 * ahead of camera: the inverse of the projection render() uses.
+	 */
+	static void unproject(const Camera &camera, int w, int h, double x, double y, double depth, double &worldX,
+	                      double &worldY, double &worldZ);
+
+	/**
 	 * Mark walls drawn as seen, for the automap: like the original's
 	 * painter (0x4C8602), set LevelFile::kWallOnMap on each wall that
 	 * shows. walls is the level's own table, or null to stop.

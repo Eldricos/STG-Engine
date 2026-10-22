@@ -138,11 +138,38 @@ public:
 	void punch(const LevelRenderer::Pick &pick);
 
 	/**
-	 * Fire the active item if it is a weapon (0x43FDC4), at what the view
-	 * shows at its centre (pick, depth ahead), seen through camera. Returns
-	 * false if there is no weapon to fire, so the player punches instead.
+	 * An inventory item's behaviour (ATTACH_ITEM_BEHAVIOUR). Weapons and
+	 * the like hold a charge (0x449DCD); each use costs the power level,
+	 * which is also the damage of what they fire.
 	 */
-	bool fireWeapon(const Camera &camera, const LevelRenderer::Pick &pick);
+	struct Item {
+		int16 kind = 0, b = 0, c = 0;
+		int32 charge = 0, maxCharge = 0;
+		int32 level = 0, maxLevel = 0;
+		/** SET_ITEM_SETTING: how long the muzzle flashes, in ms. */
+		int32 setting = 0;
+	};
+	/** An item's behaviour, or null. */
+	const Item *getItem(uint16 id) const {
+		auto it = _items.find(id);
+		return it == _items.end() ? nullptr : &it->second;
+	}
+	/** Set the active item's power level (the [ and ] keys, the weapon display), within 1 and its maximum. */
+	void setItemLevel(int level);
+
+	enum FireResult {
+		kNoWeapon, ///< nothing to fire: the player punches instead
+		kEmpty,    ///< not enough charge
+		kFired
+	};
+	/**
+	 * Fire the active item if it is a weapon (0x43FDC4) from its muzzle
+	 * (ahead, up and to the left of the eye) at what the view shows at
+	 * (x, y): pick, the renderer's pick there, in a view w x h seen
+	 * through camera.
+	 */
+	FireResult fireWeapon(const Camera &camera, const LevelRenderer::Pick &pick, int x, int y, int w, int h,
+	                      double ahead, double up, double left);
 
 	/** The console: inventory, panels, body picture, map markers, screen effects. */
 	Hud &getHud() { return _hud; }
@@ -150,6 +177,8 @@ public:
 	void useItem(int slot);
 	/** Right click on an inventory slot (event 62). */
 	void describeItem(int slot);
+	/** An item dragged out of the inventory (event 63). */
+	void dropItem(int slot);
 	/** Whether an item is one the player holds and fires. */
 	bool isWeapon(uint16 id) const;
 	/** An item's kind (ATTACH_ITEM_BEHAVIOUR), or 0. */
@@ -255,12 +284,6 @@ private:
 	std::unique_ptr<Projectiles> _projectiles;
 
 	/** An item's behaviour (ATTACH_ITEM_BEHAVIOUR): its kind and two settings. */
-	struct Item {
-		int16 kind = 0, b = 0, c = 0;
-		int32 charge = 0;
-		/** Charge is only checked once a script has set some. */
-		bool charged = false;
-	};
 	std::map<uint16, Item> _items;
 	Hud _hud;
 	int _leftPanelRequest = 0;

@@ -35,6 +35,8 @@ const Common::Rect kMap = inclusive(39, 267, 192, 414);
 const Common::Rect kViewer = inclusive(223, 311, 433, 458);
 const Common::Rect kAuxCycle = inclusive(207, 425, 219, 459);
 const Common::Rect kWeaponCycle = inclusive(207, 253, 219, 268);
+const Common::Rect kWeaponDisplay = inclusive(222, 252, 431, 296);
+const Common::Rect kInventory = inclusive(435, 256, 639, 457);
 const Common::Rect kLevelsButton = Common::Rect(43, 415, 43 + 29, 415 + 27);
 const Common::Rect kZoomButton = Common::Rect(74, 415, 74 + 29, 415 + 27);
 const int kSlotX[3] = { 436, 505, 574 };
@@ -176,13 +178,30 @@ void HudScreen::draw(Graphics::Surface &screen, Mission &mission, const LevelFil
 
 	if (const Image *cycle = load("wepcycle.bmp", kGlobal))
 		blit(screen, *cycle, 0, kWeaponCycle.left, kWeaponCycle.top);
-	// The weapon in use shows its display (0x439F9E); the phaser's is weapphas.bmp.
-	if (mission.getActiveItem() && mission.getItemKind(mission.getActiveItem()) == 2) {
-		if (const Image *display = load("weapphas.bmp", kGlobal))
-			blit(screen, *display, 0, 222, 252);
-	}
+	drawWeaponDisplay(screen, mission);
 	drawPanel(screen, mission, time);
 	drawInventory(screen, mission);
+}
+
+void HudScreen::drawWeaponDisplay(Graphics::Surface &screen, Mission &mission) {
+	// The weapon in use shows its display (0x439F9E); the phaser's is
+	// weapphas.bmp with an arrow at its power level (0x44B721) and a gauge
+	// of 59 ticks, 3 pixels apart, whose empty part is wiped from the right
+	// (0x44BA38).
+	const Mission::Item *item = mission.getItem(mission.getActiveItem());
+	if (!item || item->kind != 2)
+		return;
+	const Image *display = load("weapphas.bmp", kGlobal);
+	if (!display)
+		return;
+	blit(screen, *display, 0, kWeaponDisplay.left, kWeaponDisplay.top);
+	if (const Image *arrow = load("p-arrow.bmp", kGlobal))
+		blit(screen, *arrow, 0, kWeaponDisplay.left + 11 * item->level - 4, kWeaponDisplay.top, 0, &kWeaponDisplay);
+	int full = item->maxCharge > 0 ? (59 * item->charge + item->maxCharge - 1) / item->maxCharge : 0;
+	for (int k = 0; k < 59 - full; k++) {
+		int x = kWeaponDisplay.left + 191 - 3 * k;
+		screen.fillRect(Common::Rect(x, kWeaponDisplay.top + 28, x + 2, kWeaponDisplay.top + 35), 0);
+	}
 }
 
 void HudScreen::drawLifePanel(Graphics::Surface &screen, Mission &mission) {
@@ -308,6 +327,8 @@ void HudScreen::drawInventory(Graphics::Surface &screen, Mission &mission) {
 		uint16 id = hud.getSlot(slot);
 		if (!id)
 			continue;
+		if (_dragging && slot == _pressedSlot)
+			continue;
 		int x = kSlotX[slot % 3], y = kSlotY[slot / 3];
 		int icon = mission.getItemIcon(id);
 		if (icons && icon >= 0)
@@ -317,7 +338,16 @@ void HudScreen::drawInventory(Graphics::Surface &screen, Mission &mission) {
 	}
 }
 
-bool HudScreen::click(Mission &mission, int x, int y, bool right) {
+int HudScreen::findSlot(int x, int y) {
+	for (int slot = 0; slot < Hud::kSlots; slot++) {
+		int sx = kSlotX[slot % 3], sy = kSlotY[slot / 3];
+		if (Common::Rect(sx - 2, sy - 2, sx + kIconWidth + 4, sy + kIconHeight + 4).contains(x, y))
+			return slot;
+	}
+	return -1;
+}
+
+bool HudScreen::mouseDown(Mission &mission, int x, int y, bool right) {
 	if (!_console || y < kView.bottom)
 		return false;
 	for (int i = 0; i < 3; i++) {
@@ -340,15 +370,25 @@ bool HudScreen::click(Mission &mission, int x, int y, bool right) {
 		}
 	}
 	Hud &hud = mission.getHud();
-	for (int slot = 0; slot < Hud::kSlots; slot++) {
-		int sx = kSlotX[slot % 3], sy = kSlotY[slot / 3];
-		if (Common::Rect(sx - 2, sy - 2, sx + kIconWidth + 4, sy + kIconHeight + 4).contains(x, y)) {
-			if (right)
-				mission.describeItem(slot);
-			else
-				mission.useItem(slot);
-			return true;
+	int slot = findSlot(x, y);
+	if (slot >= 0) {
+		// 0x44687C: the left button picks it up, to click or drag.
+		if (right)
+			mission.describeItem(slot);
+		else if (hud.getSlot(slot)) {
+			_pressedSlot = slot;
+			_dragging = false;
+			_pressX = _mouseX = x;
+			_pressY = _mouseY = y;
 		}
+		return true;
+	}
+	if (kWeaponDisplay.contains(x, y)) {
+		// 0x44B896: the phaser's display sets the power level.
+		const Mission::Item *item = mission.getItem(mission.getActiveItem());
+		if (item && item->kind == 2)
+			mission.setItemLevel((x - 239) / 11 + 1);
+		return true;
 	}
 	if (kViewer.contains(x, y)) {
 		if (right)
@@ -374,6 +414,42 @@ bool HudScreen::click(Mission &mission, int x, int y, bool right) {
 		return true;
 	}
 	return kLeftPanel.contains(x, y);
+}
+
+void HudScreen::mouseMove(int x, int y) {
+	_mouseX = x;
+	_mouseY = y;
+	// Moving 4 pixels either way drags it; the item in slot 0 stays put.
+	if (_pressedSlot > 0 && !_dragging && (std::abs(x - _pressX) >= 4 || std::abs(y - _pressY) >= 4))
+		_dragging = true;
+}
+
+bool HudScreen::mouseUp(Mission &mission, int x, int y) {
+	if (_pressedSlot < 0)
+		return false;
+	int slot = _pressedSlot;
+	bool dragged = _dragging;
+	_pressedSlot = -1;
+	_dragging = false;
+	if (!dragged) {
+		// A click, if it was let go of where it was pressed (0x4469C2).
+		if (findSlot(x, y) == slot)
+			mission.useItem(slot);
+	} else if (kInventory.contains(x, y)) {
+		mission.getHud().moveItem(slot, findSlot(x, y));
+	} else {
+		mission.dropItem(slot);
+	}
+	return true;
+}
+
+void HudScreen::drawDrag(Graphics::Surface &screen, Mission &mission) {
+	if (!_dragging || _pressedSlot < 0)
+		return;
+	const Image *icons = load("INVENT.BMP", kMission, kIconHeight);
+	uint16 id = mission.getHud().getSlot(_pressedSlot);
+	if (icons && id && mission.getItemIcon(id) >= 0)
+		blit(screen, *icons, mission.getItemIcon(id), _mouseX - kIconWidth / 2, _mouseY - kIconHeight / 2);
 }
 
 } // End of namespace STG

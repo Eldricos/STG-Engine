@@ -8,9 +8,12 @@
 
 #include "test/test.h"
 
+#include <cmath>
 #include <vector>
 
+#include "engines/stg/helditem.h"
 #include "engines/stg/hud.h"
+#include "engines/stg/render3d.h"
 
 namespace {
 
@@ -103,4 +106,72 @@ TEST(hud_effects) {
 	hud.setEffect(3, 0, 0, 200, 30, 0, 0, 0, 0);
 	hud.update(10000, 0, 0);
 	CHECK_EQ(hud.getEffectWeight(3, r, g, b), 38);
+}
+
+TEST(hud_drag_items) {
+	STG::Hud hud([](uint16, uint16, const std::vector<int16> &) {});
+	hud.addItem(0x2001, -1); // slot 1
+	hud.addItem(0x2002, -1); // slot 2
+	hud.addItem(0x2004, 0);
+	// Onto an empty slot.
+	hud.moveItem(1, 7);
+	CHECK_EQ(hud.getSlot(7), 0x2001);
+	CHECK_EQ(hud.getSlot(1), 0);
+	// Onto another item, which moves to the first free slot.
+	hud.moveItem(2, 7);
+	CHECK_EQ(hud.getSlot(7), 0x2002);
+	CHECK_EQ(hud.getSlot(1), 0x2001);
+	// Between slots: the first free one.
+	hud.moveItem(7, -1);
+	CHECK_EQ(hud.getSlot(2), 0x2002);
+	// Slot 0's item stays where it is.
+	hud.moveItem(0, 5);
+	CHECK_EQ(hud.getSlot(0), 0x2004);
+}
+
+TEST(held_item_follows_the_cursor) {
+	using STG::HeldItem;
+	const HeldItem::Style *phaser = HeldItem::getStyle(2);
+	CHECK(phaser != nullptr);
+	CHECK(HeldItem::getStyle(1) == nullptr);
+	// The original's numbers for the phaser in a 640 x 252 view: the gun's
+	// hotspot runs from y = 167 to 225, and below y = 213 it can't be used.
+	HeldItem::Placement p = HeldItem::place(*phaser, 320, 0, 640, 252);
+	CHECK(p.usable);
+	CHECK_EQ(p.frame, 8); // centre, held high
+	CHECK_EQ(p.x, 320 - 75);
+	CHECK_EQ(p.y, 167 - 0);
+	p = HeldItem::place(*phaser, 600, 212, 640, 252);
+	CHECK(p.usable);
+	CHECK_EQ(p.frame, 6); // right, low: held high it would leave the view's bottom
+	p = HeldItem::place(*phaser, 20, 213, 640, 252);
+	CHECK(!p.usable);
+	CHECK_EQ(p.frame, 10);
+	CHECK_EQ(p.x, 320 + 140 * (20 - 320) / 320 - 35);
+
+	// The muzzle moves with it: to the left for a cursor on the left.
+	double ahead, up, left;
+	HeldItem::getMuzzle(*phaser, 0, 126, 640, 252, ahead, up, left);
+	CHECK(std::fabs(ahead - 1.5) < 1e-9);
+	CHECK(std::fabs(left - 1.0) < 1e-9);
+	CHECK(up < 0);
+}
+
+TEST(level_unproject) {
+	STG::Camera camera;
+	camera.x = 10;
+	camera.y = 20;
+	camera.z = 5;
+	camera.yaw = 3.14159265358979 / 2; // along +y
+	double x, y, z;
+	// The middle of the view is straight ahead...
+	STG::LevelRenderer::unproject(camera, 640, 252, 319.5, 125.5, 8, x, y, z);
+	CHECK(std::fabs(x - 10) < 1e-9 && std::fabs(y - 28) < 1e-9 && std::fabs(z - 5) < 1e-9);
+	// ...its right edge 45 degrees to the right (+x when facing +y), and
+	// looking up moves the horizon down.
+	STG::LevelRenderer::unproject(camera, 640, 252, 639.5, 125.5, 8, x, y, z);
+	CHECK(std::fabs(x - 18) < 1e-9 && std::fabs(y - 28) < 1e-9);
+	camera.pitch = 0.1;
+	STG::LevelRenderer::unproject(camera, 640, 252, 319.5, 125.5 + 32, 8, x, y, z);
+	CHECK(std::fabs(z - 5) < 1e-9);
 }

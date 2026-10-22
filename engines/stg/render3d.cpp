@@ -177,6 +177,18 @@ void LevelRenderer::toCamera(double x, double y, double z, Vertex &out) const {
 	out.y = z - _camZ;
 }
 
+void LevelRenderer::unproject(const Camera &camera, int w, int h, double x, double y, double depth,
+                              double &worldX, double &worldY, double &worldZ) {
+	double focal = w / 2.0;
+	double right = (x - (w - 1) / 2.0) * depth / focal;
+	double up = ((h - 1) / 2.0 + camera.pitch * focal - y) * depth / focal;
+	double c = std::cos(camera.yaw), s = std::sin(camera.yaw);
+	// The inverse of toCamera: ahead is (c, s), right is (s, -c).
+	worldX = camera.x + c * depth + s * right;
+	worldY = camera.y + s * depth - c * right;
+	worldZ = camera.z + up;
+}
+
 void LevelRenderer::render(const Camera &camera, Graphics::Surface &dst, uint32 time) {
 	_cos = std::cos(camera.yaw);
 	_sin = std::sin(camera.yaw);

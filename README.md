@@ -120,14 +120,18 @@ whose name the 3D view shows on its status line. Up/Down steps through sounds an
 from the floor plan to a 3D view and then through the textures. In the 3D view, the
 arrows or WASD move, PgUp/PgDn look up and down, End levels the view, L switches
 the lighting off and on, and C lets you walk through walls. Ctrl or the left
-mouse button attacks at the crosshair: with the weapon in use (verid1 starts
-with the phaser) or, with none, bare-handed. Until there is an inventory panel,
-1-9 use the items carried, as clicking them would; the status line shows health
-and the item in use. With the game's console art the 3D view takes the top of
-the screen above the original's console: click inventory items to use them
-(right click to have them described), click the close-up panel the scripts
-open (Space uses it), and switch the left panel with its tabs or B (life),
-H (map) and O (object). Home
+mouse button attacks: with the weapon in use (verid1 starts with the phaser),
+held up in the view, it fires at the mouse cursor (or the centre of the view
+when the cursor is elsewhere); with none, bare-handed at the centre. `[` and
+`]` set the weapon's power, which is what a shot costs and the damage it does
+(the phaser starts at 4 of 16; Shift+`[`/`]` still change pages). 1-9 use the
+items carried, as clicking them would; the status line shows health, the item
+in use, its power and charge. With the game's console art the 3D view takes
+the top of the screen above the original's console: click inventory items to
+use them (right click to have them described), drag them to another slot or
+out of the inventory to drop them, click the close-up panel the scripts open
+(Space uses it), and switch the left panel with its tabs or B (life), H (map)
+and O (object). Home
 returns to the starfield, F5/F7 save and load, and Esc quits.
 
 Settings and saves go in the per-user directory SDL picks for the platform:

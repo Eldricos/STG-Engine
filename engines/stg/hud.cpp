@@ -60,9 +60,28 @@ int Hud::findItem(uint16 id) const {
 }
 
 void Hud::moveItem(int from, int to) {
-	if (from < 0 || from >= kSlots || to < 1 || to >= kSlots || from == 0)
+	// 0x44763A: dropped on a slot of 1-11 it goes there, and what was there
+	// to the first free one; dropped between slots, to the first free one.
+	if (from < 1 || from >= kSlots || !_slots[from] || from == to)
 		return;
-	std::swap(_slots[from], _slots[to]);
+	uint16 id = _slots[from];
+	_slots[from] = 0;
+	auto firstFree = [this](int except) {
+		for (int i = 1; i < kSlots; i++) {
+			if (!_slots[i] && i != except)
+				return i;
+		}
+		return -1;
+	};
+	if (to < 1 || to >= kSlots) {
+		to = firstFree(-1);
+		if (to < 0)
+			to = from;
+	} else if (_slots[to]) {
+		// There is a free slot other than to: from, at least.
+		_slots[firstFree(to)] = _slots[to];
+	}
+	_slots[to] = id;
 }
 
 Hud::Panel *Hud::findPanel(uint16 owner) {

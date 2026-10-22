@@ -234,37 +234,47 @@ void Mission::punch(const LevelRenderer::Pick &pick) {
 	}
 }
 
-bool Mission::fireWeapon(const Camera &camera, const LevelRenderer::Pick &pick) {
+Mission::FireResult Mission::fireWeapon(const Camera &camera, const LevelRenderer::Pick &pick, int x, int y,
+                                        int w, int h, double ahead, double up, double left) {
 	auto it = _items.find(_activeItem);
 	if (it == _items.end())
-		return false;
+		return kNoWeapon;
 	Item &item = it->second;
-	bool weapon = (item.kind >= 2 && item.kind <= 6) || (item.kind >= 11 && item.kind <= 13);
-	if (!weapon || item.c < 0 || item.c >= _projectiles->getTypeCount())
-		return false;
-	// Each shot costs its damage in charge (vt38); without enough, the
-	// trigger does nothing.
+	if (!isWeapon(_activeItem) || item.c < 0 || item.c >= _projectiles->getTypeCount())
+		return kNoWeapon;
+	// Each shot costs its damage in charge (vt38, 0x449F20); without
+	// enough, the trigger does nothing.
 	int16 cost = std::max<int16>(1, _projectiles->getType(item.c).damage);
-	if (item.charged) {
-		if (item.charge < cost)
-			return true;
-		item.charge -= cost;
-	}
+	if (item.charge < cost)
+		return kEmpty;
+	item.charge -= cost;
 	broadcast(kEventItemUsed, { cost });
 
-	// 0x4B4E10: aim from the eye at what the crosshair shows, or at a point
-	// far ahead if that is nothing or too close.
+	// 0x4B4E10: aim at what shows under the cursor, or at a point far
+	// ahead if that is nothing or too close.
 	double depth = pick.kind != LevelRenderer::Pick::kNone ? pick.depth : 0;
 	if (depth <= _walker.getRadius())
-		depth = 320;
+		depth = w / 2.0;
+	double tx, ty, tz;
+	LevelRenderer::unproject(camera, w, h, x, y, depth, tx, ty, tz);
 	double c = std::cos(camera.yaw), s = std::sin(camera.yaw);
-	double tx = camera.x + c * depth, ty = camera.y + s * depth, tz = camera.z + camera.pitch * depth;
-	// The shot leaves from just in front of the eye.
-	double ox = camera.x + c * 0.5, oy = camera.y + s * 0.5, oz = camera.z - 0.5;
+	double ox = camera.x + c * ahead - s * left, oy = camera.y + s * ahead + c * left, oz = camera.z + up;
 	double dx = tx - ox, dy = ty - oy;
 	fire(item.c, ox, oy, oz, std::atan2(dy, dx), std::atan2(tz - oz, std::sqrt(dx * dx + dy * dy)),
 	     Projectiles::kShooterPlayer);
-	return true;
+	return kFired;
+}
+
+void Mission::setItemLevel(int level) {
+	// 0x44A03A: the level is the cost of a shot and the damage it does, for
+	// every item firing the same kind of shot.
+	auto it = _items.find(_activeItem);
+	if (it == _items.end() || it->second.maxLevel <= 0)
+		return;
+	Item &item = it->second;
+	item.level = std::max(1, std::min<int>(level, item.maxLevel));
+	if (item.c >= 0 && item.c < _projectiles->getTypeCount())
+		_projectiles->setDamage(item.c, (int16)item.level);
 }
 
 void Mission::useItem(int slot) {
@@ -276,6 +286,17 @@ void Mission::useItem(int slot) {
 	if (isWeapon(id))
 		_activeItem = id;
 	send(id, kEventActivate);
+}
+
+void Mission::dropItem(int slot) {
+	// 0x44763A: out of the inventory; the item's script puts it somewhere.
+	if (slot < 0 || slot >= Hud::kSlots || !_hud.getSlot(slot))
+		return;
+	uint16 id = _hud.getSlot(slot);
+	_hud.removeItem(id);
+	if (_activeItem == id)
+		_activeItem = 0;
+	send(id, Hud::kEventDropped);
 }
 
 void Mission::describeItem(int slot) {
@@ -819,6 +840,22 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		item.kind = vm.pop();
 		item.b = vm.pop();
 		item.c = vm.pop();
+		// 0x449918: the items with a charge start full, at a power level.
+		struct Charge {
+			int16 kind;
+			int32 charge, maxLevel, level;
+		};
+		static const Charge kCharges[] = { { 2, 320, 16, 4 },   { 3, 200, 12, 4 },   { 4, 400, 16, 8 },
+		                                   { 5, 1200, 18, 18 }, { 6, 240, 12, 4 },   { 11, 100, 10, 10 },
+		                                   { 12, 100, 10, 10 }, { 13, 360, 9, 3 } };
+		item.charge = item.maxCharge = item.level = item.maxLevel = 0;
+		for (const Charge &charge : kCharges) {
+			if (charge.kind == item.kind) {
+				item.charge = item.maxCharge = charge.charge;
+				item.maxLevel = charge.maxLevel;
+				item.level = charge.level;
+			}
+		}
 		break;
 	}
 	case 0x84: { // INVENTORY_ADD
@@ -845,18 +882,19 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 	case 0xB4: { // ADD_ITEM_CHARGE
 		uint16 id = (uint16)vm.pop();
 		int16 delta = vm.pop();
-		Item &item = _items[id ? id : self.object->id];
-		item.charge += delta;
-		item.charged = true;
+		// 0x44E952: within 0 and the most it holds.
+		auto it = _items.find(id ? id : self.object->id);
+		if (it != _items.end())
+			it->second.charge = std::max<int32>(0, std::min(it->second.charge + delta, it->second.maxCharge));
 		break;
 	}
 	case 0xE9: { // SET_ITEM_SETTING
 		uint16 id = (uint16)vm.pop();
 		int16 value = vm.pop();
-		// A weapon's setting is the damage of what it fires (0x44A03A).
+		// 0x449E2C: how long the muzzle flashes when it is used (view.vt134).
 		auto it = _items.find(id ? id : self.object->id);
-		if (it != _items.end() && it->second.c >= 0 && it->second.c < _projectiles->getTypeCount())
-			_projectiles->setDamage(it->second.c, value);
+		if (it != _items.end())
+			it->second.setting = value;
 		break;
 	}
 	case 0xC7: { // GET_ITEM_CHARGE

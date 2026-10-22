@@ -21,6 +21,7 @@
 #include "engines/stg/hudscreen.h"
 #include "engines/stg/level.h"
 #include "engines/stg/mission.h"
+#include "engines/stg/helditem.h"
 #include "engines/stg/overlay.h"
 #include "engines/stg/render3d.h"
 #include "engines/stg/resources.h"
@@ -97,6 +98,12 @@ private:
 	/** Show the next (1) or previous (-1) 3D level, GAME.LV2. */
 	void jumpLevel(int direction);
 	void showStarfield();
+	/** Before rendering a w x h view: where to aim, the item held up, what to pick. */
+	void prepareAim(int w, int h);
+	/** After rendering it: the gun held up, or the punch and a crosshair at the centre. */
+	void drawHands(Graphics::Surface &view, uint32 delta);
+	/** The mouse cursor: a crosshair to aim with, or an arrow. */
+	void setCursor(bool target);
 	/** The player attacks: fires the weapon in use, or else punches. */
 	void attack();
 	/** Run the punch animation by delta ms and draw it over view. */
@@ -145,6 +152,13 @@ private:
 	enum WalkKey { kWalkForward, kWalkBack, kWalkTurnLeft, kWalkTurnRight, kWalkStrafeLeft, kWalkStrafeRight,
 	               kWalkLookUp, kWalkLookDown, kWalkKeyCount };
 	bool _walkKeys[kWalkKeyCount] = {};
+	// The mouse, where the weapon aims (in the view), and the view's size.
+	int _mouseX = -1, _mouseY = -1;
+	int _aimX = 0, _aimY = 0, _viewW = 1, _viewH = 1;
+	bool _targetCursor = false;
+	HeldItem _heldItem;
+	/** How much longer the gun shows its muzzle flash, in ms. */
+	uint32 _flashLeft = 0;
 	/** Set while a fire key is held: one attack per press. */
 	bool _fireHeld = false;
 	// The bare-hand attack's overlay, as the original's view.vt130 runs it.

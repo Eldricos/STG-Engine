@@ -444,10 +444,42 @@ Ctrl (or the left mouse button) attacks once per press (`0x43CF95`).
 - **With a weapon in use**, the active item (`SET_ACTIVE_ITEM`; items use it
   when the player uses them, event 45), it fires (`0x43FDC4`). Weapon items
   are `ATTACH_ITEM_BEHAVIOUR` kinds 2–6 and 11–13, with c the projectile
-  type; `SET_ITEM_SETTING` sets that type's damage (`0x44A03A`; verid1's
-  phaser: 300). A shot costs its damage in charge and is broadcast as event
-  50; it leaves the player's eye for what the crosshair shows, or a point 320
-  ahead (`0x4B4E10`), and never hits the player.
+  type. They start full (`0x449918`); by kind, charge / highest power level /
+  power level: 2 (phaser) 320/16/4, 3 200/12/4, 4 400/16/8, 5 1200/18/18,
+  6 240/12/4, 11 and 12 100/10/10, 13 360/9/3. The power level is the
+  damage (and power) of the shot and what it costs in charge: setting it
+  writes the projectile type's damage (`0x44A03A`), so it holds for every
+  item firing that type. `[` and `]` change it by one (`0x44A1B7`,
+  `0x44A159`). `ADD_ITEM_CHARGE` keeps the charge within 0 and the most it
+  holds; `SET_ITEM_SETTING` is how long the muzzle flashes, in ms
+  (`0x449E2C`, verid1's phaser: 300). A shot is broadcast as event 50.
+- **Aim.** While the mouse is over the view, weapons aim at it, else at the
+  centre (`0x430756`). The shot flies from the gun's muzzle — ahead a, up
+  b − 0.5 − 0.375 y / H and to the left c (W/2 − x) / (W/2), for a cursor at
+  (x, y) in a W x H view and the item's (a, b, c) — towards the point that
+  shows under the cursor, or one W/2 ahead if that is nothing or within the
+  player's radius (`0x4B4E10`, `0x4320D1`). The original also raises the
+  muzzle as the player looks down, by an amount not worked out. A shot
+  never hits the player.
+- **The gun held up** (`0x430D19`): the item's overlay, 12 frames of 88 rows
+  — poses 6–11 (right-low, right-high, centre-high, left-high, left-low,
+  centre-low), and 0–5 the same while the muzzle flashes. For a cursor at
+  (x, y) its hotspot goes to X = W/2 + 140 (x − W/2) / (W/2),
+  Y = A + (B − A) y / B, with A = H − (88 − the highest of the high poses'
+  dy) and B = H − (88 − the lowest of the low poses' dy) / 2; below
+  H − (lowest dy) − 5 the item can't be used (an arrow cursor). The pose is
+  low for the third of the view the cursor is in, or high if the low one
+  wouldn't reach the bottom. Overlays, hotspots (dx, dy for poses 6–11) and
+  muzzles (a, b, c), from `0x5428D8` and `0x542A30` on:
+
+  | Kind | Overlay | Hotspots | Muzzle |
+  |------|---------|----------|--------|
+  | 2 | nuphaser.ovr | 116,34 116,3 75,0 35,2 35,33 74,29 | 1.5, 0, 1 |
+  | 3 | nudisrup.ovr | 110,34 110,3 75,0 41,2 41,33 74,31 | 1.5, 0, 1.0625 |
+  | 4 | nudrifle.ovr | 94,18 92,8 73,0 48,8 48,19 73,14 | 1.5, 0, 1 |
+  | 6 | nuklidis.ovr | 100,33 111,2 77,0 46,3 55,34 77,30 | 1.5, 0.09375, 1.1875 |
+  | 11 | nuplant.ovr | 119,33 120,11 75,4 28,12 28,32 75,26 | 1.5, 0.125, 1.5 |
+  | 12 | nuplant2.ovr | as 11 | 1.5, 0.125, 1.5 |
 - **Otherwise** the player punches (`SET_PUNCH`: overlay, ms per frame, hit
   frame, damage, power, swing sound and volume, hit sound and volume). The
   overlay plays over the view, at most a frame a tick, and on the hit frame
@@ -471,15 +503,19 @@ Rectangles are inclusive. `engines/stg/hudscreen.h`, `hud.h`.
 | map | (39,267)-(192,414) | walls flagged 0x800 in the height band shown, markers (map\dot-*.bmp), the player (agpface2.bmp, 8 headings); levels and zoom buttons at (43,415), (74,415) |
 | object | (39,267) | the mission's OBJECT.BMP |
 | right | (206,252)-(639,479) | actionx.bmp |
-| weapon display | (222,252)-(431,296) | weapphas.bmp for the phaser; wepcycle.bmp at (207,253) picks the next weapon |
+| weapon display | (222,252)-(431,296) | weapphas.bmp for the phaser, p-arrow.bmp at x 222 + 11 level − 4 (clicking sets level (x − 239) / 11 + 1), and a gauge of 59 ticks 3 apart whose empty part, 59 − ⌈59 charge / most⌉ ticks, is wiped in colour 0 from (413,280) leftwards, 2 x 7 each; wepcycle.bmp at (207,253) picks the next weapon |
 | close-up viewer | (223,311)-(433,458) | the visible panel (frames of 148 rows) and its buttons, or the mission's AUXDEF.BMP; auxcycle.bmp at (207,425) shows the next panel, blinking while there are several |
 | inventory | (435,256)-(639,457) | 3 x 4 slots, icons at x 436, 505, 574 and y 257, 308, 359, 410: frame b (of `ATTACH_ITEM_BEHAVIOUR`) of the mission's INVENT.BMP, 64 x 46; the item in use framed in palette index 0x22 |
 | text | (10,461)-(639,477) | subtitles, Fonts\Action.fnt |
 
 The painter sets wall flag 0x800 on every wall it draws (`0x4C8602`), so the
 automap shows what has been seen; `SET_ZONE_ON_MAP` clears or sets it by zone.
-Clicking an inventory slot makes an item the player can hold the one in use
-and sends it event 45; a right click sends 62. Clicking the close-up viewer
+Clicking an inventory slot (press and release on it) makes an item the
+player can hold the one in use and sends it event 45; a right click sends 62.
+Moving 4 pixels with the button down drags the item (not slot 0's): dropped
+on a slot of 1-11 it goes there and what was there to the first free slot,
+dropped elsewhere in the inventory to the first free slot, and dropped
+outside it leaves the inventory and gets event 63 (`0x44763A`). Clicking the close-up viewer
 sends 45 (no buttons) or 47 with the button hit (0 for none), a right click
 62, and Space sends 45; the panel's object gets 35 every frame once the
 player is 2 units from where it opened. Screen effects blend the palette:

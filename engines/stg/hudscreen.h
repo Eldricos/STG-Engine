@@ -62,8 +62,17 @@ public:
 	void draw(Graphics::Surface &screen, Mission &mission, const LevelFile &level, double playerX, double playerY,
 	          double playerZ, double yaw, uint32 time);
 
-	/** A mouse click on the console; returns false if it missed everything. */
-	bool click(Mission &mission, int x, int y, bool right);
+	/**
+	 * A mouse button pressed on the screen; returns false if it missed the
+	 * console. Inventory slots act when the button comes up, unless the
+	 * item was dragged.
+	 */
+	bool mouseDown(Mission &mission, int x, int y, bool right);
+	void mouseMove(int x, int y);
+	/** The left button released; returns false if nothing was pressed on the console. */
+	bool mouseUp(Mission &mission, int x, int y);
+	/** Draw the item being dragged, over everything else. */
+	void drawDrag(Graphics::Surface &screen, Mission &mission);
 
 private:
 	/** A bitmap, cut into frames of frameHeight rows (0 for one frame; -n asks for n frames). */
@@ -87,12 +96,20 @@ private:
 	             double playerY, double playerZ, double yaw);
 	void drawPanel(Graphics::Surface &screen, Mission &mission, uint32 time);
 	void drawInventory(Graphics::Surface &screen, Mission &mission);
+	/** The inventory slot whose hit rectangle holds (x, y), or -1. */
+	static int findSlot(int x, int y);
 
 	const ResourceManager &_resources;
 	ResourceRef _level;
 	const ScriptFile &_script;
 	std::map<Common::String, std::unique_ptr<Image>> _images;
 	const Image *_console = nullptr;
+	void drawWeaponDisplay(Graphics::Surface &screen, Mission &mission);
+
+	/** The slot the left button went down on, or -1. */
+	int _pressedSlot = -1;
+	bool _dragging = false;
+	int _pressX = 0, _pressY = 0, _mouseX = 0, _mouseY = 0;
 	LeftMode _leftMode = kLeftLife;
 	int _mapBand = 1;
 	double _mapScale = 1.0;
