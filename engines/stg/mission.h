@@ -15,6 +15,7 @@
 
 #include "common/random.h"
 #include "engines/stg/actors.h"
+#include "engines/stg/hud.h"
 #include "engines/stg/level.h"
 #include "engines/stg/projectiles.h"
 #include "engines/stg/render3d.h"
@@ -143,10 +144,22 @@ public:
 	 */
 	bool fireWeapon(const Camera &camera, const LevelRenderer::Pick &pick);
 
-	/** The items carried (INVENTORY_ADD), in order. */
-	const std::vector<uint16> &getInventory() const { return _inventory; }
-	/** Use a carried item, as clicking it does: it gets event 45. */
+	/** The console: inventory, panels, body picture, map markers, screen effects. */
+	Hud &getHud() { return _hud; }
+	/** Use the item in an inventory slot, as clicking it does (event 45). */
 	void useItem(int slot);
+	/** Right click on an inventory slot (event 62). */
+	void describeItem(int slot);
+	/** Whether an item is one the player holds and fires. */
+	bool isWeapon(uint16 id) const;
+	/** An item's frame in the mission's INVENT.BMP, or -1. */
+	int getItemIcon(uint16 id) const;
+	/** GAME_MODE 2 or 3 asked for the left panel off or on its body view since the last call; 0 if not. */
+	int takeLeftPanelRequest() {
+		int request = _leftPanelRequest;
+		_leftPanelRequest = 0;
+		return request;
+	}
 	/** The item in use (SET_ACTIVE_ITEM), or 0. */
 	uint16 getActiveItem() const { return _activeItem; }
 
@@ -218,7 +231,6 @@ private:
 	/** Objects that receive broadcasts, newest first. */
 	std::vector<uint16> _listeners;
 	/** Screen effects still running: end time -> object to tell. */
-	std::multimap<uint32, uint16> _effects;
 	std::vector<int16> _array;
 
 	/** Textures as loaded, for RESET_DEFAULT. */
@@ -235,7 +247,8 @@ private:
 		bool charged = false;
 	};
 	std::map<uint16, Item> _items;
-	std::vector<uint16> _inventory;
+	Hud _hud;
+	int _leftPanelRequest = 0;
 	uint16 _activeItem = 0;
 	Punch _punch;
 	std::vector<MissionSound::Finished> _soundsFinished;

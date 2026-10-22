@@ -169,6 +169,8 @@ public:
 	 */
 	static const uint32 kWallTrimColumns = 0x2;
 	static const uint32 kWallMirrorBack = 0x40000;
+	/** Wall flag: drawn on the automap (SET_ZONE_ON_MAP). */
+	static const uint32 kWallOnMap = 0x800;
 	/** Wall flag: blocks movement from behind as well as from the front. */
 	static const uint32 kWallSolidBothSides = 0x8000;
 

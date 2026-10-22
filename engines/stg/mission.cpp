@@ -43,7 +43,8 @@ bool isObject(uint16 recordId, uint16 typeBits, uint16 id) {
 
 Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &renderer, Walker &walker, Actors *actors,
                  Audio::Mixer *mixer, const MissionSound::FileOpener &soundFiles)
-	: _level(level), _script(script), _renderer(renderer), _walker(walker), _random(0x53544721), _actors(actors) {
+	: _level(level), _script(script), _renderer(renderer), _walker(walker), _random(0x53544721), _actors(actors),
+	  _hud([this](uint16 object, uint16 event, const std::vector<int16> &args) { send(object, event, args); }) {
 	// Sounds that follow a billboard (mode 2) or an actor (mode 3).
 	auto locate = [this](int mode, uint16 object, double &x, double &y, double &z) {
 		Position position;
@@ -116,11 +117,7 @@ void Mission::update(uint32 ms) {
 	}
 	runProjectiles(ms);
 
-	while (!_effects.empty() && _effects.begin()->first <= _time) {
-		uint16 id = _effects.begin()->second;
-		_effects.erase(_effects.begin());
-		send(id, kEventEffectDone);
-	}
+	_hud.update(ms, _walker.getX(), _walker.getY());
 
 	checkPlayerContacts();
 
@@ -271,8 +268,32 @@ bool Mission::fireWeapon(const Camera &camera, const LevelRenderer::Pick &pick) 
 }
 
 void Mission::useItem(int slot) {
-	if (slot >= 0 && slot < (int)_inventory.size())
-		send(_inventory[slot], kEventActivate);
+	// 0x44789E: an item the player can hold becomes the one in use; then
+	// the item hears it was used.
+	if (slot < 0 || slot >= Hud::kSlots || !_hud.getSlot(slot))
+		return;
+	uint16 id = _hud.getSlot(slot);
+	if (isWeapon(id))
+		_activeItem = id;
+	send(id, kEventActivate);
+}
+
+void Mission::describeItem(int slot) {
+	if (slot >= 0 && slot < Hud::kSlots && _hud.getSlot(slot))
+		send(_hud.getSlot(slot), Hud::kEventDescribe);
+}
+
+bool Mission::isWeapon(uint16 id) const {
+	auto it = _items.find(id);
+	if (it == _items.end())
+		return false;
+	int16 kind = it->second.kind;
+	return (kind >= 2 && kind <= 6) || (kind >= 11 && kind <= 13);
+}
+
+int Mission::getItemIcon(uint16 id) const {
+	auto it = _items.find(id);
+	return it == _items.end() ? -1 : it->second.b;
 }
 
 void Mission::damagePlayer(int16 source, int16 damage, int16 kind) {
@@ -803,17 +824,14 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 	case 0x84: { // INVENTORY_ADD
 		uint16 id = (uint16)vm.pop();
 		int16 slot = vm.pop();
-		if (std::find(_inventory.begin(), _inventory.end(), id) == _inventory.end()) {
-			if (slot >= 0 && slot < (int16)_inventory.size())
-				_inventory.insert(_inventory.begin() + slot, id);
-			else
-				_inventory.push_back(id);
-		}
+		// The first thing the player can hold that is picked up is in use.
+		if (_hud.addItem(id, slot) >= 0 && !_activeItem && isWeapon(id))
+			_activeItem = id;
 		break;
 	}
 	case 0x85: { // INVENTORY_REMOVE
 		uint16 id = (uint16)vm.pop();
-		_inventory.erase(std::remove(_inventory.begin(), _inventory.end(), id), _inventory.end());
+		_hud.removeItem(id);
 		if (_activeItem == id)
 			_activeItem = 0;
 		break;
@@ -927,17 +945,134 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 	case 0xB7: // SET_SKY_ENABLED
 		_renderer.setSkyEnabled(vm.pop() != 0);
 		break;
-	case 0xBA: { // SCREEN_FLASH_NOTIFY: only its notification is implemented
+	case 0xBA:   // SCREEN_FLASH_NOTIFY
+	case 0xBB: { // SCREEN_FLASH
+		uint16 notify = op == 0xBA ? (uint16)vm.pop() : 0;
+		byte r = (byte)vm.pop(), g = (byte)vm.pop(), b = (byte)vm.pop();
+		int percent = vm.pop();
+		uint32 fadeIn = popRaw32(vm), hold = popRaw32(vm), fadeOut = popRaw32(vm);
+		_hud.setEffect(op == 0xBA ? 0 : 1, r, g, b, percent, fadeIn, hold, fadeOut, notify);
+		break;
+	}
+	case 0xBC: { // SCREEN_TINT
+		byte r = (byte)vm.pop(), g = (byte)vm.pop(), b = (byte)vm.pop();
+		_hud.setEffect(3, r, g, b, vm.pop(), 0, 0, 0, 0);
+		break;
+	}
+	case 0xBD: { // fade in and out over the time given
 		uint16 notify = (uint16)vm.pop();
-		for (int i = 0; i < 4; i++)
-			vm.pop(); // red, green, blue, percent
-		uint32 total = 0;
-		for (int i = 0; i < 3; i++) {
-			uint16 high = (uint16)vm.pop(), low = (uint16)vm.pop();
-			total += (uint32)high << 16 | low;
+		byte r = (byte)vm.pop(), g = (byte)vm.pop(), b = (byte)vm.pop();
+		int percent = vm.pop();
+		uint32 total = (uint16)vm.pop();
+		_hud.setEffect(2, r, g, b, percent, total / 2, 0, total - total / 2, notify);
+		break;
+	}
+	case 0x8E: // VIEW_SHAKE
+		_hud.setShake(vm.pop());
+		break;
+	case 0xB0: // VIEW_OVERLAY: the underwater ripple
+		_hud.setRipple(vm.pop() != 0);
+		break;
+	case 0x6C: { // PANEL_SHOW_IMAGE
+		uint16 id = (uint16)vm.pop();
+		int16 image = vm.pop();
+		int16 frame = vm.pop();
+		_hud.showPanel(id ? id : self.object->id, image, frame, _walker.getX(), _walker.getY());
+		break;
+	}
+	case 0x6D: { // animate a panel's image
+		uint16 id = (uint16)vm.pop();
+		int16 first = vm.pop(), last = vm.pop(), loops = vm.pop();
+		uint16 ms = (uint16)vm.pop();
+		_hud.animatePanel(id ? id : self.object->id, first, last, loops, ms);
+		break;
+	}
+	case 0x6E: { // PANEL_REMOVE
+		uint16 id = (uint16)vm.pop();
+		_hud.removePanel(id ? id : self.object->id);
+		break;
+	}
+	case 0x6F: // the first panel's object
+		vm.push((int16)_hud.getFirstPanelOwner());
+		break;
+	case 0x9D: { // PANEL_ADD_BUTTON
+		int16 button = vm.pop(), image = vm.pop(), x = vm.pop(), y = vm.pop(), w = vm.pop(), h = vm.pop();
+		_hud.addButton(self.object->id, button, image, Common::Rect(x, y, x + w, y + h), false);
+		break;
+	}
+	case 0x8F: { // add a hotspot
+		int16 button = vm.pop(), x = vm.pop(), y = vm.pop(), w = vm.pop(), h = vm.pop();
+		_hud.addButton(self.object->id, button, -1, Common::Rect(x, y, x + w, y + h), true);
+		break;
+	}
+	case 0x90: // remove a hotspot
+	case 0xA1: // remove a button
+		_hud.removeButton(self.object->id, vm.pop());
+		break;
+	case 0x9E: { // SET_PANEL_BUTTON
+		int16 button = vm.pop(), image = vm.pop(), frame = vm.pop();
+		_hud.setButton(self.object->id, button, image, frame);
+		break;
+	}
+	case 0x9F: { // PANEL_ANIMATE_BUTTON
+		int16 button = vm.pop(), first = vm.pop(), last = vm.pop(), loops = vm.pop();
+		uint16 ms = (uint16)vm.pop();
+		_hud.animateButton(self.object->id, button, first, last, loops, ms);
+		break;
+	}
+	case 0xA0: { // colour-keyed button
+		int16 button = vm.pop();
+		_hud.setButtonKeyed(self.object->id, button, vm.pop() != 0);
+		break;
+	}
+	case 0xC3: { // SET_BODY_IMAGE
+		int16 image = vm.pop();
+		_hud.setBodyImage(image, vm.pop());
+		break;
+	}
+	case 0x7B: { // MAP_MARKER
+		uint16 id = (uint16)vm.pop();
+		int16 style = vm.pop();
+		if ((id & kTypeMask) == kTypeBillboard || (id & kTypeMask) == kTypeActor)
+			_hud.setMarker(id, Hud::kMarkerLife, style);
+		break;
+	}
+	case 0x7C: // MAP_REMOVE
+		_hud.removeMarker((uint16)vm.pop(), Hud::kMarkerLife);
+		break;
+	case 0x7D: // energy marker
+		_hud.setMarker((uint16)vm.pop(), Hud::kMarkerEnergy, 0);
+		break;
+	case 0x7E:
+		_hud.removeMarker((uint16)vm.pop(), Hud::kMarkerEnergy);
+		break;
+	case 0x7F: // trilithium marker
+		_hud.setMarker((uint16)vm.pop(), Hud::kMarkerTrilithium, 0);
+		break;
+	case 0x80:
+		_hud.removeMarker((uint16)vm.pop(), Hud::kMarkerTrilithium);
+		break;
+	case 0x86: { // SET_ZONE_ON_MAP: walls with flag 0x800 are drawn on the map
+		int16 zone = vm.pop();
+		bool on = vm.pop() != 0;
+		uint64 mask = zone > 0 && zone < 64 ? (uint64)1 << zone : ~(uint64)0;
+		for (LevelFile::Wall &wall : _level.getWalls()) {
+			if (zone == 0 || (wall.zones & mask) || wall.zones == 0)
+				wall.flags = on ? wall.flags | LevelFile::kWallOnMap : wall.flags & ~LevelFile::kWallOnMap;
 		}
-		_effects.insert({ _time + total, notify });
-		_missing[op]++;
+		break;
+	}
+	case 0xCA: { // MAP_SET_LEVELS: three height bands, low and high
+		double levels[6];
+		for (int i = 0; i < 6; i++)
+			levels[i] = pop32(vm);
+		_hud.setMapLevels(levels);
+		break;
+	}
+	case 0xA5: { // GAME_MODE
+		int16 command = vm.pop();
+		if (command == 2 || command == 3)
+			_leftPanelRequest = command;
 		break;
 	}
 	case 0x68: { // PLAY_SOUND
