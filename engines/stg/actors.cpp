@@ -148,6 +148,8 @@ void Actors::sync(Common::Serializer &s) {
 		s.syncAsUint16(d.maxTurn);
 		s.syncAsUint16(d.turnSpeed);
 		s.syncAsByte(d.followPlayer);
+		for (LevelFile::Animation &animation : d.animations)
+			s.syncAsUint16(animation.speed);
 		d.light.sync(s);
 		a.walker.sync(s);
 		s.syncAsDouble(a.x);
@@ -302,6 +304,20 @@ void Actors::setFlag(uint16 id, uint32 flag, bool on) {
 		uint32 &flags = _actors[index]->data.flags;
 		flags = on ? flags | flag : flags & ~flag;
 	}
+}
+
+void Actors::setTarget(uint16 id, uint16 target) {
+	for (int index : findAll(id)) {
+		_actors[index]->target = target;
+		_actors[index]->toPoint = false;
+	}
+}
+
+void Actors::setAnimationSpeed(uint16 id, int animation, uint16 speed) {
+	if (animation < 0 || animation >= LevelFile::kAnimationCount)
+		return;
+	for (int index : findAll(id))
+		_actors[index]->data.animations[animation].speed = speed;
 }
 
 void Actors::setClimbAngle(uint16 id, int degrees) {

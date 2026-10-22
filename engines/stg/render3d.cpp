@@ -12,6 +12,8 @@
 #include <climits>
 #include <cmath>
 
+#include "common/serializer.h"
+
 namespace STG {
 
 namespace {
@@ -110,6 +112,24 @@ void LevelRenderer::buildBlendTable(const Graphics::Palette &palette, byte table
 void LevelRenderer::setFogColor(byte r, byte g, byte b) {
 	buildShadeTables(_level.getPalette(), r, g, b, _shades);
 	_fogIndex = _level.getPalette().findBestColor(r, g, b);
+}
+
+void LevelRenderer::syncLights(Common::Serializer &s) {
+	uint32 count = (uint32)_groupBrightness.size();
+	s.syncAsUint32(count);
+	if (s.isLoading())
+		_groupBrightness.clear();
+	auto it = _groupBrightness.begin();
+	for (uint32 i = 0; i < count && !s.err(); i++) {
+		int16 group = s.isSaving() ? it->first : 0;
+		int percent = s.isSaving() ? it->second : 0;
+		s.syncAsSint16(group);
+		s.syncAsInt(percent);
+		if (s.isLoading())
+			_groupBrightness[group] = percent;
+		else
+			++it;
+	}
 }
 
 void LevelRenderer::setGroupBrightness(int16 group, int percent) {

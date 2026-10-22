@@ -322,6 +322,8 @@ private:
 	void skipNative(ScriptVM &vm, uint16 op);
 	void runProjectiles(uint32 ms);
 	void runPush(uint32 ms);
+	/** LIFT_GO_TO: a lift's flats to one of its heights (1-based). */
+	void moveLift(uint16 id, int level);
 	void playSoundAt(int sound, double x, double y, double z);
 
 	LevelFile &_level;
@@ -373,6 +375,16 @@ private:
 		uint32 ramp = 0, hold = 0, end = 0, elapsed = 0;
 	};
 	Push _push;
+	/** ENGAGE (0x73): the object told when the player walks 3 units off. */
+	uint16 _engaged = 0;
+	double _engagedX = 0, _engagedY = 0;
+	/** LIFT_SETUP (0x5E): by lift object, its flat group and heights (16.16). */
+	struct Lift {
+		uint16 flat = 0;
+		int count = 0;
+		int32 heights[8] = {};
+	};
+	std::map<uint16, Lift> _lifts;
 	Punch _punch;
 	std::vector<MissionSound::Finished> _soundsFinished;
 

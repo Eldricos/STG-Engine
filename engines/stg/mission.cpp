@@ -115,6 +115,26 @@ Mission::TransitionView Mission::getTransitionView() const {
 	return view;
 }
 
+void Mission::moveLift(uint16 id, int level) {
+	// 0x4583EA: every flat of the group jumps to the level's height, and
+	// the player's footing is looked at again.
+	auto it = _lifts.find(id);
+	if (it == _lifts.end() || level < 1 || level > it->second.count)
+		return;
+	const Lift &lift = it->second;
+	int32 height = lift.heights[level - 1];
+	bool carried = false;
+	std::vector<LevelFile::Sector> &flats = _level.getSectors();
+	for (int i = 0; i < (int)flats.size(); i++) {
+		if (!isObject(flats[i].objectId, kTypeFlat, lift.flat) || flats[i].isCeiling())
+			continue;
+		carried = carried || i == _walker.getFloor();
+		flats[i].height = height;
+	}
+	if (carried)
+		_walker.place(_walker.getX(), _walker.getY(), fromFixed(height));
+}
+
 void Mission::runPush(uint32 ms) {
 	_push.elapsed += ms;
 	uint32 t = _push.elapsed;
@@ -231,6 +251,28 @@ void Mission::sync(Common::Serializer &s) {
 	s.syncAsUint32(_push.hold);
 	s.syncAsUint32(_push.end);
 	s.syncAsUint32(_push.elapsed);
+	s.syncAsUint16(_engaged);
+	s.syncAsDouble(_engagedX);
+	s.syncAsDouble(_engagedY);
+	uint32 lifts = (uint32)_lifts.size();
+	s.syncAsUint32(lifts);
+	if (s.isLoading())
+		_lifts.clear();
+	auto lift = _lifts.begin();
+	for (uint32 i = 0; i < lifts && !s.err(); i++) {
+		uint16 id = s.isSaving() ? lift->first : 0;
+		Lift l = s.isSaving() ? lift->second : Lift();
+		s.syncAsUint16(id);
+		s.syncAsUint16(l.flat);
+		s.syncAsInt(l.count);
+		for (int32 &h : l.heights)
+			s.syncAsSint32(h);
+		if (s.isLoading())
+			_lifts[id] = l;
+		else
+			++lift;
+	}
+	_renderer.syncLights(s);
 	s.syncString(_punch.image);
 	s.syncAsUint32(_punch.msPerFrame);
 	s.syncAsInt(_punch.hitFrame);
@@ -287,6 +329,14 @@ void Mission::update(uint32 ms) {
 	}
 	if (_push.active)
 		runPush(ms);
+	if (_engaged) {
+		double dx = _walker.getX() - _engagedX, dy = _walker.getY() - _engagedY;
+		if (dx * dx + dy * dy > 3.0 * 3.0) {
+			uint16 engaged = _engaged;
+			_engaged = 0;
+			send(engaged, Hud::kEventWalkedAway);
+		}
+	}
 
 	// 0x43AD04: once every objective is done, event 8, once.
 	if (_objectivesDone == _objectives && !_accomplished) {
@@ -1404,6 +1454,95 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		vm.push(distance);
 		break;
 	}
+	case 0x27: // DO_LOG
+	case 0x29: // DO_LOG_LOCAL
+	case 0x2A: // DO_LOG_GLOBAL
+		debugC(3, kDebugChannel, "%04X: log %02X %d", self.object->id, op, vm.pop());
+		break;
+	case 0x28: // DO_LOG_STACK
+		// Logs the top n words without popping them.
+		vm.pop();
+		break;
+	case 0x37: // RESET_TEXTURE
+		restoreTexture((uint16)vm.pop());
+		break;
+	case 0x40: { // SET_ACTOR_MAP_MARKER
+		// 0x457163: an actor's marker; values 1 and 2 are style 0, k is k - 2.
+		vm.pop();
+		int16 value = vm.pop();
+		if ((self.object->id & kTypeMask) == kTypeActor && value >= 1 && value <= 9)
+			_hud.setMarker(self.object->id, Hud::kMarkerLife, std::max(0, value - 2));
+		break;
+	}
+	case 0x4A: { // ACTOR_GO_TO_ACTOR
+		uint16 id = (uint16)vm.pop();
+		uint16 target = (uint16)vm.pop();
+		if (_actors)
+			_actors->setMode(id ? id : self.object->id, Actors::kModeWalkTo, (uint16)(target | kTypeActor));
+		break;
+	}
+	case 0x5B: { // SET_ACTOR_TARGET
+		uint16 id = (uint16)vm.pop();
+		uint16 target = (uint16)vm.pop();
+		if (_actors)
+			_actors->setTarget(id ? id : self.object->id, (uint16)(target | kTypeActor));
+		break;
+	}
+	case 0x5C: { // SET_ACTOR_ANIM_SPEED
+		uint16 id = (uint16)vm.pop();
+		int anim = vm.pop();
+		uint32 speed = popRaw32(vm);
+		if (_actors)
+			_actors->setAnimationSpeed(id ? id : self.object->id, anim, (uint16)(speed >> 8));
+		break;
+	}
+	case 0x5E: { // LIFT_SETUP
+		// 0x4581AD: the flat group a lift moves and up to 8 heights.
+		Lift lift;
+		lift.flat = (uint16)vm.pop();
+		lift.count = std::max(0, std::min<int>(8, vm.pop()));
+		for (int i = 0; i < 8; i++)
+			lift.heights[i] = (int32)popRaw32(vm);
+		_lifts[self.object->id] = lift;
+		break;
+	}
+	case 0x64: { // LIFT_GO_TO
+		uint16 id = (uint16)vm.pop();
+		int level = vm.pop();
+		moveLift(id ? id : self.object->id, level);
+		break;
+	}
+	case 0x66: { // SET_LIGHT_LEVEL
+		uint16 id = (uint16)vm.pop();
+		int percent = vm.pop();
+		_renderer.setGroupBrightness((int16)((id ? id : self.object->id) & 0x1FFF), percent);
+		break;
+	}
+	case 0x67: { // RESET_LIGHT_LEVEL
+		uint16 id = (uint16)vm.pop();
+		_renderer.resetGroupBrightness((int16)((id ? id : self.object->id) & 0x1FFF));
+		break;
+	}
+	case 0x73: { // ENGAGE
+		// 0x4380FE: event 35 once the player is 3 units from here; another
+		// object engaged gets its 35 at once.
+		uint16 id = (uint16)vm.pop();
+		if (_engaged && _engaged != id)
+			send(_engaged, Hud::kEventWalkedAway);
+		_engaged = id;
+		_engagedX = _walker.getX();
+		_engagedY = _walker.getY();
+		break;
+	}
+	case 0x76: { // TELEPORT_PLAYER_RELATIVE
+		// 0x452703: by the difference between two places, turning by theirs.
+		Position from = popPosition(vm), to = popPosition(vm);
+		_walker.place(_walker.getX() + to.x - from.x, _walker.getY() + to.y - from.y,
+		              _walker.getFeet() + to.z - from.z);
+		int degrees = (int)std::lround((kPi / 2 - _currentYaw) * 180 / kPi);
+		setPlayerHeading((int16)(degrees + to.heading - from.heading));
+		break;
+	}
 	case 0x4C: { // ACTOR_GO_TO
 		uint16 id = (uint16)vm.pop();
 		double x = pop32(vm), y = pop32(vm), z = pop32(vm);
@@ -1549,7 +1688,7 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		uint16 id = (uint16)vm.pop();
 		bool on = vm.pop() != 0;
 		for (LevelFile::Billboard &billboard : _level.getBillboards()) {
-			if ((uint16)(billboard.objectId | kTypeBillboard) == (id ? id : self.object->id))
+			if (isObject(billboard.objectId, kTypeBillboard, id ? id : self.object->id))
 				billboard.flags = on ? billboard.flags | LevelFile::kBillboardUnpickable
 				                     : billboard.flags & ~LevelFile::kBillboardUnpickable;
 		}

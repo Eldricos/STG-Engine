@@ -139,6 +139,10 @@ public:
 	void goTo(uint16 id, double x, double y, double z);
 	/** Set or clear a flag on every part (0x400000 always active, 0x1000000 flyer). */
 	void setFlag(uint16 id, uint32 flag, bool on);
+	/** SET_ACTOR_TARGET (0x5B): a new target, in the same mode. */
+	void setTarget(uint16 id, uint16 target);
+	/** SET_ACTOR_ANIM_SPEED (0x5C): an animation's speed word (8.8). */
+	void setAnimationSpeed(uint16 id, int animation, uint16 speed);
 	/** SET_ACTOR_CLIMB_ANGLE. */
 	void setClimbAngle(uint16 id, int degrees);
 	/** Position in world units and heading in 1/65536 turns. */

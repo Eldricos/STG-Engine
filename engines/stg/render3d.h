@@ -16,6 +16,10 @@
 #include "common/graphics/surface.h"
 #include "engines/stg/level.h"
 
+namespace Common {
+class Serializer;
+}
+
 namespace STG {
 
 /** A viewpoint in world units (not fixed point). */
@@ -139,6 +143,10 @@ public:
 	 * on), as the scripts do.
 	 */
 	void setGroupBrightness(int16 group, int percent);
+	/** Back to the brightness the level gives it. */
+	void resetGroupBrightness(int16 group) { _groupBrightness.erase(group); }
+	/** Save or load the groups' brightness. */
+	void syncLights(Common::Serializer &s);
 
 	/** The first palette entry that see-through things blend; the rest up to 0xFE do too. */
 	static const int kBlendFirst = 0xF0;

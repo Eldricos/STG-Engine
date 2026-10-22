@@ -59,6 +59,7 @@ void LevelFile::syncState(Common::Serializer &s) {
 	for (Sector &sector : _sectors) {
 		if (s.err())
 			return;
+		s.syncAsSint32(sector.height);
 		s.syncAsUint16(sector.texture);
 		s.syncAsUint16(sector.frames);
 		s.syncAsUint16(sector.speed);

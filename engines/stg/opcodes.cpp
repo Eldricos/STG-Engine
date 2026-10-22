@@ -58,7 +58,7 @@ static const OpcodeInfo kOpcodes[kOpcodeCount] = {
 	{ "HIGH_BITS", 1, 1, 1, "top & 0xE000" },
 	{ "LOW_BITS", 1, 1, 1, "top & 0x1FFF" },
 	{ "NATIVE_27", 1, 0, 1, "fn 0x47a8af" },
-	{ "NATIVE_28", 2, 0, 1, "fn 0x47a8af" },
+	{ "NATIVE_28", 1, 0, 1, "fn 0x47a8af; logs the top n words without popping them" },
 	{ "NATIVE_29", 1, 0, 1, "obj.vt[0x24], obj.vt[0xc], fn 0x47a8af" },
 	{ "NATIVE_2A", 1, 0, 1, "globals, fn 0x47a8af" },
 	{ "RANDOM", 1, 1, 1, "pop n; push a random number in [0, n); fn 0x40e1d0" },
