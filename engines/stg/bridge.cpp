@@ -1674,7 +1674,8 @@ void Bridge::drawPanel(Graphics::Surface &screen) {
 
 	// The stardate (Numerals.bmp: 0123456789. six pixels apiece).
 	if (const RgbImage *digits = image("GUI\\Numerals.bmp", 2)) {
-		Common::String text = Common::format("%.1f", _stardate);
+		// Eight digits fill the field the panel leaves for them.
+		Common::String text = Common::format("%.2f", _stardate);
 		int x = kStardateX;
 		for (char c : text) {
 			int glyph = c == '.' ? 10 : c - '0';

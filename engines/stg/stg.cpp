@@ -185,6 +185,25 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		handleMenuEvent(event);
 		return;
 	}
+	if (_combat) {
+		switch (event.type) {
+		case Common::EVENT_KEYDOWN:
+			_combat->keyDown(event.kbd);
+			break;
+		case Common::EVENT_KEYUP:
+			_combat->keyUp(event.kbd);
+			break;
+		case Common::EVENT_LBUTTONDOWN:
+			_combat->mouseDown(event.mouse.x, event.mouse.y);
+			break;
+		case Common::EVENT_LBUTTONUP:
+			_combat->mouseUp(event.mouse.x, event.mouse.y);
+			break;
+		default:
+			break;
+		}
+		return;
+	}
 	if (_bridgeMode) {
 		switch (event.type) {
 		case Common::EVENT_KEYDOWN:
@@ -363,6 +382,10 @@ void STGEngine::drawFrame(uint32 delta) {
 			_screen->update();
 			_dirty = false;
 		}
+		return;
+	}
+	if (_combat) {
+		updateCombat(delta);
 		return;
 	}
 	if (_bridgeMode) {

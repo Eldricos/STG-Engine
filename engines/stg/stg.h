@@ -20,6 +20,7 @@
 #include "engines/game.h"
 #include "engines/stg/bridge.h"
 #include "engines/stg/campaign.h"
+#include "engines/stg/combat.h"
 #include "engines/stg/font.h"
 #include "engines/stg/hudscreen.h"
 #include "engines/stg/level.h"
@@ -167,7 +168,12 @@ private:
 	void setBridgeMode(bool on);
 	/** A frame of the bridge, with a command of the script. */
 	void updateBridge(uint32 delta);
-	void playSpaceCombat(int fleet);
+	/** Start space combat n; false if it can't be (the story goes on). */
+	bool playSpaceCombat(int number);
+	/** Switch the screen to true colour (the bridge, combat) or back. */
+	void setTrueColour(bool on);
+	/** A frame of space combat. */
+	void updateCombat(uint32 delta);
 	void handleMenuEvent(const Common::Event &event);
 	void playMenuSound(int id);
 	std::vector<OptionsMenu::Slot> listSaves();
@@ -285,6 +291,7 @@ private:
 	GameSettings _settings;
 	Audio::SoundHandle _menuSound;
 	std::unique_ptr<Bridge> _bridge;
+	std::unique_ptr<SpaceCombat> _combat;
 	bool _bridgeMode = false;
 	bool _menuOverBridge = false;
 	Graphics::Surface _bridgeSurface;

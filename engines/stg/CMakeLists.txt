@@ -2,6 +2,9 @@ target_sources(stg_engines PRIVATE
 	actors.cpp
 	bridge.cpp
 	campaign.cpp
+	combat.cpp
+	combatdata.cpp
+	combatrender.cpp
 	detection.cpp
 	disasm.cpp
 	font.cpp

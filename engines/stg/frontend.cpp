@@ -76,8 +76,17 @@ bool STGEngine::startFrontEnd() {
 	_frontEnd = true;
 	loadSettings();
 
-	// The original goes from the title straight into a new game. With no
-	// bridge to land on, the menu comes first, so a game can be loaded.
+	// For testing: straight into a space combat (debug_combat=n).
+	if (ConfMan.getInt("debug_combat") > 0) {
+		if (_bridge)
+			_bridge->reset();
+		_campaign.start(Common::format("SpaceCombat%dPlay", ConfMan.getInt("debug_combat")));
+		runCampaign();
+		return true;
+	}
+
+	// The original goes from the title straight into a new game. Here the
+	// menu comes first, so a game can be loaded.
 	showIntro();
 	openMenu(false);
 	return true;
@@ -123,7 +132,8 @@ void STGEngine::runCampaign() {
 		case Campaign::Action::kBridge:
 			break;
 		case Campaign::Action::kSpaceCombat:
-			playSpaceCombat(action.number);
+			if (playSpaceCombat(action.number))
+				return;
 			break;
 		case Campaign::Action::kIntro:
 			showIntro();
@@ -206,10 +216,53 @@ void STGEngine::updateBridge(uint32 delta) {
 	_system->updateScreen();
 }
 
-void STGEngine::playSpaceCombat(int fleet) {
-	// Space combat isn't there yet: the fight is taken as won.
-	info("Space combat %d isn't implemented yet; taking it as won", fleet);
-	_campaign.combatEnded(Campaign::kCombatWon);
+bool STGEngine::playSpaceCombat(int number) {
+	_combat.reset(new SpaceCombat(_resources, _mixer, _random));
+	if (!_combat->load(number)) {
+		// COMBAT.DAT is on disc 1; without it the fight is taken as won.
+		warning("Space combat %d can't be loaded (is COMBAT.DAT there?); taking it as won", number);
+		_combat.reset();
+		_campaign.combatEnded(Campaign::kCombatWon);
+		return false;
+	}
+	_combat->setSubtitles(_settings.subtitles);
+	_combat->setDifficulty(_settings.difficulty);
+	setTrueColour(true);
+	setCursor(false);
+	return true;
+}
+
+void STGEngine::setTrueColour(bool on) {
+	if (on) {
+		const Graphics::PixelFormat format = Graphics::PixelFormat::createFormatARGB8888();
+		_system->initSize(Screen::kWidth, Screen::kHeight, &format);
+		_bridgeSurface.create(Screen::kWidth, Screen::kHeight, format);
+	} else {
+		_system->initSize(Screen::kWidth, Screen::kHeight);
+		_screen->applyPalette();
+	}
+}
+
+void STGEngine::updateCombat(uint32 delta) {
+	_combat->update(delta);
+	if (_combat->takeOptionsRequest()) {
+		openMenu(true);
+		return;
+	}
+	if (_combat->isFinished()) {
+		// 0x418F7A: won (fleet beaten), lost (warped out) or the Enterprise gone.
+		SpaceCombat::Result result = _combat->getResult();
+		_combat.reset();
+		setTrueColour(false);
+		_campaign.combatEnded(result == SpaceCombat::kWon    ? Campaign::kCombatWon
+		                      : result == SpaceCombat::kLost ? Campaign::kCombatLost
+		                                                     : Campaign::kEnterpriseDestroyed);
+		runCampaign();
+		return;
+	}
+	_combat->draw(_bridgeSurface);
+	_system->copyRectToScreen(_bridgeSurface.getPixels(), _bridgeSurface.pitch, 0, 0, Screen::kWidth, Screen::kHeight);
+	_system->updateScreen();
 }
 
 bool STGEngine::startCampaignMission(int type) {
@@ -249,10 +302,13 @@ void STGEngine::openMenu(bool canReturn) {
 		_system->initSize(Screen::kWidth, Screen::kHeight);
 		_bridgeMode = false;
 	}
+	if (_combat)
+		_system->initSize(Screen::kWidth, Screen::kHeight);
 	_menuOpen = true;
 	_menu->setSlots(listSaves());
 	bool inMission = _playingMission && _mission;
-	_menu->open(_settings, canReturn, inMission || _menuOverBridge, !inMission);
+	// Combat can't be saved: its state isn't kept.
+	_menu->open(_settings, canReturn, (inMission || _menuOverBridge) && !_combat, !inMission && !_combat);
 	_screen->getPalette() = _menu->getPalette();
 	_screen->applyPalette();
 	setCursor(false);
@@ -269,6 +325,12 @@ void STGEngine::closeMenu(bool resume) {
 			setBridgeMode(true);
 		else if (_bridge)
 			_bridge->hide();
+	}
+	if (_combat) {
+		if (resume)
+			setTrueColour(true);
+		else
+			_combat.reset();
 	}
 	_dirty = true;
 }
