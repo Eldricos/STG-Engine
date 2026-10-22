@@ -113,6 +113,13 @@ public:
 	/** What the last frame showed at the pick point. */
 	const Pick &getPick() const { return _pick; }
 
+	/**
+	 * Mark walls drawn as seen, for the automap: like the original's
+	 * painter (0x4C8602), set LevelFile::kWallOnMap on each wall that
+	 * shows. walls is the level's own table, or null to stop.
+	 */
+	void setMapWalls(std::vector<LevelFile::Wall> *walls) { _mapWalls = walls; }
+
 	/** Sprites to draw in the next frames; the vector must stay alive. */
 	void setSprites(const std::vector<SpriteDraw> *sprites) { _sprites = sprites; }
 
@@ -207,6 +214,7 @@ private:
 	std::map<int16, int> _groupBrightness;
 	std::vector<float> _depth;
 	int _pickX = -1, _pickY = -1;
+	std::vector<LevelFile::Wall> *_mapWalls = nullptr;
 	Pick _pick;
 	/** What is being drawn, for the pick. */
 	Pick _owner;

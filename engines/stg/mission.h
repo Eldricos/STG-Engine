@@ -152,6 +152,21 @@ public:
 	void describeItem(int slot);
 	/** Whether an item is one the player holds and fires. */
 	bool isWeapon(uint16 id) const;
+	/** An item's kind (ATTACH_ITEM_BEHAVIOUR), or 0. */
+	int getItemKind(uint16 id) const {
+		auto it = _items.find(id);
+		return it == _items.end() ? 0 : it->second.kind;
+	}
+	/** Where an object (the player for 0) is. */
+	bool locate(uint16 id, double &x, double &y, double &z) const {
+		Position position;
+		if (!getPosition(id, position))
+			return false;
+		x = position.x;
+		y = position.y;
+		z = position.z;
+		return true;
+	}
 	/** An item's frame in the mission's INVENT.BMP, or -1. */
 	int getItemIcon(uint16 id) const;
 	/** GAME_MODE 2 or 3 asked for the left panel off or on its body view since the last call; 0 if not. */
@@ -253,8 +268,10 @@ private:
 	Punch _punch;
 	std::vector<MissionSound::Finished> _soundsFinished;
 
-	int16 _health = 100;
-	int16 _maxHealth = 100;
+	// The original takes the maximum from a character record not yet
+	// decoded; its health bar holds about 54 units, so 50 is assumed.
+	int16 _health = 50;
+	int16 _maxHealth = 50;
 	int _touchedWall = -1;
 	int _standingFlat = -1;
 	int _billboard = -1;

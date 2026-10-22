@@ -18,6 +18,7 @@
 #include "engines/engine.h"
 #include "engines/game.h"
 #include "engines/stg/font.h"
+#include "engines/stg/hudscreen.h"
 #include "engines/stg/level.h"
 #include "engines/stg/mission.h"
 #include "engines/stg/overlay.h"
@@ -66,6 +67,10 @@ private:
 	void drawFrame(uint32 delta);
 	void drawStarfield(uint32 delta);
 	void drawTextPanel();
+	/** The 3D page with the away-team console (HudScreen). */
+	void drawMissionScreen(uint32 delta);
+	/** Blend the screen effects into the level's palette. */
+	void applyScreenEffects();
 
 	void showImage(int index);
 	void showOverlay(const ResourceRef &ref);
@@ -131,6 +136,10 @@ private:
 	std::unique_ptr<ScriptFile> _levelScript;
 	/** Declared last of the level's parts, so it goes first. */
 	std::unique_ptr<Mission> _mission;
+	/** The away-team console, when the game's art for it is there. */
+	std::unique_ptr<HudScreen> _hudScreen;
+	/** Whether screen effects changed the palette last frame. */
+	bool _paletteBlended = false;
 	Camera _camera;
 	uint32 _levelTime = 0;
 	enum WalkKey { kWalkForward, kWalkBack, kWalkTurnLeft, kWalkTurnRight, kWalkStrafeLeft, kWalkStrafeRight,

@@ -208,10 +208,17 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		}
 		break;
 	case Common::EVENT_LBUTTONDOWN:
+	case Common::EVENT_RBUTTONDOWN:
 		if (_level && _levelPage == kLevelPage3D) {
-			attack();
+			bool right = event.type == Common::EVENT_RBUTTONDOWN;
+			if (_hudScreen && _mission && event.mouse.y >= HudScreen::kView.bottom)
+				_hudScreen->click(*_mission, event.mouse.x, event.mouse.y, right);
+			else if (!right)
+				attack();
 			break;
 		}
+		if (event.type == Common::EVENT_RBUTTONDOWN)
+			break;
 		// Pitch rises from left to right across the screen.
 		playBeep(220 + event.mouse.x * 2);
 		break;
@@ -239,6 +246,12 @@ void STGEngine::drawFrame(uint32 delta) {
 		_dirty = true;
 	}
 
+	if (_level && _levelPage == kLevelPage3D && _hudScreen) {
+		drawMissionScreen(delta);
+		_screen->update();
+		_dirty = false;
+		return;
+	}
 	if (_level && _levelPage == kLevelPage3D) {
 		_levelTime += delta;
 		updateWalk(delta);
@@ -332,6 +345,99 @@ void STGEngine::drawFrame(uint32 delta) {
 	_dirty = false;
 }
 
+void STGEngine::drawMissionScreen(uint32 delta) {
+	_levelTime += delta;
+	updateWalk(delta);
+
+	// The view is the top 640 x 252 (the original renders 640 x 320 and
+	// shows the middle, the same picture).
+	Graphics::Surface view;
+	view.create(HudScreen::kView.width(), HudScreen::kView.height(), Graphics::PixelFormat::createFormatCLUT8());
+	_actorSprites.clear();
+	if (_actors)
+		_actors->getSprites(_camera.x, _camera.y, _walker->getActiveZones(), _actorSprites);
+	_mission->getProjectiles().getSprites(_actorSprites);
+	_levelRenderer->setPickPoint(view.w / 2, view.h / 2);
+	_levelRenderer->render(_camera, view, _levelTime);
+	updatePunch(delta, view);
+	byte cross = _screen->getPalette().findBestColor(255, 255, 255);
+	for (int d = 2; d <= 5; d++) {
+		view.setPixel(view.w / 2 - d, view.h / 2, cross);
+		view.setPixel(view.w / 2 + d, view.h / 2, cross);
+		view.setPixel(view.w / 2, view.h / 2 - d, cross);
+		view.setPixel(view.w / 2, view.h / 2 + d, cross);
+	}
+
+	// Shaking moves the whole view; the underwater ripple (VIEW_OVERLAY)
+	// shifts each row, a wave 168 rows long rolling down a row every 64 ms.
+	Hud &hud = _mission->getHud();
+	int shakeX, shakeY;
+	hud.getShakeOffset(shakeX, shakeY);
+	Graphics::Surface &screen = _screen->getSurface();
+	byte black = _screen->getPalette().findBestColor(0, 0, 0);
+	for (int y = 0; y < view.h; y++) {
+		int dx = shakeX;
+		if (hud.hasRipple())
+			dx += (int)std::lround(5.5 * std::sin(2 * 3.14159265358979 * (y + _levelTime / 64.0) / 168) + 0.5);
+		int sy = y - shakeY;
+		byte *out = (byte *)screen.getBasePtr(0, y);
+		const byte *src = sy >= 0 && sy < view.h ? (const byte *)view.getBasePtr(0, sy) : nullptr;
+		for (int x = 0; x < view.w; x++) {
+			int sx = x - dx;
+			out[x] = src && sx >= 0 && sx < view.w ? src[sx] : black;
+		}
+	}
+
+	_hudScreen->draw(screen, *_mission, *_level, _walker->getX(), _walker->getY(), _walker->getFeet(), _camera.yaw,
+	                 _levelTime);
+	if (_mission->getHealth() != _shownHealth)
+		updateWalkStatus();
+
+	// One line of text: what is said, or else the status.
+	if (_font.isLoaded()) {
+		const Graphics::Palette &pal = _screen->getPalette();
+		byte remap[256];
+		for (int i = 0; i < 256; i++) {
+			byte r, g, b;
+			if (_hasFontPalette)
+				_fontPalette.get(i, r, g, b);
+			else
+				r = g = b = (byte)i;
+			remap[i] = pal.findBestColor(r, g, b);
+		}
+		const Common::String &text = _subtitle.empty() ? _status : _subtitle;
+		std::vector<Common::String> lines = _font.wordWrap(text, HudScreen::kTextLine.width());
+		if (!lines.empty())
+			_font.drawString(screen, lines[0], HudScreen::kTextLine.left, HudScreen::kTextLine.top, remap);
+	}
+	applyScreenEffects();
+}
+
+void STGEngine::applyScreenEffects() {
+	// 0x43199A: each slot blends every colour towards its own, slot 0 last.
+	Hud &hud = _mission->getHud();
+	bool any = false;
+	Graphics::Palette blended = _level->getPalette();
+	for (int slot = Hud::kEffectSlots - 1; slot >= 0; slot--) {
+		byte r, g, b;
+		int k = hud.getEffectWeight(slot, r, g, b);
+		if (k <= 0)
+			continue;
+		any = true;
+		for (int i = 0; i < 256; i++) {
+			byte pr, pg, pb;
+			blended.get(i, pr, pg, pb);
+			blended.set(i, (byte)((pr * (128 - k) + r * k) >> 7), (byte)((pg * (128 - k) + g * k) >> 7),
+			            (byte)((pb * (128 - k) + b * k) >> 7));
+		}
+	}
+	if (any || _paletteBlended) {
+		_screen->getPalette() = blended;
+		_screen->applyPalette();
+	}
+	_paletteBlended = any;
+}
+
 void STGEngine::drawTextPanel() {
 	if (!_font.isLoaded())
 		return;
@@ -402,6 +508,7 @@ void STGEngine::showImage(int index) {
 	_imageIndex = index;
 	const ResourceRef &ref = images[index];
 	_imageLoaded = _overlayLoaded = _spritesLoaded = false;
+	_hudScreen.reset();
 	_mission.reset();
 	_actors.reset();
 	_walker.reset();
@@ -435,6 +542,7 @@ void STGEngine::showImage(int index) {
 
 void STGEngine::showLevel(const ResourceRef &ref) {
 	std::unique_ptr<Common::SeekableReadStream> stream = _resources.open(ref);
+	_hudScreen.reset();
 	_mission.reset();
 	_actors.reset();
 	_walker.reset();
@@ -457,6 +565,13 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 	_camera = _levelRenderer->getStartCamera(Walker::kEyeHeight);
 	_walker->place(_camera.x, _camera.y, _camera.z - Walker::kEyeHeight);
 	startMission(ref);
+	_hudScreen.reset();
+	if (_mission) {
+		_hudScreen.reset(new HudScreen(_resources, ref, *_levelScript));
+		if (!_hudScreen->isAvailable())
+			_hudScreen.reset();
+		_levelRenderer->setMapWalls(&_level->getWalls());
+	}
 	_camera.x = _walker->getX();
 	_camera.y = _walker->getY();
 	_camera.z = _walker->getEye();
@@ -560,6 +675,11 @@ void STGEngine::showLevelPage(int page) {
 	_levelPage = ((page % pages) + pages) % pages;
 	if (_mission)
 		_mission->getSound().pauseAll(_levelPage != kLevelPage3D);
+	if (_paletteBlended && _levelPage != kLevelPage3D) {
+		_screen->getPalette() = _level->getPalette();
+		_screen->applyPalette();
+		_paletteBlended = false;
+	}
 	for (bool &held : _walkKeys)
 		held = false;
 
@@ -626,6 +746,20 @@ bool STGEngine::handleWalkKey(Common::KeyCode key, bool down) {
 			_levelRenderer->setLightingEnabled(!_levelRenderer->isLightingEnabled());
 			updateWalkStatus();
 		}
+		return true;
+	case Common::KEYCODE_SPACE:
+		// Use the open panel's object, as the original's Space does.
+		if (down && _mission)
+			_mission->getHud().usePanel();
+		return true;
+	case Common::KEYCODE_b:
+	case Common::KEYCODE_h:
+	case Common::KEYCODE_o:
+		// The left panel: life, map, object (the original's B, H, A; A walks here).
+		if (down && _hudScreen)
+			_hudScreen->setLeftMode(key == Common::KEYCODE_b   ? HudScreen::kLeftLife
+			                        : key == Common::KEYCODE_h ? HudScreen::kLeftMap
+			                                                   : HudScreen::kLeftObject);
 		return true;
 	case Common::KEYCODE_LCTRL:
 	case Common::KEYCODE_RCTRL:
@@ -867,6 +1001,7 @@ void STGEngine::showStarfield() {
 	_imageLoaded = false;
 	_overlayLoaded = false;
 	_spritesLoaded = false;
+	_hudScreen.reset();
 	_mission.reset();
 	_actors.reset();
 	_walker.reset();

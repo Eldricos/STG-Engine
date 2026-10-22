@@ -123,7 +123,11 @@ the lighting off and on, and C lets you walk through walls. Ctrl or the left
 mouse button attacks at the crosshair: with the weapon in use (verid1 starts
 with the phaser) or, with none, bare-handed. Until there is an inventory panel,
 1-9 use the items carried, as clicking them would; the status line shows health
-and the item in use. Home
+and the item in use. With the game's console art the 3D view takes the top of
+the screen above the original's console: click inventory items to use them
+(right click to have them described), click the close-up panel the scripts
+open (Space uses it), and switch the left panel with its tabs or B (life),
+H (map) and O (object). Home
 returns to the starfield, F5/F7 save and load, and Esc quits.
 
 Settings and saves go in the per-user directory SDL picks for the platform:

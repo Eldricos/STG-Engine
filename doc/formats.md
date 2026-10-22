@@ -456,6 +456,35 @@ Ctrl (or the left mouse button) attacks once per press (`0x43CF95`).
   of a billboard or actor, it gets event 16 (damage, power, team 2) and the
   hit sounds. Event 59 reports the hit, or 0 for something out of reach.
 
+### The away-team screen
+
+The 3D view is the top 640 x 252 (the original renders 640 x 320 and shows
+rows 34-285, the same picture; a narrower 504-wide view with borderl/borderr
+.bmp is also possible). The console below, at (0,252)-(639,479), is drawn
+from bitmaps: plain names from COMMON.DAT, the mission's from its folder.
+Rectangles are inclusive. `engines/stg/hudscreen.h`, `hud.h`.
+
+| Part | Where | What |
+|------|-------|------|
+| left panel | (0,253)-(205,458) | l-m-m-o.bmp, frames of 206 rows by mode: off, life, map, object; tabs at (6,261), (6,331), (6,401), 23 x 52 |
+| life | (40,269), (118,393) | body picture (`SET_BODY_IMAGE`, -1 = BODY.BMP, frames of 177 rows); health: 3health.bmp (frames of 50 rows: over 15, over 5, else), then unithlt0.bmp units at x 119, unit k's top at 442 - h - 1 - 3k (- 7 from the 16th) |
+| map | (39,267)-(192,414) | walls flagged 0x800 in the height band shown, markers (map\dot-*.bmp), the player (agpface2.bmp, 8 headings); levels and zoom buttons at (43,415), (74,415) |
+| object | (39,267) | the mission's OBJECT.BMP |
+| right | (206,252)-(639,479) | actionx.bmp |
+| weapon display | (222,252)-(431,296) | weapphas.bmp for the phaser; wepcycle.bmp at (207,253) picks the next weapon |
+| close-up viewer | (223,311)-(433,458) | the visible panel (frames of 148 rows) and its buttons, or the mission's AUXDEF.BMP; auxcycle.bmp at (207,425) shows the next panel, blinking while there are several |
+| inventory | (435,256)-(639,457) | 3 x 4 slots, icons at x 436, 505, 574 and y 257, 308, 359, 410: frame b (of `ATTACH_ITEM_BEHAVIOUR`) of the mission's INVENT.BMP, 64 x 46; the item in use framed in palette index 0x22 |
+| text | (10,461)-(639,477) | subtitles, Fonts\Action.fnt |
+
+The painter sets wall flag 0x800 on every wall it draws (`0x4C8602`), so the
+automap shows what has been seen; `SET_ZONE_ON_MAP` clears or sets it by zone.
+Clicking an inventory slot makes an item the player can hold the one in use
+and sends it event 45; a right click sends 62. Clicking the close-up viewer
+sends 45 (no buttons) or 47 with the button hit (0 for none), a right click
+62, and Space sends 45; the panel's object gets 35 every frame once the
+player is 2 units from where it opened. Screen effects blend the palette:
+`c = (c (128 - k) + colour k) >> 7` per slot, slot 3 first and slot 0 last.
+
 ## Level data (`GAME.LV2`): decoded enough to render, `engines/stg/level.h`, `render3d.h`
 
 Loaded by the routine at `0x4BD130` in `sgens.exe`. All values are little endian.

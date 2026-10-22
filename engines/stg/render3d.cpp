@@ -555,6 +555,8 @@ void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *textur
 			}
 			out[x] = shade ? shade[color] : color;
 			depth[x] = (float)iz;
+			if (_owner.kind == Pick::kWall && _mapWalls)
+				(*_mapWalls)[_owner.index].flags |= LevelFile::kWallOnMap;
 			if (x == _pickX && y == _pickY) {
 				_pick = _owner;
 				_pick.depth = 1.0 / iz;

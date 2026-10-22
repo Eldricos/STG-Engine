@@ -8,6 +8,7 @@ target_sources(stg_engines PRIVATE
 	opcodes.cpp
 	overlay.cpp
 	hud.cpp
+	hudscreen.cpp
 	projectiles.cpp
 	render3d.cpp
 	resources.cpp
