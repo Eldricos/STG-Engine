@@ -94,8 +94,14 @@ private:
 	};
 	const Image *load(const Common::String &name, Scope scope, int frameHeight = 0);
 	const Image *loadScriptImage(int16 index, int frameHeight);
-	/** Copy frame of image to (x, y), skipping keyed pixels unless key < 0. */
-	static void blit(Graphics::Surface &dst, const Image &image, int frame, int x, int y, int key = -1,
+	/**
+	 * The see-through index of the original's bitmaps (0x4039CE): each
+	 * file's own palette shows it in a colour of its own (purple behind
+	 * the inventory icons, red round the power arrow).
+	 */
+	static const int kKey = 0xFE;
+	/** Copy frame of image to (x, y), skipping pixels equal to key unless it is -1. */
+	static void blit(Graphics::Surface &dst, const Image &image, int frame, int x, int y, int key = kKey,
 	                 const Common::Rect *clip = nullptr);
 	void drawLifePanel(Graphics::Surface &screen, Mission &mission);
 	void drawMap(Graphics::Surface &screen, Mission &mission, const LevelFile &level, double playerX,

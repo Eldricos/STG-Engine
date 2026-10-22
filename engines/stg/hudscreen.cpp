@@ -207,7 +207,7 @@ void HudScreen::drawWeaponDisplay(Graphics::Surface &screen, Mission &mission) {
 		return;
 	blit(screen, *display, 0, kWeaponDisplay.left, kWeaponDisplay.top);
 	if (const Image *arrow = load("p-arrow.bmp", kGlobal, 14))
-		blit(screen, *arrow, 0, kWeaponDisplay.left + 11 * item->level - 4, kWeaponDisplay.top, 0, &kWeaponDisplay);
+		blit(screen, *arrow, 0, kWeaponDisplay.left + 11 * item->level - 4, kWeaponDisplay.top, kKey, &kWeaponDisplay);
 	int full = item->maxCharge > 0 ? (59 * item->charge + item->maxCharge - 1) / item->maxCharge : 0;
 	for (int k = 0; k < 59 - full; k++) {
 		int x = kWeaponDisplay.left + 191 - 3 * k;
@@ -280,7 +280,7 @@ void HudScreen::drawMap(Graphics::Surface &screen, Mission &mission, const Level
 		if (entry.second.kind == Hud::kMarkerLife && entry.second.style >= 0 && entry.second.style < 8)
 			dot = load(Common::String("map/dot-") + kMarkerStyles[entry.second.style] + ".bmp", kGlobal);
 		if (dot) {
-			blit(screen, *dot, 0, sx - dot->surface.w / 2, sy - dot->surface.h / 2, 0, &kMap);
+			blit(screen, *dot, 0, sx - dot->surface.w / 2, sy - dot->surface.h / 2, kKey, &kMap);
 		} else {
 			byte colour = palette.findBestColor(255, entry.second.kind == Hud::kMarkerLife ? 0 : 255, 0);
 			for (int dy = -1; dy <= 1; dy++) {
@@ -295,7 +295,7 @@ void HudScreen::drawMap(Graphics::Surface &screen, Mission &mission, const Level
 	// The player, an arrow in eight headings (agpface2.bmp).
 	int octant = (int)std::lround(yaw / (kPi / 4)) & 7;
 	if (const Image *face = load("agpface2.bmp", kGlobal, -8)) {
-		blit(screen, *face, octant, (int)cx - face->surface.w / 2, (int)cy - face->frameHeight / 2, 0, &kMap);
+		blit(screen, *face, octant, (int)cx - face->surface.w / 2, (int)cy - face->frameHeight / 2, kKey, &kMap);
 	} else {
 		screen.fillRect(Common::Rect((int)cx - 1, (int)cy - 1, (int)cx + 2, (int)cy + 2),
 		                palette.findBestColor(255, 255, 255));

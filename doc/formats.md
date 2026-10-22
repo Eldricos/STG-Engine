@@ -502,6 +502,10 @@ Each bitmap has its own palette; its colours are drawn in their nearest
 matches in the level's palette, as Windows did when blitting a DIB to the
 8-bit screen. Frame n of a strip is the n-th from the bottom (`0x40390E`):
 so 3health.bmp's frame 2, for health above 15, is the top one.
+Pixels of index 0xFE are see-through (the bitmap class's default key,
+`0x4039CE`; image panels flagged for it key on their first pixel instead,
+`0x425A00`). Each file's palette shows 0xFE in its own colour: purple behind
+the inventory icons, red round the power arrow, pink in 3health.bmp.
 Rectangles are inclusive. `engines/stg/hudscreen.h`, `hud.h`.
 
 | Part | Where | What |
