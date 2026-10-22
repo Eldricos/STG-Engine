@@ -32,7 +32,9 @@ bool ScriptFile::load(Common::SeekableReadStream &stream) {
 		total += sectionSize;
 	}
 
-	if ((int64)size + 12 != stream.size() || total > (uint64)stream.size() || (codeSize & 1)) {
+	// AMARGOS2's GAME.BIN has 72 bytes of padding after what its header
+	// counts; anything shorter than the header says is damaged.
+	if ((int64)size + 12 > stream.size() || total > (uint64)size + 12 || (codeSize & 1)) {
 		warning("ScriptFile: header sizes do not match a %lld byte file", (long long)stream.size());
 		return false;
 	}
