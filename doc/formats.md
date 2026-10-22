@@ -399,6 +399,35 @@ heading in degrees.
     whether it is the sine or the cosine isn't known)
   - RELEASE_ACTOR_CLASS (0xA9): frees a sprite class's frames when unused
   - FIRE_PROJECTILE_AT (0xE2) type, from x, y, height, to x, y, height: a shot from no one
+- **Lifts, lights and the world** (from amargos1, arvada1, enterp, galorn1/2, halee1):
+  - Script objects come in types: 1 logic (0xExxx), 2 walls (0x4xxx), 3 movers/doors (0x8xxx),
+    4 actors (0xAxxx), 5 lifts (0x8xxx), 6 light groups (0x6xxx), 7 flats (0xCxxx), 8 billboards
+    (0x2xxx) (`0x43519F`).
+  - LIFT_SETUP (0x5E) flat, count, 8 heights (16.16; on the lift itself); LIFT_GO_TO (0x64) id,
+    level: every flat of the group jumps to that height, carrying the player (`0x4583EA`).
+  - SET_LIGHT_LEVEL (0x66) id, percent: light group id & 0x1FFF; RESET_LIGHT_LEVEL (0x67) id.
+  - SET_TEXTURE_SCROLL (0xAB) id, u speed, v speed: the texture moves by
+    ((speed · ms) & 0x1FFFF) / 1024 of its 128 units (`0x4B78B0`).
+  - SET_FLAT_ZONES (0xC0) id, low, high: the zones in play standing there. ADD_FLAT_ZONE_BAND (0xC1)
+    id, height, low, high: zones by height for a lift, the first at or below its height counting.
+  - SET_SKY (0xB6) n: sky n, and the sky on. SHOW_VIEW_OVERLAY (0xB8) image, frame: a script
+    resource's .OVR over the view (-1 removes it). MAP_HEIGHT_BAND (0xC9) below, above.
+  - ENGAGE (0x73) id: event 35 once the player walks 3 units off (another engaged object gets it at
+    once). TELEPORT_PLAYER_RELATIVE (0x76) from, to: moved and turned by their difference.
+  - Health: SET_ENVIRONMENT_DAMAGE (0x88) period: 1 health a period (kind 13), 0 stops;
+    SET_HEALTH (0x8A); SET_WORN_ITEM (0x8B) id: a kind 9 item (30/30) soaks whole hits while it has
+    charge, except kind 12, and gets event 48 when empty; SET_WORN_GAUGE (0xE7); SET_ITEM_CHARGE_MAX
+    (0xCB, 0xE6) id, charge, most; GET_ITEM_VALUE (0xCC): a worn item's charge, a weapon's team.
+  - TRANSITION_TELEPORT (0x93) position, t1, t2, t3: out, the player moved, back in, then event 7;
+    SET_TRANSITION_COLOUR (0x94) r, g, b: what transitions fade through.
+  - SET_MISSION_OUTCOME (0x97) code: up to five codes for the campaign (story branches).
+  - SET_PLAYER_SPIN (0xAF) degrees a second. SET_PLAYER_CONTROLS bits: 1 walk, 2 turn, 4 look,
+    8 jump, 0x10 run, 0x20 footsteps (?), 0x40 swimming (?); a locked player gets 6.
+  - Actors: SET_ACTOR_MAP_MARKER (0x40), ACTOR_GO_TO_ACTOR (0x4A), SET_ACTOR_TARGET (0x5B),
+    SET_ACTOR_ANIM_SPEED (0x5C, 16.16 stored as 8.8), FIRE_PROJECTILE_AT_OBJECT (0xE3),
+    GET_ALERTED_COUNT (0xEF, actors seeing the player now).
+  - No effect here: ALLOC_GLOBALS (0x15), the logging natives 0x27-0x2A (0x28 pops only its count
+    and logs the words under it), LOAD_ACTOR_CLASS (0xA8), 0xAD, SET_PIXEL_PICK (0xE5).
 - **Sound** (see Sounds):
   - PLAY_SOUND sound, volume (0–64)
   - PLAY_SOUND_DELAYED, PLAY_SOUND_FADE_IN, PLAY_SOUND_CUE
