@@ -115,6 +115,24 @@ Mission::TransitionView Mission::getTransitionView() const {
 	return view;
 }
 
+void Mission::runPush(uint32 ms) {
+	_push.elapsed += ms;
+	uint32 t = _push.elapsed;
+	if (t >= _push.end) {
+		_push.active = false;
+		return;
+	}
+	double envelope = t < _push.ramp ? (double)t / std::max<uint32>(1, _push.ramp)
+	                  : t < _push.hold ? 1.0
+	                                   : (double)(_push.end - t) / std::max<uint32>(1, _push.end - _push.hold);
+	double dx = _push.x - _walker.getX(), dy = _push.y - _walker.getY();
+	double length = std::sqrt(dx * dx + dy * dy);
+	if (length < 1e-6)
+		return;
+	double step = _push.strength * envelope * ms / 1000.0;
+	_walker.move(dx / length * step, dy / length * step, 0);
+}
+
 void Mission::sync(Common::Serializer &s) {
 	_vm->sync(s);
 	_level.syncState(s);
@@ -195,6 +213,24 @@ void Mission::sync(Common::Serializer &s) {
 	s.syncAsUint32(_transition.elapsed);
 	s.syncAsInt(_transitionSound);
 	s.syncAsInt(_transitionVolume);
+	s.syncAsDouble(_motion.speed);
+	s.syncAsInt(_motion.turnRate);
+	s.syncAsInt(_motion.lookRate);
+	s.syncAsDouble(_motion.accel);
+	s.syncAsInt(_motion.turnAccel);
+	s.syncAsInt(_motion.lookAccel);
+	s.syncAsDouble(_motion.jump);
+	s.syncAsUint16(_controls);
+	s.syncAsDouble(_fallMultiplier);
+	s.syncAsDouble(_fallDivisor);
+	s.syncAsBool(_push.active);
+	s.syncAsDouble(_push.x);
+	s.syncAsDouble(_push.y);
+	s.syncAsDouble(_push.strength);
+	s.syncAsUint32(_push.ramp);
+	s.syncAsUint32(_push.hold);
+	s.syncAsUint32(_push.end);
+	s.syncAsUint32(_push.elapsed);
 	s.syncString(_punch.image);
 	s.syncAsUint32(_punch.msPerFrame);
 	s.syncAsInt(_punch.hitFrame);
@@ -241,6 +277,16 @@ void Mission::update(uint32 ms) {
 	ms = std::max<uint32>(8, std::min<uint32>(ms, 1000));
 	_time += ms;
 	runTimers();
+
+	// Landing hard hurts (0x43A662), as damage kind 1.
+	double landing = _walker.takeLanding();
+	if (landing > 0 && _fallDivisor > 0) {
+		int damage = (int)(landing * _fallMultiplier / _fallDivisor);
+		if (damage > 0)
+			damagePlayer(0, (int16)damage, 1);
+	}
+	if (_push.active)
+		runPush(ms);
 
 	// 0x43AD04: once every objective is done, event 8, once.
 	if (_objectivesDone == _objectives && !_accomplished) {
@@ -1356,6 +1402,157 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 			distance = (int16)std::min<long>(32767, std::lround(std::sqrt(dx * dx + dy * dy + dz * dz)));
 		}
 		vm.push(distance);
+		break;
+	}
+	case 0x4C: { // ACTOR_GO_TO
+		uint16 id = (uint16)vm.pop();
+		double x = pop32(vm), y = pop32(vm), z = pop32(vm);
+		if (_actors)
+			_actors->goTo(id ? id : self.object->id, x, y, z);
+		break;
+	}
+	case 0x5D: // SET_ACTOR_ALWAYS_ACTIVE
+	case 0xEA: { // SET_ACTOR_FLYER
+		uint16 id = (uint16)vm.pop();
+		bool on = vm.pop() != 0;
+		if (_actors)
+			_actors->setFlag(id ? id : self.object->id, op == 0x5D ? 0x400000 : 0x1000000, on);
+		break;
+	}
+	case 0xE8: { // SET_ACTOR_CLIMB_ANGLE
+		uint16 id = (uint16)vm.pop();
+		int degrees = vm.pop();
+		if (_actors)
+			_actors->setClimbAngle(id ? id : self.object->id, degrees);
+		break;
+	}
+	case 0xA9: // RELEASE_ACTOR_CLASS
+		// Frees the class's sprites once unused (0x4B65C0); they are kept here.
+		vm.pop();
+		break;
+	case 0x77: { // PUSH_PLAYER
+		// 0x43B447: towards (or, for a negative strength, away from) a point,
+		// ramping up to tRamp ms, holding to tHold and easing off to tEnd.
+		Position position = popPosition(vm);
+		_push.x = position.x;
+		_push.y = position.y;
+		_push.strength = pop32(vm);
+		_push.ramp = (uint16)vm.pop();
+		_push.hold = (uint16)vm.pop();
+		_push.end = (uint16)vm.pop();
+		_push.elapsed = 0;
+		_push.active = true;
+		break;
+	}
+	case 0x78: // STOP_PUSHING_PLAYER
+		_push.active = false;
+		break;
+	case 0x83: { // SET_ITEM_ICON
+		uint16 id = (uint16)vm.pop();
+		int16 icon = vm.pop();
+		auto it = _items.find(id ? id : self.object->id);
+		if (it != _items.end())
+			it->second.b = icon;
+		break;
+	}
+	case 0xA3: { // SET_GRAVITY
+		// 0x441257: 0x80000000 keeps a value, 0x80000001 restores its default.
+		uint32 gravity = popRaw32(vm), maxFall = popRaw32(vm);
+		popRaw32(vm); // a third setting, not understood
+		auto pick = [](uint32 raw, double current, double fallback) {
+			return raw == 0x80000000 ? current : raw == 0x80000001 ? fallback : fromFixed((int32)raw);
+		};
+		_walker.setGravity(pick(gravity, _walker.getGravity(), Walker::kGravity),
+		                   pick(maxFall, _walker.getMaxFallSpeed(), Walker::kMaxFallSpeed));
+		break;
+	}
+	case 0xB5: // LOW_GRAVITY
+		// 0x440C72: no gravity and a slow fall, or back to the defaults.
+		if (vm.pop())
+			_walker.setGravity(0, 10.0);
+		else
+			_walker.setGravity(Walker::kGravity, Walker::kMaxFallSpeed);
+		break;
+	case 0xEE: { // SET_FALL_DAMAGE
+		// 0x436F35: a landing at speed v hurts v * multiplier / divisor (kind 1).
+		uint32 multiplier = popRaw32(vm), divisor = popRaw32(vm);
+		_fallMultiplier = (double)multiplier;
+		_fallDivisor = fromFixed((int32)divisor);
+		break;
+	}
+	case 0xAE: // SET_PLAYER_CONTROLS
+		// game+0x1E8; the default is 0x5F. What each bit allows isn't known.
+		_controls = (uint16)vm.pop();
+		break;
+	case 0xB2: { // SET_PLAYER_MOTION
+		// 0x440F23: 0x80000000 / 0x8000 keep a value, 0x80000001 / 0x8001
+		// restore its default (0x545334).
+		static const Motion kDefault;
+		auto pick32 = [](uint32 raw, double current, double fallback) {
+			return raw == 0x80000000 ? current : raw == 0x80000001 ? fallback : fromFixed((int32)raw);
+		};
+		auto pick16 = [](uint16 raw, int current, int fallback) {
+			return raw == 0x8000 ? current : raw == 0x8001 ? fallback : (int)(int16)raw;
+		};
+		_motion.speed = pick32(popRaw32(vm), _motion.speed, kDefault.speed);
+		_motion.turnRate = pick16((uint16)vm.pop(), _motion.turnRate, kDefault.turnRate);
+		_motion.lookRate = pick16((uint16)vm.pop(), _motion.lookRate, kDefault.lookRate);
+		_motion.accel = pick32(popRaw32(vm), _motion.accel, kDefault.accel);
+		_motion.turnAccel = pick16((uint16)vm.pop(), _motion.turnAccel, kDefault.turnAccel);
+		_motion.lookAccel = pick16((uint16)vm.pop(), _motion.lookAccel, kDefault.lookAccel);
+		_motion.jump = pick32(popRaw32(vm), _motion.jump, kDefault.jump);
+		break;
+	}
+	case 0xC8: { // MAP_ZOOM_LEVELS
+		// 0x44555F: per level a scale and a shift: pixels = units * 65536 * scale >> shift.
+		for (int level = 0; level < 3; level++) {
+			uint16 scale = (uint16)vm.pop(), shift = (uint16)vm.pop();
+			if (scale == 0x8000 || shift == 0x8000)
+				continue;
+			static const double kDefault[3] = { 0.5, 1.0, 2.0 };
+			_hud.setMapZoom(level, scale == 0x8001 ? kDefault[level] : scale * 65536.0 / (double)(1u << std::min<uint16>(shift, 31)));
+		}
+		break;
+	}
+	case 0xCD: // SET_FLAT_GROUPS
+		// 0x440D3D marks groups of flats; what reads the marks isn't known.
+		vm.pop();
+		vm.pop();
+		vm.pop();
+		_missing[op]++;
+		break;
+	case 0xD5: // GET_DIFFICULTY
+		// The configuration's +0x340, 1 unless changed.
+		vm.push((int16)_difficulty);
+		break;
+	case 0xD6: // SET_INVENTORY_ENABLED
+		_hud.setInventoryEnabled(vm.pop() != 0);
+		break;
+	case 0xD7: { // SET_ITEM_ENABLED
+		uint16 id = (uint16)vm.pop();
+		bool on = vm.pop() != 0;
+		_hud.setItemEnabled(id ? id : self.object->id, on);
+		break;
+	}
+	case 0xE2: { // FIRE_PROJECTILE_AT
+		// 0x4403DE: a shot of the given type from one point at another, from no one.
+		int type = vm.pop();
+		double fromX = pop32(vm), fromY = pop32(vm), fromZ = pop32(vm);
+		double toX = pop32(vm), toY = pop32(vm), toZ = pop32(vm);
+		double dx = toX - fromX, dy = toY - fromY;
+		if (type >= 0 && type < _projectiles->getTypeCount())
+			fire(type, fromX, fromY, fromZ, std::atan2(dy, dx), std::atan2(toZ - fromZ, std::sqrt(dx * dx + dy * dy)),
+			     Projectiles::kShooterNone);
+		break;
+	}
+	case 0xF4: { // SET_BILLBOARD_UNPICKABLE
+		uint16 id = (uint16)vm.pop();
+		bool on = vm.pop() != 0;
+		for (LevelFile::Billboard &billboard : _level.getBillboards()) {
+			if ((uint16)(billboard.objectId | kTypeBillboard) == (id ? id : self.object->id))
+				billboard.flags = on ? billboard.flags | LevelFile::kBillboardUnpickable
+				                     : billboard.flags & ~LevelFile::kBillboardUnpickable;
+		}
 		break;
 	}
 	case 0x91: // BRIEFING_TRANSITION

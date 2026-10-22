@@ -135,6 +135,12 @@ public:
 	bool isActor(uint16 id) const;
 	/** Set the mode; target is the object to face, attack or walk to (0 = the player). */
 	void setMode(uint16 id, int mode, uint16 target = 0);
+	/** ACTOR_GO_TO: mode 7 towards a point (flyers climb or sink to its height). */
+	void goTo(uint16 id, double x, double y, double z);
+	/** Set or clear a flag on every part (0x400000 always active, 0x1000000 flyer). */
+	void setFlag(uint16 id, uint32 flag, bool on);
+	/** SET_ACTOR_CLIMB_ANGLE. */
+	void setClimbAngle(uint16 id, int degrees);
 	/** Position in world units and heading in 1/65536 turns. */
 	bool getPosition(uint16 id, double &x, double &y, double &z, uint16 &heading) const;
 	void setPosition(uint16 id, double x, double y, double z, uint16 heading);

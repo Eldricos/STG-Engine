@@ -130,7 +130,7 @@ private:
 	int _pressX = 0, _pressY = 0, _mouseX = 0, _mouseY = 0;
 	LeftMode _leftMode = kLeftLife;
 	int _mapBand = 1;
-	double _mapScale = 1.0;
+	int _mapZoom = 1;
 };
 
 } // End of namespace STG

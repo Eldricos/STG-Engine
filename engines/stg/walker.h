@@ -47,7 +47,9 @@ public:
 	static constexpr double kStepHeight = 2.0;
 	static constexpr double kRadius = 1.2;
 	/** Units per second squared; the original's falling is not decoded yet. */
-	static constexpr double kGravity = 50.0;
+	/** The original's defaults (game+0x10C): 64.4 (2 x 32.2) and 200. */
+	static constexpr double kGravity = 64.4;
+	static constexpr double kMaxFallSpeed = 200.0;
 
 	static const uint64 kAllZones = ~(uint64)0;
 
@@ -80,6 +82,19 @@ public:
 
 	/** Without falling, the walker drops straight onto lower floors, as actors do. */
 	void setFalls(bool falls) { _falls = falls; }
+	/** Gravity in units/s/s and the fastest fall in units/s (SET_GRAVITY, LOW_GRAVITY). */
+	void setGravity(double gravity, double maxFallSpeed) {
+		_gravity = gravity;
+		_maxFallSpeed = maxFallSpeed;
+	}
+	double getGravity() const { return _gravity; }
+	double getMaxFallSpeed() const { return _maxFallSpeed; }
+	/** How fast a fall hit the floor since the last call, or 0 (for fall damage). */
+	double takeLanding() {
+		double speed = _landingSpeed;
+		_landingSpeed = 0;
+		return speed;
+	}
 
 	/** Floors with any of these flags are ignored, e.g. LevelFile::kFlagNoActors. */
 	void setIgnoredFloors(uint32 flags) { _ignoredFloors = flags; }
@@ -164,6 +179,8 @@ private:
 	std::shared_ptr<const std::vector<WallLine>> _walls;
 	double _x = 0, _y = 0, _feet = 0;
 	double _fallSpeed = 0;
+	double _gravity = kGravity, _maxFallSpeed = kMaxFallSpeed;
+	double _landingSpeed = 0;
 	int _floor = -1;
 	int _contactWall = -1;
 	int _contactObstacle = -1;

@@ -266,6 +266,7 @@ public:
 	 * they take the floor's zones and light.
 	 */
 	static const uint32 kBillboardItem = 0x400000;
+	static const uint32 kBillboardUnpickable = 0x400;
 	/** Keeps its height when dropped, as actors with the same flag do. */
 	static const uint32 kBillboardFlyer = 0x1000000;
 

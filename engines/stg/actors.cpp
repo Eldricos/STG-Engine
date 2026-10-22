@@ -85,6 +85,11 @@ struct Actors::Actor {
 	/** Projectile type fired in attack mode, or -1. */
 	int weapon = -1;
 	bool firing = false;
+	/** ACTOR_GO_TO: mode 7 heads for this point instead of an object. */
+	bool toPoint = false;
+	double pointX = 0, pointY = 0, pointZ = 0;
+	/** SET_ACTOR_CLIMB_ANGLE: the share of a flyer's speed spent going across (+0x80). */
+	double across = 1.0;
 };
 
 Actors::Actors(const LevelFile &level, const Walker &prototype, const SpriteLoader &loader) : _level(level) {
@@ -166,6 +171,11 @@ void Actors::sync(Common::Serializer &s) {
 		s.syncAsBool(a.inRange);
 		s.syncAsInt(a.weapon);
 		s.syncAsBool(a.firing);
+		s.syncAsBool(a.toPoint);
+		s.syncAsDouble(a.pointX);
+		s.syncAsDouble(a.pointY);
+		s.syncAsDouble(a.pointZ);
+		s.syncAsDouble(a.across);
 	}
 
 	uint32 count = (uint32)_proximity.size();
@@ -271,7 +281,34 @@ void Actors::setMode(uint16 id, int mode, uint16 target) {
 		actor.announce = true;
 		actor.turning = false;
 		actor.returning = false;
+		actor.toPoint = false;
 	}
+}
+
+void Actors::goTo(uint16 id, double x, double y, double z) {
+	// 0x456F96: mode 7 towards a point; arriving is event 37 as before.
+	setMode(id, kModeWalkTo);
+	for (int index : findAll(id)) {
+		Actor &actor = *_actors[index];
+		actor.toPoint = true;
+		actor.pointX = x;
+		actor.pointY = y;
+		actor.pointZ = z;
+	}
+}
+
+void Actors::setFlag(uint16 id, uint32 flag, bool on) {
+	for (int index : findAll(id)) {
+		uint32 &flags = _actors[index]->data.flags;
+		flags = on ? flags | flag : flags & ~flag;
+	}
+}
+
+void Actors::setClimbAngle(uint16 id, int degrees) {
+	// 0x456E9C: +0x80 = trig(|degrees|); which function isn't known, so
+	// take the cosine (the share going across).
+	for (int index : findAll(id))
+		_actors[index]->across = std::cos(std::abs(degrees) * kPi / 180);
 }
 
 bool Actors::getPosition(uint16 id, double &x, double &y, double &z, uint16 &heading) const {
@@ -433,6 +470,12 @@ void Actors::setProximity(int actorClass, int targetClass, const double radii[5]
 }
 
 bool Actors::getTarget(const Actor &actor, const Walker &player, double &x, double &y, double &z) const {
+	if (actor.toPoint) {
+		x = actor.pointX;
+		y = actor.pointY;
+		z = actor.pointZ;
+		return true;
+	}
 	if (actor.target != 0) {
 		uint16 heading;
 		if (getPosition(actor.target, x, y, z, heading))
@@ -602,6 +645,13 @@ void Actors::runWalkTo(Actor &actor, double step, const Walker &player, uint32 m
 			actor.turning = false;
 	} else {
 		turnTowards(actor, aim, ms);
+	}
+	if (actor.toPoint && (actor.data.flags & kFlagFlyer)) {
+		// Flyers climb or sink towards the point with what isn't spent going across.
+		double rise = step * std::sqrt(std::max(0.0, 1.0 - actor.across * actor.across));
+		double dz = tz - actor.z;
+		actor.z += std::max(-rise, std::min(rise, dz));
+		step *= actor.across;
 	}
 	moveForward(actor, step, ms);
 	if (actor.walker.wasBlocked() && !actor.turning) {

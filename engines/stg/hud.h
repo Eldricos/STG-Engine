@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <map>
+#include <set>
 #include <vector>
 
 #include "common/rect.h"
@@ -58,6 +59,19 @@ public:
 	uint16 getSlot(int slot) const { return _slots[slot]; }
 	/** The slot an item is in, or -1. */
 	int findItem(uint16 id) const;
+	/** SET_INVENTORY_ENABLED (0xD6): off greys out every slot and ignores clicks. */
+	void setInventoryEnabled(bool on) { _inventoryEnabled = on; }
+	bool isInventoryEnabled() const { return _inventoryEnabled; }
+	/** SET_ITEM_ENABLED (0xD7): an item greyed out where it sits. */
+	void setItemEnabled(uint16 id, bool on) {
+		if (on)
+			_disabledItems.erase(id);
+		else
+			_disabledItems.insert(id);
+	}
+	/** Whether the item in a slot can be used. */
+	bool isSlotEnabled(int slot) const { return _inventoryEnabled && !_disabledItems.count(_slots[slot]); }
+
 	/**
 	 * Move an item from a slot of 1-11 to another (dragging); what was there moves
 	 * to the first free slot. Any other slot means the first free one.
@@ -151,6 +165,9 @@ public:
 	/** Height bands relative to the player (MAP_SET_LEVELS): low/high pairs. */
 	void setMapLevels(const double levels[6]);
 	const double *getMapLevels() const { return _levels; }
+	/** MAP_ZOOM_LEVELS (0xC8): the map's three scales, pixels per unit. */
+	void setMapZoom(int level, double scale) { _zoom[level] = scale; }
+	double getMapZoom(int level) const { return _zoom[level]; }
 
 	// --- Screen effects (0x43199A): four colour slots blended over the
 	// palette, slot 0 on top. Times of 0 make a slot stay; 0 percent clears it.
@@ -199,6 +216,9 @@ private:
 	int _bodyFrame = 0;
 	std::map<uint16, Marker> _markers;
 	double _levels[6] = { -1e9, -6, -6, 6, 6, 1e9 };
+	double _zoom[3] = { 0.5, 1.0, 2.0 };
+	bool _inventoryEnabled = true;
+	std::set<uint16> _disabledItems;
 	Effect _effects[kEffectSlots];
 	int _shake = 0;
 	double _jolt = 0;

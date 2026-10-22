@@ -45,7 +45,6 @@ const int kIconWidth = 64, kIconHeight = 46;
 /** The rectangle round the item in use: palette index 0x22. */
 const byte kActiveColour = 0x22;
 const char *const kMarkerStyles[] = { "romu", "sorn", "injr", "klng", "chod", "fish", "fuzy", "pred" };
-const double kMapScales[] = { 0.5, 1.0, 2.0 };
 
 Common::String normalise(const Common::String &name) {
 	Common::String s = Common::toLower(name);
@@ -247,9 +246,10 @@ void HudScreen::drawMap(Graphics::Surface &screen, Mission &mission, const Level
 	byte dark = palette.findBestColor(0, 0, 0);
 	screen.fillRect(kMap, dark);
 	double cx = (kMap.left + kMap.right) / 2.0, cy = (kMap.top + kMap.bottom) / 2.0;
+	double scale = mission.getHud().getMapZoom(_mapZoom);
 	auto toScreen = [&](double x, double y, int &sx, int &sy) {
-		sx = (int)std::lround(cx + (x - playerX) * _mapScale);
-		sy = (int)std::lround(cy - (y - playerY) * _mapScale);
+		sx = (int)std::lround(cx + (x - playerX) * scale);
+		sy = (int)std::lround(cy - (y - playerY) * scale);
 	};
 
 	// Walls marked for the map, in the height band shown (relative to the player).
@@ -347,8 +347,13 @@ void HudScreen::drawInventory(Graphics::Surface &screen, Mission &mission) {
 		int icon = mission.getItemIcon(id);
 		if (icons && icon >= 0)
 			blit(screen, *icons, icon, x, y, kFirstPixel);
-		if (id == mission.getActiveItem())
+		// Greyed out (grayout.bmp, its checks see-through), or framed if in use.
+		if (!hud.isSlotEnabled(slot)) {
+			if (const Image *grey = load("grayout.bmp", kGlobal))
+				blit(screen, *grey, 0, x, y, kFirstPixel);
+		} else if (id == mission.getActiveItem()) {
 			screen.frameRect(Common::Rect(x + 1, y + 1, x + 63, y + 45), kActiveColour);
+		}
 	}
 }
 
@@ -376,15 +381,14 @@ bool HudScreen::mouseDown(Mission &mission, int x, int y, bool right) {
 			return true;
 		}
 		if (kZoomButton.contains(x, y)) {
-			int i = 0;
-			while (i < 2 && kMapScales[i] != _mapScale)
-				i++;
-			_mapScale = kMapScales[(i + 1) % 3];
+			_mapZoom = (_mapZoom + 1) % 3;
 			return true;
 		}
 	}
 	Hud &hud = mission.getHud();
 	int slot = findSlot(x, y);
+	if (slot >= 0 && !hud.isSlotEnabled(slot))
+		return true;
 	if (slot >= 0) {
 		// 0x44687C: the left button picks it up, to click or drag.
 		if (right)

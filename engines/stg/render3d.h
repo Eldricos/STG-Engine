@@ -225,6 +225,7 @@ private:
 	Pick _pick;
 	/** What is being drawn, for the pick. */
 	Pick _owner;
+	bool _ownerUnpickable = false;
 
 	// Per-frame view parameters.
 	double _cos = 1, _sin = 0;

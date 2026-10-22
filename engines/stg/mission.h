@@ -237,6 +237,24 @@ public:
 	};
 	TransitionView getTransitionView() const;
 
+	/**
+	 * How the player moves (SET_PLAYER_MOTION, 0xB2), in the original's
+	 * units; the viewer scales its own speeds by them. A speed of 0
+	 * freezes the player for a cutscene.
+	 */
+	struct Motion {
+		double speed = 1.5;
+		int turnRate = 15, lookRate = 10;
+		double accel = 1.0;
+		int turnAccel = 10, lookAccel = 10;
+		double jump = 13.9;
+	};
+	const Motion &getMotion() const { return _motion; }
+	/** SET_PLAYER_CONTROLS (0xAE): game+0x1E8, 0x5F by default. */
+	uint16 getControls() const { return _controls; }
+	/** GET_DIFFICULTY (0xD5) answers this; the original's default is 1. */
+	void setDifficulty(int difficulty) { _difficulty = difficulty; }
+
 	/** The item in use (SET_ACTIVE_ITEM), or 0. */
 	uint16 getActiveItem() const { return _activeItem; }
 
@@ -294,6 +312,7 @@ private:
 	void setActorMode(ScriptVM &vm, int mode, bool popTarget);
 	void skipNative(ScriptVM &vm, uint16 op);
 	void runProjectiles(uint32 ms);
+	void runPush(uint32 ms);
 	void playSoundAt(int sound, double x, double y, double z);
 
 	LevelFile &_level;
@@ -334,6 +353,17 @@ private:
 	};
 	Transition _transition;
 	int _transitionSound = -1, _transitionVolume = 64;
+	Motion _motion;
+	uint16 _controls = 0x5F;
+	int _difficulty = 1;
+	// SET_FALL_DAMAGE: the defaults are 1 and 32.0 (game+0x270, +0x26C).
+	double _fallMultiplier = 1, _fallDivisor = 32.0;
+	struct Push {
+		bool active = false;
+		double x = 0, y = 0, strength = 0;
+		uint32 ramp = 0, hold = 0, end = 0, elapsed = 0;
+	};
+	Push _push;
 	Punch _punch;
 	std::vector<MissionSound::Finished> _soundsFinished;
 

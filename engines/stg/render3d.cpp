@@ -379,6 +379,8 @@ void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 		_owner = Pick();
 		_owner.kind = Pick::kBillboard;
 		_owner.index = (int)i;
+		// SET_BILLBOARD_UNPICKABLE: the pick test passes over flag 0x400.
+		_ownerUnpickable = (billboard.flags & LevelFile::kBillboardUnpickable) != 0;
 		const Texture *texture = getTexture(billboard.texture, billboard.frames, billboard.speed, time);
 		if (!texture)
 			continue;
@@ -400,6 +402,7 @@ void LevelRenderer::drawBillboards(Graphics::Surface &dst, uint32 time) {
 		queuePolygon(poly, texture, billboard.fullbright ? nullptr : getShade(billboard.light), dst, kWrapStretch,
 		             (billboard.flags & seeThrough) == seeThrough);
 	}
+	_ownerUnpickable = false;
 }
 
 const LevelRenderer::Texture *LevelRenderer::getSpriteTexture(const Graphics::Surface *surface) {
@@ -569,7 +572,7 @@ void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *textur
 			depth[x] = (float)iz;
 			if (_owner.kind == Pick::kWall && _mapWalls)
 				(*_mapWalls)[_owner.index].flags |= LevelFile::kWallOnMap;
-			if (x == _pickX && y == _pickY) {
+			if (x == _pickX && y == _pickY && !_ownerUnpickable) {
 				_pick = _owner;
 				_pick.depth = 1.0 / iz;
 			}

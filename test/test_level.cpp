@@ -1166,6 +1166,51 @@ TEST(mission_flow) {
 	CHECK(mission.getMissingNatives().empty());
 }
 
+TEST(mission_player_settings) {
+	using namespace STG;
+	const uint16 P = OP_PUSH;
+	// verid1's start-up settings: a cutscene freeze (speed 0, the rest
+	// kept), gravity 80 with the third value kept, map zooms of 1, 2 and
+	// 4 pixels a unit, and an item that is greyed out and given icon 8.
+	std::vector<uint16> program = {
+		1, 0xE001,
+		0x8000,
+		kEventEnterState, 0xFFFF,
+		OP_PUSH32, 1, 0x8000, P, 0x8000, P, 0x8000, OP_PUSH32, 0, 0x8000, P, 0x8000, P, 0x8000, OP_PUSH32, 0, 0, 0xB2,
+		OP_PUSH32, 0, 0x8000, OP_PUSH32, 0, 0x8000, OP_PUSH32, 0, 80, 0xA3,
+		P, 15, P, 2, P, 15, P, 1, P, 16, P, 1, 0xC8,
+		P, 0, P, 0xE001, 0xD7,
+		P, 0, P, 1, P, 0xE001, 0x82, P, 8, OP_PUSH_SELF, 0x83,
+		OP_END,
+		0x3000,
+		0x2000,
+		0x1000
+	};
+	std::vector<byte> scriptBytes = makeScriptFile(program);
+	Common::MemoryReadStream scriptStream(scriptBytes.data(), (uint32)scriptBytes.size());
+	ScriptFile script;
+	CHECK(script.load(scriptStream));
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 40, 40, 0);
+	LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	LevelRenderer renderer(level);
+	Walker walker(level);
+	Mission mission(level, script, renderer, walker, nullptr);
+	mission.start();
+	CHECK_EQ(mission.getMotion().speed, 0.0);
+	CHECK_EQ(mission.getMotion().turnRate, 15);
+	CHECK(std::fabs(mission.getMotion().jump - 13.9) < 1e-9);
+	CHECK_EQ(walker.getGravity(), 80.0);
+	CHECK_EQ(walker.getMaxFallSpeed(), Walker::kMaxFallSpeed);
+	CHECK_EQ(mission.getHud().getMapZoom(0), 1.0);
+	CHECK_EQ(mission.getHud().getMapZoom(2), 4.0);
+	mission.getHud().addItem(0xE001, 3);
+	CHECK(!mission.getHud().isSlotEnabled(3));
+	CHECK_EQ(mission.getItemIcon(0xE001), 8);
+	CHECK(mission.getMissingNatives().empty());
+}
+
 TEST(walker_line_of_sight) {
 	STG::LevelFile level;
 	CHECK(loadLevel(level, makeRoom(12).build()));

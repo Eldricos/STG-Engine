@@ -96,6 +96,8 @@ void Walker::sync(Common::Serializer &s) {
 	s.syncAsDouble(_radius);
 	s.syncAsUint64(_zones);
 	s.syncAsBool(_collision);
+	s.syncAsDouble(_gravity);
+	s.syncAsDouble(_maxFallSpeed);
 	if (s.isLoading()) {
 		_contactWall = -1;
 		_contactObstacle = -1;
@@ -324,10 +326,11 @@ void Walker::followFloor(double seconds) {
 		_fallSpeed = 0;
 		return;
 	}
-	_fallSpeed += kGravity * seconds;
+	_fallSpeed = std::min(_fallSpeed + _gravity * seconds, _maxFallSpeed);
 	_feet -= _fallSpeed * seconds;
 	if (_feet <= height) {
 		_feet = height;
+		_landingSpeed = _fallSpeed;
 		_fallSpeed = 0;
 	}
 }

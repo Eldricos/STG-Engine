@@ -961,10 +961,20 @@ void STGEngine::updateWalk(uint32 delta) {
 	// No moving while a transition holds the screen.
 	if (_mission && _mission->getTransitionView().active)
 		forward = strafe = turn = look = 0;
+	// The scripts' motion settings (SET_PLAYER_MOTION) scale the viewer's
+	// speeds, the original's defaults giving these; cutscenes set 0.
+	double moveScale = 1, turnScale = 1, lookScale = 1;
+	if (_mission) {
+		static const Mission::Motion kDefault;
+		const Mission::Motion &motion = _mission->getMotion();
+		moveScale = motion.speed / kDefault.speed;
+		turnScale = (double)motion.turnRate / kDefault.turnRate;
+		lookScale = (double)motion.lookRate / kDefault.lookRate;
+	}
 
-	_camera.yaw += turn * kTurnSpeed * seconds;
-	_camera.pitch = std::max(-1.0, std::min(1.0, _camera.pitch + look * kLookSpeed * seconds));
-	double step = kSpeed * seconds;
+	_camera.yaw += turn * kTurnSpeed * turnScale * seconds;
+	_camera.pitch = std::max(-1.0, std::min(1.0, _camera.pitch + look * kLookSpeed * lookScale * seconds));
+	double step = kSpeed * moveScale * seconds;
 	double dx = (std::cos(_camera.yaw) * forward + std::sin(_camera.yaw) * strafe) * step;
 	double dy = (std::sin(_camera.yaw) * forward - std::cos(_camera.yaw) * strafe) * step;
 

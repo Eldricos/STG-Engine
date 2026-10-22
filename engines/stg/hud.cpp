@@ -424,6 +424,13 @@ void Hud::sync(Common::Serializer &s) {
 	}
 	for (double &level : _levels)
 		s.syncAsDouble(level);
+	for (double &zoom : _zoom)
+		s.syncAsDouble(zoom);
+	s.syncAsBool(_inventoryEnabled);
+	std::vector<uint16> disabled(_disabledItems.begin(), _disabledItems.end());
+	s.syncVector(disabled, [](Common::Serializer &ser, uint16 &v) { ser.syncAsUint16(v); });
+	if (s.isLoading())
+		_disabledItems = std::set<uint16>(disabled.begin(), disabled.end());
 	for (Effect &e : _effects) {
 		s.syncAsBool(e.active);
 		s.syncAsByte(e.r);

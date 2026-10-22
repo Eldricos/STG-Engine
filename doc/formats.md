@@ -375,11 +375,30 @@ heading in degrees.
   - PUSH_PLAYER
 - **The player:**
   - GET_HEALTH, ADD_HEALTH, DAMAGE_PLAYER
-  - SET_EYE_HEIGHT, SET_STEP_HEADROOM, SET_PLAYER_WIDTH, SET_PLAYER_MOTION
-  - SET_PLAYER_CONTROLS, LOW_GRAVITY
+  - SET_EYE_HEIGHT, SET_STEP_HEADROOM, SET_PLAYER_WIDTH
+  - SET_PLAYER_MOTION (0xB2) speed, turn rate, look rate, acceleration, turn and look acceleration,
+    jump (popped in that order; 32-bit 16.16 or words). 0x80000000 / 0x8000 keep a value,
+    0x80000001 / 0x8001 restore the default (`0x545334`: 1.5, 15, 10, 1.0, 10, 10, 13.9).
+    Cutscenes set speed 0.
+  - SET_PLAYER_CONTROLS (0xAE) mask: game+0x1E8, 0x5F by default; the bits gate input but which
+    does what isn't known yet.
+  - SET_GRAVITY (0xA3) gravity, fastest fall, a third value (16.16; keep / default as above):
+    defaults 64.4 and 200 (verid1: 80 and 25000). LOW_GRAVITY (0xB5): 0 and 10, or the defaults.
+  - SET_FALL_DAMAGE (0xEE) multiplier, divisor (16.16): landing at speed v hurts
+    v · multiplier / divisor, damage kind 1 (`0x43A662`); defaults 1 and 32 (verid1: 47). That v
+    is the speed is a guess.
+  - PUSH_PLAYER (0x77) position, strength, tRamp, tHold, tEnd: moves the player towards the point
+    (away for a negative strength), ramping up, holding, easing off (`0x43B447`); 0x78 stops it.
+  - GET_DIFFICULTY (0xD5): the configuration's +0x340, 1 by default.
 - **Actors:**
   - ACTOR_WANDER, ACTOR_APPROACH_PLAYER, ACTOR_ATTACK, ACTOR_FACE, ACTOR_STATE_1/4/5, SHOW, HIDE: set the mode (see Actors)
   - SET_ACTOR_COMBAT_STATS, SET_ACTOR_WEAPON, SET_ACTOR_TEAM, and size and reach settings
+  - ACTOR_GO_TO (0x4C) id, x, y, height: mode 7 towards a point (waypoints; event 37 on arrival)
+  - SET_ACTOR_ALWAYS_ACTIVE (0x5D) and SET_ACTOR_FLYER (0xEA) id, on: flags 0x400000, 0x1000000
+  - SET_ACTOR_CLIMB_ANGLE (0xE8) id, degrees: the share of a flyer's speed going across (+0x80;
+    whether it is the sine or the cosine isn't known)
+  - RELEASE_ACTOR_CLASS (0xA9): frees a sprite class's frames when unused
+  - FIRE_PROJECTILE_AT (0xE2) type, from x, y, height, to x, y, height: a shot from no one
 - **Sound** (see Sounds):
   - PLAY_SOUND sound, volume (0–64)
   - PLAY_SOUND_DELAYED, PLAY_SOUND_FADE_IN, PLAY_SOUND_CUE
@@ -403,6 +422,12 @@ heading in degrees.
   - GET_ARRAY/SET_ARRAY's words (0x56F844) outlive the mission: verid1 stores the health and the
     phaser's charge there before leaving.
 - **Interface:**
+  - SET_INVENTORY_ENABLED (0xD6) on; SET_ITEM_ENABLED (0xD7) id, on: greyed out slots
+    (grayout.bmp) that ignore clicks
+  - SET_ITEM_ICON (0x83) id, icon: the item's INVENT.BMP frame
+  - MAP_ZOOM_LEVELS (0xC8): per level a scale and a shift, pixels = units · 65536 · scale >> shift
+  - SET_BILLBOARD_UNPICKABLE (0xF4) id, on: flag 0x400, which picking passes over
+  - SET_FLAT_GROUPS (0xCD) a, b, c marks groups of flats (`0x440D3D`); not understood, not done
   - the close-up panel (PANEL_*)
   - the automap (MAP_*)
   - the inventory and items (INVENTORY_*, ATTACH_ITEM_BEHAVIOUR, ...)
