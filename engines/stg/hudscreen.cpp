@@ -103,6 +103,7 @@ const HudScreen::Image *HudScreen::load(const Common::String &name, Scope scope,
 		const Graphics::Surface &s = decoder.getSurface();
 		image->surface.create(s.w, s.h, Graphics::PixelFormat::createFormatCLUT8());
 		image->surface.copyRectToSurface(s, 0, 0, Common::Rect(s.w, s.h));
+		image->firstPixel = *(const byte *)s.getBasePtr(0, s.h - 1);
 		const Graphics::Palette &own = decoder.getPalette();
 		for (int i = 0; i < 256; i++) {
 			byte r, g, b;
@@ -129,6 +130,8 @@ const HudScreen::Image *HudScreen::loadScriptImage(int16 index, int frameHeight)
 
 void HudScreen::blit(Graphics::Surface &dst, const Image &image, int frame, int x, int y, int key,
                      const Common::Rect *clip) {
+	if (key == kFirstPixel)
+		key = image.firstPixel;
 	int height = image.frameHeight > 0 ? image.frameHeight : image.surface.h;
 	// Frames count up from the bottom of the strip: 0x40390E takes frame n
 	// at (count - n - 1) frames into rows already turned top down.
@@ -207,7 +210,7 @@ void HudScreen::drawWeaponDisplay(Graphics::Surface &screen, Mission &mission) {
 		return;
 	blit(screen, *display, 0, kWeaponDisplay.left, kWeaponDisplay.top);
 	if (const Image *arrow = load("p-arrow.bmp", kGlobal, 14))
-		blit(screen, *arrow, 0, kWeaponDisplay.left + 11 * item->level - 4, kWeaponDisplay.top, kKey, &kWeaponDisplay);
+		blit(screen, *arrow, 0, kWeaponDisplay.left + 11 * item->level - 4, kWeaponDisplay.top, kFirstPixel, &kWeaponDisplay);
 	int full = item->maxCharge > 0 ? (59 * item->charge + item->maxCharge - 1) / item->maxCharge : 0;
 	for (int k = 0; k < 59 - full; k++) {
 		int x = kWeaponDisplay.left + 191 - 3 * k;
@@ -226,7 +229,7 @@ void HudScreen::drawLifePanel(Graphics::Surface &screen, Mission &mission) {
 	// stack of units, 3 rows apart with a gap above the first 15.
 	int health = mission.getHealth();
 	if (const Image *bar = load("3health.bmp", kGlobal, 50))
-		blit(screen, *bar, health > 15 ? 2 : health > 5 ? 1 : 0, 118, 393);
+		blit(screen, *bar, health > 15 ? 2 : health > 5 ? 1 : 0, 118, 393, kFirstPixel);
 	if (const Image *unit = load("unithlt0.bmp", kGlobal)) {
 		for (int k = 0; k < health; k++) {
 			int y = 442 - unit->surface.h - 1 - 3 * k - (k >= 15 ? 7 : 0);
@@ -280,7 +283,7 @@ void HudScreen::drawMap(Graphics::Surface &screen, Mission &mission, const Level
 		if (entry.second.kind == Hud::kMarkerLife && entry.second.style >= 0 && entry.second.style < 8)
 			dot = load(Common::String("map/dot-") + kMarkerStyles[entry.second.style] + ".bmp", kGlobal);
 		if (dot) {
-			blit(screen, *dot, 0, sx - dot->surface.w / 2, sy - dot->surface.h / 2, kKey, &kMap);
+			blit(screen, *dot, 0, sx - dot->surface.w / 2, sy - dot->surface.h / 2, kFirstPixel, &kMap);
 		} else {
 			byte colour = palette.findBestColor(255, entry.second.kind == Hud::kMarkerLife ? 0 : 255, 0);
 			for (int dy = -1; dy <= 1; dy++) {
@@ -295,7 +298,7 @@ void HudScreen::drawMap(Graphics::Surface &screen, Mission &mission, const Level
 	// The player, an arrow in eight headings (agpface2.bmp).
 	int octant = (int)std::lround(yaw / (kPi / 4)) & 7;
 	if (const Image *face = load("agpface2.bmp", kGlobal, -8)) {
-		blit(screen, *face, octant, (int)cx - face->surface.w / 2, (int)cy - face->frameHeight / 2, kKey, &kMap);
+		blit(screen, *face, octant, (int)cx - face->surface.w / 2, (int)cy - face->frameHeight / 2, kFirstPixel, &kMap);
 	} else {
 		screen.fillRect(Common::Rect((int)cx - 1, (int)cy - 1, (int)cx + 2, (int)cy + 2),
 		                palette.findBestColor(255, 255, 255));
@@ -321,7 +324,7 @@ void HudScreen::drawPanel(Graphics::Surface &screen, Mission &mission, uint32 ti
 				continue;
 			if (const Image *image = loadScriptImage(button.image, button.rect.height()))
 				blit(screen, *image, button.frame, kViewer.left + button.rect.left, kViewer.top + button.rect.top,
-				     button.keyed ? 0xFE : -1, &kViewer);
+				     button.keyed ? kFirstPixel : kOpaque, &kViewer);
 		}
 	}
 	// The cycle button blinks while there is more than one panel.
@@ -343,7 +346,7 @@ void HudScreen::drawInventory(Graphics::Surface &screen, Mission &mission) {
 		int x = kSlotX[slot % 3], y = kSlotY[slot / 3];
 		int icon = mission.getItemIcon(id);
 		if (icons && icon >= 0)
-			blit(screen, *icons, icon, x, y);
+			blit(screen, *icons, icon, x, y, kFirstPixel);
 		if (id == mission.getActiveItem())
 			screen.frameRect(Common::Rect(x + 1, y + 1, x + 63, y + 45), kActiveColour);
 	}
@@ -460,7 +463,8 @@ void HudScreen::drawDrag(Graphics::Surface &screen, Mission &mission) {
 	const Image *icons = load("INVENT.BMP", kMission, kIconHeight);
 	uint16 id = mission.getHud().getSlot(_pressedSlot);
 	if (icons && id && mission.getItemIcon(id) >= 0)
-		blit(screen, *icons, mission.getItemIcon(id), _mouseX - kIconWidth / 2, _mouseY - kIconHeight / 2);
+		blit(screen, *icons, mission.getItemIcon(id), _mouseX - kIconWidth / 2, _mouseY - kIconHeight / 2,
+		     kFirstPixel);
 }
 
 } // End of namespace STG

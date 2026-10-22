@@ -84,6 +84,8 @@ private:
 		Graphics::Surface surface;
 		/** Its colours in the level's palette (Windows matched a DIB's colours to the screen's). */
 		byte remap[256];
+		/** The index of the first pixel in the file: the bottom left. */
+		byte firstPixel = 0;
 		int frameHeight = 0;
 		int getFrameCount() const;
 	};
@@ -94,14 +96,17 @@ private:
 	};
 	const Image *load(const Common::String &name, Scope scope, int frameHeight = 0);
 	const Image *loadScriptImage(int16 index, int frameHeight);
-	/**
-	 * The see-through index of the original's bitmaps (0x4039CE): each
-	 * file's own palette shows it in a colour of its own (purple behind
-	 * the inventory icons, red round the power arrow).
-	 */
-	static const int kKey = 0xFE;
-	/** Copy frame of image to (x, y), skipping pixels equal to key unless it is -1. */
-	static void blit(Graphics::Surface &dst, const Image &image, int frame, int x, int y, int key = kKey,
+	enum Key {
+		kOpaque = -1,
+		/**
+		 * See-through where a pixel matches the first one in the file, its
+		 * bottom left (0x425A00): the inventory icons' purple, the power
+		 * arrow's red, the health bar's magenta.
+		 */
+		kFirstPixel = -2
+	};
+	/** Copy frame of image to (x, y), skipping pixels equal to key (an index, or a Key). */
+	static void blit(Graphics::Surface &dst, const Image &image, int frame, int x, int y, int key = kOpaque,
 	                 const Common::Rect *clip = nullptr);
 	void drawLifePanel(Graphics::Surface &screen, Mission &mission);
 	void drawMap(Graphics::Surface &screen, Mission &mission, const LevelFile &level, double playerX,

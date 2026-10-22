@@ -79,7 +79,7 @@ public:
 		int frame = 0;
 		/** Relative to the panel. */
 		Common::Rect rect;
-		/** Colour-keyed (0xA0); palette index 0xFE is see-through. */
+		/** Colour-keyed (0xA0): see-through where it matches its bitmap's first pixel. */
 		bool keyed = false;
 		/** Invisible: only reports clicks (0x8F). */
 		bool hotspot = false;
