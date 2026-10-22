@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "common/endian.h"
+#include "common/serializer.h"
 #include "common/stream.h"
 #include "engines/stg/actors.h"
 #include "engines/stg/level.h"
@@ -1114,6 +1115,44 @@ TEST(mission_flow) {
 	mission.send(0xE001, Mission::kEventSignal, { 1 });
 	mission.update(40);
 	CHECK(!mission.isAccomplished());
+
+	// Saved here and loaded into a fresh copy of the level, it carries on
+	// the same.
+	walker.place(12, 7, 0);
+	Common::MemoryWriteStreamDynamic saved;
+	Common::Serializer out(nullptr, &saved);
+	mission.sync(out);
+	CHECK(!out.err());
+	{
+		LevelFile level2;
+		CHECK(loadLevel(level2, builder.build()));
+		LevelRenderer renderer2(level2);
+		Walker walker2(level2);
+		Mission copy(level2, script, renderer2, walker2, nullptr);
+		Common::MemoryReadStream in(saved.getData().data(), saved.size());
+		Common::Serializer load(&in, nullptr);
+		copy.sync(load);
+		CHECK(!load.err());
+		CHECK_EQ(copy.getVM().getGlobal(0), 1);
+		CHECK(std::fabs(walker2.getX() - 12) < 1e-9 && std::fabs(walker2.getY() - 7) < 1e-9);
+		CHECK_EQ(copy.getTime(), mission.getTime());
+		copy.send(0xE001, Mission::kEventSignal, { 2 });
+		copy.update(40);
+		CHECK(copy.isAccomplished());
+		// A save from a different level is refused.
+		LevelBuilder other;
+		other.addFloor(0, 0, 40, 40, 0);
+		other.addFloor(40, 0, 80, 40, 0);
+		LevelFile level3;
+		CHECK(loadLevel(level3, other.build()));
+		LevelRenderer renderer3(level3);
+		Walker walker3(level3);
+		Mission wrong(level3, script, renderer3, walker3, nullptr);
+		Common::MemoryReadStream in3(saved.getData().data(), saved.size());
+		Common::Serializer load3(&in3, nullptr);
+		wrong.sync(load3);
+		CHECK(load3.err());
+	}
 	// ...both are; event 8 starts the closing transition, which ends it.
 	mission.send(0xE001, Mission::kEventSignal, { 2 });
 	mission.update(40);
