@@ -270,6 +270,7 @@ void Mission::sync(Common::Serializer &s) {
 	s.syncAsUint32(_transition.elapsed);
 	s.syncAsInt(_transitionSound);
 	s.syncAsInt(_transitionVolume);
+	s.syncAsInt(_transitionStyle);
 	s.syncAsDouble(_motion.speed);
 	s.syncAsInt(_motion.turnRate);
 	s.syncAsInt(_motion.lookRate);
@@ -1576,6 +1577,32 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 			_actors->setMode(id ? id : self.object->id, Actors::kModeWalkTo, (uint16)(target | kTypeActor));
 		break;
 	}
+	case 0x4B: { // ACTOR_GO_TO_BILLBOARD
+		// 0x456CC9: mode 7 towards a billboard (target | 0x2000).
+		uint16 id = (uint16)vm.pop();
+		uint16 target = (uint16)vm.pop();
+		Position to;
+		if (_actors && getPosition((uint16)(target | kTypeBillboard), to))
+			_actors->goTo(id ? id : self.object->id, to.x, to.y, to.z);
+		break;
+	}
+	case 0x74: { // DISENGAGE
+		// 0x4381B2: forget the engaged object, if it is this one, quietly.
+		uint16 id = (uint16)vm.pop();
+		if (_engaged == id)
+			_engaged = 0;
+		break;
+	}
+	case 0x95: // SET_TRANSITION_STYLE
+		// game+0x330 (1 by default), handed to the transitions' blends with
+		// their colour; what each style looks like isn't known.
+		_transitionStyle = vm.pop();
+		break;
+	case 0xED: // SET_FLAT_FIELD_6C
+		// A flat's +0x6C (0x45BA40), next to 0xAD's +0x68; nothing found reads it.
+		vm.pop();
+		vm.pop();
+		break;
 	case 0x5B: { // SET_ACTOR_TARGET
 		uint16 id = (uint16)vm.pop();
 		uint16 target = (uint16)vm.pop();

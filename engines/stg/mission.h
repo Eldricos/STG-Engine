@@ -397,7 +397,7 @@ private:
 	ViewOverlay _viewOverlay;
 	std::vector<int32> _outcomes;
 	Transition _transition;
-	int _transitionSound = -1, _transitionVolume = 64;
+	int _transitionSound = -1, _transitionVolume = 64, _transitionStyle = 1;
 	Motion _motion;
 	uint16 _controls = 0x5F;
 	int _difficulty = 1;

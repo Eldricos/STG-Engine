@@ -339,6 +339,7 @@ reported on change only: the old thing gets 15 and the new one 14.
 
 ### Natives
 
+The retail game ships twelve of them; ARVADA2, GUERN and HALEE2 are in the table but not on the discs.
 The away-team locations are a table in sgens.exe (`0x545600`, 15 records of
 132 bytes: a game class number, then the folder): AMARGOS1, AMARGOS2, ANTILIOS,
 ARVADA1, ARVADA2, BERSUS, ENTERP, EPSION, GUERN, HALEE1, HALEE2, QURASH,
@@ -426,7 +427,11 @@ heading in degrees.
   - Actors: SET_ACTOR_MAP_MARKER (0x40), ACTOR_GO_TO_ACTOR (0x4A), SET_ACTOR_TARGET (0x5B),
     SET_ACTOR_ANIM_SPEED (0x5C, 16.16 stored as 8.8), FIRE_PROJECTILE_AT_OBJECT (0xE3),
     GET_ALERTED_COUNT (0xEF, actors seeing the player now).
-  - No effect here: ALLOC_GLOBALS (0x15), the logging natives 0x27-0x2A (0x28 pops only its count
+  - ACTOR_GO_TO_BILLBOARD (0x4B) id, billboard: mode 7 towards a billboard (`0x456CC9`).
+    DISENGAGE (0x74) id: forgets the ENGAGE object if it is this one, without event 35.
+    SET_TRANSITION_STYLE (0x95) n: game+0x330 (1 by default) passed to the transitions' blends
+    (epsion: 2); what the styles look like isn't known.
+  - No effect here: 0xED (a flat's +0x6C, unread), ALLOC_GLOBALS (0x15), the logging natives 0x27-0x2A (0x28 pops only its count
     and logs the words under it), LOAD_ACTOR_CLASS (0xA8), 0xAD, SET_PIXEL_PICK (0xE5).
 - **Doors** (movers, `engines/stg/movers.h`): built at load (`0x4B7CA0`) from walls with a mover id
   and run every tick (`0x4B82E0`). See "Movers" below. MOVER_OPEN (0x39), MOVER_CLOSE (0x3A),

@@ -24,8 +24,11 @@ namespace STG {
 namespace {
 
 const uint32 kSaveMagic = MKTAG('S', 'T', 'G', 'S');
-// 1: the viewer's place; 2: adds a mission in progress.
-const uint32 kSaveVersion = 2;
+// 1: the viewer's place; 2: adds a mission in progress; 3: doors, lifts,
+// lights and the rest the other missions need. Missions saved by an
+// older version can't be read.
+const uint32 kSaveVersion = 3;
+const uint32 kFirstMissionSaveVersion = 3;
 const uint32 kFrameMillis = 1000 / 60;
 
 // Palette layout used by the viewer when no game image is shown.
@@ -1396,6 +1399,8 @@ Common::Error STGEngine::loadGameState(int slot) {
 	if (in->eos())
 		return Common::Error(Common::kReadingFailed, "truncated saved game");
 
+	if (inMission && version < kFirstMissionSaveVersion)
+		return Common::Error(Common::kReadingFailed, "the mission was saved by an older build; start it again");
 	if (inMission) {
 		Common::Serializer s(in.get(), nullptr);
 		Common::String name;
