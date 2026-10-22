@@ -130,7 +130,9 @@ const HudScreen::Image *HudScreen::loadScriptImage(int16 index, int frameHeight)
 void HudScreen::blit(Graphics::Surface &dst, const Image &image, int frame, int x, int y, int key,
                      const Common::Rect *clip) {
 	int height = image.frameHeight > 0 ? image.frameHeight : image.surface.h;
-	frame = std::max(0, std::min(frame, image.getFrameCount() - 1));
+	// Frames count up from the bottom of the strip: 0x40390E takes frame n
+	// at (count - n - 1) frames into rows already turned top down.
+	frame = image.getFrameCount() - 1 - std::max(0, std::min(frame, image.getFrameCount() - 1));
 	Common::Rect area = clip ? *clip : Common::Rect(dst.w, dst.h);
 	for (int row = 0; row < height; row++) {
 		int sy = y + row;
@@ -165,7 +167,7 @@ void HudScreen::draw(Graphics::Surface &screen, Mission &mission, const LevelFil
 	byte black = level.getPalette().findBestColor(0, 0, 0);
 	screen.fillRect(Common::Rect(0, kView.bottom, screen.w, screen.h), black);
 	blit(screen, *_console, 0, 206, 252);
-	// Its frames, top down: off, object, map, life (0x4434B1).
+	// Its frames: off, object, map, life (0x4434B1).
 	static const int kLeftFrames[] = { 0, 3, 2, 1 };
 	if (const Image *left = load("l-m-m-o.bmp", kGlobal, 206))
 		blit(screen, *left, kLeftFrames[_leftMode], kLeftPanel.left, kLeftPanel.top);

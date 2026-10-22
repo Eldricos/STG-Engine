@@ -500,12 +500,13 @@ rows 34-285, the same picture; a narrower 504-wide view with borderl/borderr
 from bitmaps: plain names from COMMON.DAT, the mission's from its folder.
 Each bitmap has its own palette; its colours are drawn in their nearest
 matches in the level's palette, as Windows did when blitting a DIB to the
-8-bit screen. Frame n of a strip is the n-th from the top.
+8-bit screen. Frame n of a strip is the n-th from the bottom (`0x40390E`):
+so 3health.bmp's frame 2, for health above 15, is the top one.
 Rectangles are inclusive. `engines/stg/hudscreen.h`, `hud.h`.
 
 | Part | Where | What |
 |------|-------|------|
-| left panel | (0,253)-(205,458) | l-m-m-o.bmp, frames of 206 rows by mode, top down: off, object, map, life; tabs at (6,261), (6,331), (6,401), 23 x 52 |
+| left panel | (0,253)-(205,458) | l-m-m-o.bmp, frames of 206 rows by mode: off, object, map, life; tabs at (6,261), (6,331), (6,401), 23 x 52 |
 | life | (40,269), (118,393) | body picture (`SET_BODY_IMAGE`, -1 = BODY.BMP, frames of 177 rows); health: 3health.bmp (frames of 50 rows: over 15, over 5, else), then unithlt0.bmp units at x 119, unit k's top at 442 - h - 1 - 3k (- 7 from the 16th) |
 | map | (39,267)-(192,414) | walls flagged 0x800 in the height band shown, markers (map\dot-*.bmp), the player (agpface2.bmp, 8 headings); levels and zoom buttons at (43,415), (74,415) |
 | object | (39,267) | the mission's OBJECT.BMP |
