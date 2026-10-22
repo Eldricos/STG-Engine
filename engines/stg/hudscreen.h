@@ -15,6 +15,7 @@
 #include "common/graphics/palette.h"
 #include "common/graphics/surface.h"
 #include "common/rect.h"
+#include "engines/stg/framedimage.h"
 #include "engines/stg/resources.h"
 
 namespace STG {
@@ -78,17 +79,7 @@ public:
 	void drawDrag(Graphics::Surface &screen, Mission &mission);
 
 private:
-	/** A bitmap, cut into frames of frameHeight rows (0 for one frame; -n asks for n frames). */
-	struct Image {
-		/** The bitmap's own indices; keys are compared with these. */
-		Graphics::Surface surface;
-		/** Its colours in the level's palette (Windows matched a DIB's colours to the screen's). */
-		byte remap[256];
-		/** The index of the first pixel in the file: the bottom left. */
-		byte firstPixel = 0;
-		int frameHeight = 0;
-		int getFrameCount() const;
-	};
+	typedef FramedImage Image;
 	enum Scope {
 		kGlobal,  ///< COMMON.DAT
 		kMission, ///< beside GAME.LV2
@@ -97,13 +88,8 @@ private:
 	const Image *load(const Common::String &name, Scope scope, int frameHeight = 0);
 	const Image *loadScriptImage(int16 index, int frameHeight);
 	enum Key {
-		kOpaque = -1,
-		/**
-		 * See-through where a pixel matches the first one in the file, its
-		 * bottom left (0x425A00): the inventory icons' purple, the power
-		 * arrow's red, the health bar's magenta.
-		 */
-		kFirstPixel = -2
+		kOpaque = FramedImage::kOpaque,
+		kFirstPixel = FramedImage::kFirstPixel
 	};
 	/** Copy frame of image to (x, y), skipping pixels equal to key (an index, or a Key). */
 	static void blit(Graphics::Surface &dst, const Image &image, int frame, int x, int y, int key = kOpaque,

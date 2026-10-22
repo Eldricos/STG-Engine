@@ -65,10 +65,6 @@ Common::String normalise(const Common::String &name) {
 const Common::Rect HudScreen::kView = Common::Rect(0, 0, 640, 252);
 const Common::Rect HudScreen::kTextLine = inclusive(10, 461, 639, 477);
 
-int HudScreen::Image::getFrameCount() const {
-	return frameHeight > 0 ? std::max(1, (int)surface.h / frameHeight) : 1;
-}
-
 HudScreen::HudScreen(const ResourceManager &resources, const ResourceRef &level, const ScriptFile &script,
                      const Graphics::Palette &palette)
 	: _resources(resources), _level(level), _script(script), _palette(palette) {
@@ -107,18 +103,7 @@ const HudScreen::Image *HudScreen::load(const Common::String &name, Scope scope,
 	::Image::BitmapDecoder decoder;
 	if (found && _resources.loadImage(*found, decoder) && decoder.hasPalette()) {
 		image.reset(new Image());
-		const Graphics::Surface &s = decoder.getSurface();
-		image->surface.create(s.w, s.h, Graphics::PixelFormat::createFormatCLUT8());
-		image->surface.copyRectToSurface(s, 0, 0, Common::Rect(s.w, s.h));
-		image->firstPixel = *(const byte *)s.getBasePtr(0, s.h - 1);
-		const Graphics::Palette &own = decoder.getPalette();
-		for (int i = 0; i < 256; i++) {
-			byte r, g, b;
-			own.get(i, r, g, b);
-			image->remap[i] = _palette.findBestColor(r, g, b);
-		}
-		// A negative frame height asks for that many frames.
-		image->frameHeight = frameHeight < 0 ? s.h / -frameHeight : frameHeight;
+		image->set(decoder, _palette, frameHeight);
 	}
 	const Image *result = image.get();
 	_images[key] = std::move(image);
@@ -137,26 +122,7 @@ const HudScreen::Image *HudScreen::loadScriptImage(int16 index, int frameHeight)
 
 void HudScreen::blit(Graphics::Surface &dst, const Image &image, int frame, int x, int y, int key,
                      const Common::Rect *clip) {
-	if (key == kFirstPixel)
-		key = image.firstPixel;
-	int height = image.frameHeight > 0 ? image.frameHeight : image.surface.h;
-	// Frames count up from the bottom of the strip: 0x40390E takes frame n
-	// at (count - n - 1) frames into rows already turned top down.
-	frame = image.getFrameCount() - 1 - std::max(0, std::min(frame, image.getFrameCount() - 1));
-	Common::Rect area = clip ? *clip : Common::Rect(dst.w, dst.h);
-	for (int row = 0; row < height; row++) {
-		int sy = y + row;
-		if (sy < area.top || sy >= area.bottom)
-			continue;
-		const byte *src = (const byte *)image.surface.getBasePtr(0, frame * height + row);
-		byte *out = (byte *)dst.getBasePtr(0, sy);
-		for (int col = 0; col < image.surface.w; col++) {
-			int sx = x + col;
-			if (sx < area.left || sx >= area.right || src[col] == key)
-				continue;
-			out[sx] = image.remap[src[col]];
-		}
-	}
+	image.draw(dst, frame, x, y, key, clip);
 }
 
 void HudScreen::draw(Graphics::Surface &screen, Mission &mission, const LevelFile &level, double playerX,

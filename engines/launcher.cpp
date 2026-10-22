@@ -58,6 +58,7 @@ const char *const kHelpString =
 	"  -o, --output=DIR         Directory to extract into (default: current directory)\n"
 	"      --cd1=PATH           Disc 1 (or a copy of it), for files not installed to disk\n"
 	"      --cd2=PATH           Disc 2 (or a copy of it)\n"
+	"      --viewer             Browse the game's files instead of playing it\n"
 	"  -c, --config=FILE        Use an alternate configuration file\n"
 	"  -d, --debuglevel=NUM     Set debug verbosity\n"
 	"      --debugflags=A,B     Enable engine debug channels (or 'all')\n"
@@ -95,6 +96,7 @@ bool parseCommandLine(int argc, char *argv[], Command &command) {
 		{ "o", "output", "output", true, nullptr },
 		{ nullptr, "cd1", "cd1path", true, nullptr },
 		{ nullptr, "cd2", "cd2path", true, nullptr },
+		{ nullptr, "viewer", "viewer", false, "true" },
 		{ "c", "config", "config", true, nullptr },
 		{ "d", "debuglevel", "debuglevel", true, nullptr },
 		{ nullptr, "debugflags", "debugflags", true, nullptr },
@@ -185,6 +187,7 @@ void registerDefaults() {
 	ConfMan.registerDefault("sfx_volume", 192);
 	ConfMan.registerDefault("speech_volume", 192);
 	ConfMan.registerDefault("mute", false);
+	ConfMan.registerDefault("viewer", false);
 	ConfMan.registerDefault("debuglevel", 0);
 
 	for (const MetaEngine *engine : getMetaEngines())

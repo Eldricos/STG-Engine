@@ -24,12 +24,6 @@ namespace STG {
 
 namespace {
 
-const uint32 kSaveMagic = MKTAG('S', 'T', 'G', 'S');
-// 1: the viewer's place; 2: adds a mission in progress; 3: doors, lifts,
-// lights and the rest the other missions need. Missions saved by an
-// older version can't be read.
-const uint32 kSaveVersion = 3;
-const uint32 kFirstMissionSaveVersion = 3;
 const uint32 kFrameMillis = 1000 / 60;
 
 // Palette layout used by the viewer when no game image is shown.
@@ -89,6 +83,8 @@ Common::Error STGEngine::run() {
 		_stars.push_back({ (int32)_random.getRandomNumberRng(0, 2000) - 1000,
 		                   (int32)_random.getRandomNumberRng(0, 2000) - 1000,
 		                   (int32)_random.getRandomNumberRng(1, 1000) });
+
+	startFrontEnd();
 
 	uint32 lastFrame = _system->getMillis();
 	while (!shouldQuit()) {
@@ -185,6 +181,10 @@ void STGEngine::loadFont() {
 }
 
 void STGEngine::handleEvent(const Common::Event &event) {
+	if (_menuOpen) {
+		handleMenuEvent(event);
+		return;
+	}
 	bool walking = _level && _levelPage == kLevelPage3D;
 	bool bracket = event.kbd.keycode == Common::KEYCODE_LEFTBRACKET || event.kbd.keycode == Common::KEYCODE_RIGHTBRACKET;
 	if (walking && bracket && !(event.kbd.flags & Common::KBD_SHIFT) && _mission &&
@@ -208,7 +208,12 @@ void STGEngine::handleEvent(const Common::Event &event) {
 	case Common::EVENT_KEYDOWN:
 		switch (event.kbd.keycode) {
 		case Common::KEYCODE_ESCAPE:
-			// Out of a mission back to the list; from anywhere else, quit.
+			// In the game, the menu; in the viewer, out of a mission back
+			// to the list, and from anywhere else, quit.
+			if (_frontEnd) {
+				openMenu(_playingMission);
+				break;
+			}
 			if (_playingMission) {
 				leaveMission(Common::format("Left %s", _missions[_missionChoice].name.c_str()));
 				break;
@@ -333,6 +338,18 @@ void STGEngine::drawFrame(uint32 delta) {
 		_dirty = true;
 	}
 
+	if (_menuOpen) {
+		if (_dirty) {
+			_menu->draw(_screen->getSurface());
+			_screen->update();
+			_dirty = false;
+		}
+		return;
+	}
+	if (_playingMission && _mission && _mission->isFinished() && _frontEnd) {
+		campaignMissionEnded();
+		return;
+	}
 	if (_playingMission && _mission && _mission->isFinished()) {
 		Common::String message = Common::format("%s %s", _missions[_missionChoice].name.c_str(),
 		                                        _mission->isAccomplished() ? "accomplished" : "ended, objectives not met");
@@ -840,6 +857,7 @@ void STGEngine::startMission(const ResourceRef &levelRef, bool run) {
 		return _resources.open(ref);
 	};
 	_mission.reset(new Mission(*_level, *_levelScript, *_levelRenderer, *_walker, _actors.get(), _mixer, openSound));
+	_mission->setDifficulty(_settings.difficulty);
 	_mission->setCarriedArray(_carriedArray);
 	if (run)
 		_mission->start();
@@ -1026,7 +1044,7 @@ void STGEngine::updateWalk(uint32 delta) {
 			_camera.yaw = yaw;
 		Common::String subtitle;
 		uint32 duration;
-		if (_mission->takeSubtitle(subtitle, duration)) {
+		if (_mission->takeSubtitle(subtitle, duration) && (_settings.subtitles || !_frontEnd)) {
 			_subtitle = subtitle;
 			_missionSubtitle = true;
 			_subtitleUntil = _levelTime + duration;
@@ -1425,8 +1443,17 @@ Common::Error STGEngine::saveGameState(int slot, const Common::String &descripti
 	out->writeUint32LE(kSaveVersion);
 	out->writeUint16LE((uint16)description.size());
 	out->writeString(description);
+	Common::String date = saveDate();
+	out->writeUint16LE((uint16)date.size());
+	out->writeString(date);
 	out->writeUint32LE((uint32)_imageIndex);
 	out->writeUint32LE((uint32)_soundIndex);
+	// Where the story is.
+	out->writeByte(_frontEnd ? 1 : 0);
+	if (_frontEnd) {
+		Common::Serializer s(nullptr, out.get());
+		_campaign.sync(s);
+	}
 	// A mission in progress: where, the view, then everything the mission holds.
 	bool inMission = _playingMission && _mission && _level;
 	out->writeByte(inMission ? 1 : 0);
@@ -1461,8 +1488,23 @@ Common::Error STGEngine::loadGameState(int slot) {
 		return Common::Error(Common::kReadingFailed, "saved by a newer version");
 
 	Common::String description = in->readFixedString(in->readUint16LE());
+	if (version >= kFirstDatedSaveVersion)
+		in->readFixedString(in->readUint16LE());
 	int32 imageIndex = in->readSint32LE();
 	int32 soundIndex = in->readSint32LE();
+	bool inCampaign = false;
+	if (version >= kFirstDatedSaveVersion && in->readByte() != 0) {
+		if (!_frontEnd)
+			return Common::Error(Common::kReadingFailed, "a saved game, which the resource viewer can't load");
+		Campaign campaign = _campaign;
+		Common::Serializer s(in.get(), nullptr);
+		_campaign.sync(s);
+		if (s.err()) {
+			_campaign = campaign;
+			return Common::Error(Common::kReadingFailed, "damaged saved game");
+		}
+		inCampaign = true;
+	}
 	bool inMission = version >= 2 && in->readByte() != 0;
 	if (in->eos())
 		return Common::Error(Common::kReadingFailed, "truncated saved game");
@@ -1508,6 +1550,15 @@ Common::Error STGEngine::loadGameState(int slot) {
 		_playingMission = true;
 		showLevelPage(kLevelPage3D);
 		info("Loaded slot %d: %s (%s)", slot, description.c_str(), name.c_str());
+		return Common::kNoError;
+	}
+
+	if (inCampaign) {
+		// Saved between missions: the story carries on from there.
+		if (_playingMission)
+			leaveMission("Loaded a saved game");
+		info("Loaded slot %d: %s", slot, description.c_str());
+		runCampaign();
 		return Common::kNoError;
 	}
 

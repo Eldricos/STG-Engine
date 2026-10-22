@@ -13,14 +13,17 @@
 #include <vector>
 
 #include "common/audio/mixer.h"
+#include "common/endian.h"
 #include "common/events.h"
 #include "common/random.h"
 #include "engines/engine.h"
 #include "engines/game.h"
+#include "engines/stg/campaign.h"
 #include "engines/stg/font.h"
 #include "engines/stg/hudscreen.h"
 #include "engines/stg/level.h"
 #include "engines/stg/mission.h"
+#include "engines/stg/optionsmenu.h"
 #include "engines/stg/helditem.h"
 #include "engines/stg/overlay.h"
 #include "engines/stg/render3d.h"
@@ -30,6 +33,14 @@
 #include "engines/stg/walker.h"
 
 namespace STG {
+
+const uint32 kSaveMagic = MKTAG('S', 'T', 'G', 'S');
+// 1: the viewer's place; 2: adds a mission in progress; 3: doors, lifts,
+// lights and the rest the other missions need; 4: the date saved and the
+// campaign. Missions saved by an older version can't be read.
+const uint32 kSaveVersion = 4;
+const uint32 kFirstMissionSaveVersion = 3;
+const uint32 kFirstDatedSaveVersion = 4;
 
 /**
  * Star Trek: Generations engine.
@@ -127,6 +138,48 @@ private:
 	 */
 	bool playMovie(const Common::String &name);
 
+	// The front end (frontend.cpp).
+	/** A line of rolling text: its gap above, and whether to centre it. */
+	struct RollLine {
+		Common::String text;
+		int gap;
+		bool centred;
+	};
+	/**
+	 * The title, then the menu, and the story from STATES.INI; false (and
+	 * the resource viewer) if the data for it isn't there.
+	 */
+	bool startFrontEnd();
+	void loadSettings();
+	/** Keep the settings and apply the volumes. */
+	void saveSettings();
+	/** Run the story until a mission starts or the game ends. */
+	void runCampaign();
+	bool startCampaignMission(int type);
+	/** The campaign's mission is over: on to whatever comes next. */
+	void campaignMissionEnded();
+	void openMenu(bool canReturn);
+	void closeMenu();
+	void handleMenuEvent(const Common::Event &event);
+	void playMenuSound(int id);
+	std::vector<OptionsMenu::Slot> listSaves();
+	bool readSaveHeader(int slot, Common::String &description, Common::String &date);
+	static Common::String saveDate();
+	/** Poll events; true on a key or click (or quitting). */
+	bool waitForSkip();
+	/** Show a bitmap full screen in its own palette. */
+	bool showPicture(const ResourceRef &ref, Image::BitmapDecoder &decoder);
+	void showIntro();
+	/** Play a track from MUSIC.1 or MUSIC.2. */
+	bool playMusic(const Common::String &name);
+	/** Roll lines of text up over a background while the music plays. */
+	void rollText(const Image::BitmapDecoder &background, const Font &font, const std::vector<RollLine> &lines,
+	              const std::vector<Common::String> &music);
+	/** The ending texts, TEXTn.TXT. */
+	void showScrollText(int number);
+	bool loadCredits(std::vector<RollLine> &lines);
+	void showCredits();
+
 	Common::String getSaveFileName(int slot) const;
 
 	DetectedGame _game;
@@ -213,6 +266,17 @@ private:
 	/** GET_ARRAY/SET_ARRAY's words, carried from one mission to the next. */
 	std::vector<int16> _carriedArray;
 	bool _dirty = true;
+
+	/** Playing the game, rather than viewing its files. */
+	bool _frontEnd = false;
+	Campaign _campaign;
+	std::unique_ptr<OptionsMenu> _menu;
+	bool _menuOpen = false;
+	/** The palette under the menu. */
+	Graphics::Palette _gamePalette;
+	GameSettings _settings;
+	Audio::SoundHandle _menuSound;
+	Audio::SoundHandle _musicHandle;
 };
 
 } // End of namespace STG

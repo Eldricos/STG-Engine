@@ -4,9 +4,12 @@ target_sources(stg_engines PRIVATE
 	detection.cpp
 	disasm.cpp
 	font.cpp
+	framedimage.cpp
+	frontend.cpp
 	level.cpp
 	mission.cpp
 	opcodes.cpp
+	optionsmenu.cpp
 	overlay.cpp
 	hud.cpp
 	helditem.cpp

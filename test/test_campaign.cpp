@@ -10,6 +10,7 @@
 
 #include "common/serializer.h"
 #include "engines/stg/campaign.h"
+#include "engines/stg/optionsmenu.h"
 
 namespace {
 
@@ -114,4 +115,73 @@ TEST(campaign_runs_the_script) {
 	CHECK_EQ(n, 1);
 	CHECK_EQ(next(c), A::kOptions);
 	CHECK(!c.isRunning());
+}
+
+TEST(options_menu_panels) {
+	typedef STG::OptionsMenu M;
+	STG::ResourceManager resources;
+	M menu(resources); // no pictures: the logic works without them
+	std::vector<int> sounds;
+	menu.setSoundCallback([&](int id) { sounds.push_back(id); });
+	STG::GameSettings settings;
+	menu.open(settings, false, false, true);
+	CHECK_EQ(sounds.back(), 1000);
+	auto click = [&](int x, int y) {
+		menu.mouseDown(x, y);
+		menu.mouseUp(x, y);
+	};
+
+	// Nothing to return to, nothing to save.
+	click(400, 400);
+	click(150, 70);
+	CHECK_EQ(menu.getPanel(), M::kPanelMain);
+	CHECK_EQ(menu.takeResult(), M::kNone);
+
+	// Settings: the difficulty steps round; Accept keeps it.
+	click(150, 160);
+	CHECK_EQ(menu.getPanel(), M::kPanelSettings);
+	click(227 + 190, 29 + 195);
+	click(227 + 110 + 212, 29 + 130); // past the slider's end: no change
+	click(227 + 106 + 70, 29 + 130);  // a third of the way along
+	click(400, 400);
+	CHECK_EQ(menu.getPanel(), M::kPanelMain);
+	CHECK(menu.takeSettingsChanged());
+	CHECK_EQ(menu.getSettings().difficulty, 2);
+	CHECK_EQ(menu.getSettings().effectsVolume, 9);
+
+	// Load: an empty slot can't be picked.
+	std::vector<M::Slot> slots(M::kAutoSaveSlot + 1);
+	slots[1] = { true, "Before the door", "10/22 14:05" };
+	menu.setSlots(slots);
+	click(150, 40);
+	click(300, 29 + 33 + 10);
+	CHECK_EQ(sounds.back(), 1002);
+	click(300, 29 + 33 + 30 + 10);
+	click(400, 400);
+	CHECK_EQ(menu.takeResult(), M::kLoad);
+	CHECK_EQ(menu.getSlot(), 1);
+
+	// Quit asks first; Cancel goes back.
+	click(150, 130);
+	CHECK_EQ(menu.getPanel(), M::kPanelQuit);
+	menu.keyDown(Common::KeyState(Common::KEYCODE_ESCAPE));
+	CHECK_EQ(sounds.back(), 2000);
+	CHECK_EQ(menu.takeResult(), M::kNone);
+	click(150, 100);
+	menu.keyDown(Common::KeyState(Common::KEYCODE_RETURN));
+	CHECK_EQ(menu.takeResult(), M::kNewGame);
+
+	// In a game: Return, and Save with a name typed in.
+	menu.open(settings, true, true, false);
+	click(150, 70);
+	click(300, 29 + 33 + 10);
+	menu.keyDown(Common::KeyState(Common::KEYCODE_a, 'a'));
+	menu.keyDown(Common::KeyState(Common::KEYCODE_b, 'b'));
+	menu.keyDown(Common::KeyState(Common::KEYCODE_BACKSPACE));
+	click(400, 400);
+	CHECK_EQ(menu.takeResult(), M::kSave);
+	CHECK_EQ(menu.getSlot(), 0);
+	CHECK_EQ(menu.getSaveName(), Common::String("a"));
+	click(400, 400);
+	CHECK_EQ(menu.takeResult(), M::kReturn);
 }

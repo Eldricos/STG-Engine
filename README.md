@@ -114,6 +114,31 @@ Useful options: `-f` for fullscreen, `--filtering`, `--integer-scaling`,
 recognise.
 
 In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
+
+### Playing
+
+With disc 1's `STELLAR.DAT` (which holds the story script, `DESIGN/STATES.INI`)
+and `OPTIONS.DAT`, the game starts as the original does: the title, then the
+captain's menu (`CAPTAINS.BMP`). The original goes straight from the title into
+a new game; here the menu comes first, because there is no bridge yet to land
+on, so a saved game can be loaded instead. New starts the story: its movies,
+then each away mission in the order the script gives, branching on whether its
+objectives were met, through to one of the endings and the credits. Esc in a
+mission opens the menu: Load, Save (nine slots plus the automatic save the
+story makes), New, Quit (the credits, then out), Settings (effects and music
+volume, difficulty, subtitles) and Controls (the keys, which can't be changed
+yet). Settings are kept in the settings file.
+
+The bridge (the strategic map) and space combat aren't implemented. The story
+takes every away mission it offers and never engages a fleet, so the parts of
+the game that only happen in combat are passed over. The credits are read from
+the game's `SGENS.EXE`; movies come from the discs' `MOVIE` folders.
+
+`--viewer` starts the resource viewer instead, which is also what runs when
+the story's data isn't there.
+
+### The resource viewer
+
 The starting screen lists the away missions found in the game's data (the
 fifteen locations sgens.exe knows, from AMARGOS1 to VERID1): Up/Down choose
 one and Enter plays it in the 3D view, after its briefing picture. Esc leaves a
@@ -139,7 +164,7 @@ out of the inventory to drop them, click the close-up panel the scripts open
 (Space uses it), and switch the left panel with its tabs or B (life), H (map)
 and O (object). Home
 returns to the starfield, F8 plays the movies in turn, F5/F7 save and load, and Esc quits (or, in a
-mission, leaves it).
+mission, leaves it; when playing the story, it opens the menu).
 
 Settings and saves go in the per-user directory SDL picks for the platform:
 `~/.local/share/STG-Engine/stg/` on Linux, `%APPDATA%\STG-Engine\stg\` on
