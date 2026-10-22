@@ -25,6 +25,8 @@ const double kPi = 3.14159265358979323846;
  * or 256 texels across (in verid1, halee1, amargos1 and arvada1 alike).
  */
 const double kTextureUnits = 128.0;
+/** Depths closer than this fraction count as the same. */
+const float kDepthTie = 1e-4f;
 
 double fromFixed(int32 v) {
 	return v / kFixed;
@@ -491,7 +493,11 @@ void LevelRenderer::drawPolygon(std::vector<Vertex> &poly, const Texture *textur
 		byte *out = (byte *)dst.getBasePtr(0, y);
 		float *depth = &_depth[(size_t)y * dst.w];
 		for (int x = x0; x <= x1; x++, iz += dz, uz += du, vz += dv) {
-			if (iz <= depth[x])
+			// Ties go to what is drawn later, as with the original's
+			// painting: levels put walls on the same line and height
+			// (verid1 has 296 such pairs), which would otherwise take
+			// turns column by column as rounding falls.
+			if (iz < depth[x] * (1 - kDepthTie))
 				continue;
 			byte color = 0;
 			if (texture) {
