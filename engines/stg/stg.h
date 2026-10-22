@@ -198,6 +198,8 @@ private:
 	int _missionChoice = 0;
 	bool _playingMission = false;
 	Common::String _missionMessage;
+	/** GET_ARRAY/SET_ARRAY's words, carried from one mission to the next. */
+	std::vector<int16> _carriedArray;
 	bool _dirty = true;
 };
 

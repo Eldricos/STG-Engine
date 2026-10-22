@@ -611,6 +611,8 @@ void STGEngine::playMission(int index) {
 }
 
 void STGEngine::leaveMission(const Common::String &message) {
+	if (_mission)
+		_carriedArray = _mission->getCarriedArray();
 	_playingMission = false;
 	_missionMessage = message;
 	info("%s", message.c_str());
@@ -818,6 +820,7 @@ void STGEngine::startMission(const ResourceRef &levelRef, bool run) {
 		return _resources.open(ref);
 	};
 	_mission.reset(new Mission(*_level, *_levelScript, *_levelRenderer, *_walker, _actors.get(), _mixer, openSound));
+	_mission->setCarriedArray(_carriedArray);
 	if (run)
 		_mission->start();
 	double yaw;

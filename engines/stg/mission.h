@@ -252,6 +252,15 @@ public:
 	const Motion &getMotion() const { return _motion; }
 	/** SET_PLAYER_CONTROLS (0xAE): game+0x1E8, 0x5F by default. */
 	uint16 getControls() const { return _controls; }
+	/**
+	 * GET_ARRAY/SET_ARRAY's words, which outlive a mission (0x56F844):
+	 * verid1 leaves the player's health and phaser charge there.
+	 */
+	const std::vector<int16> &getCarriedArray() const { return _array; }
+	void setCarriedArray(const std::vector<int16> &array) {
+		if (array.size() == _array.size())
+			_array = array;
+	}
 	/** GET_DIFFICULTY (0xD5) answers this; the original's default is 1. */
 	void setDifficulty(int difficulty) { _difficulty = difficulty; }
 
