@@ -339,12 +339,13 @@ reported on change only: the old thing gets 15 and the new one 14.
 
 ### Natives
 
-The retail game ships twelve of them; ARVADA2, GUERN and HALEE2 are in the table but not on the discs.
 The away-team locations are a table in sgens.exe (`0x545600`, 15 records of
 132 bytes: a game class number, then the folder): AMARGOS1, AMARGOS2, ANTILIOS,
 ARVADA1, ARVADA2, BERSUS, ENTERP, EPSION, GUERN, HALEE1, HALEE2, QURASH,
 GALORN1, GALORN2, VERID1. The location's game object is built by `0x4331FA`
 with the controller as its +0x4C.
+The retail game ships twelve of them; ARVADA2, GUERN and HALEE2 are in the table but not on
+the discs.
 
 Natives that verid1 uses, by purpose. Arguments are listed as popped, top
 of the stack first. A *position* is x, y, z (32-bit 16.16 each) and a
