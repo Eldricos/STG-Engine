@@ -341,14 +341,15 @@ TEST(stg_overlay_format) {
 	CHECK_EQ(overlay.getSurface().getPixel(2, 2), 3u);
 	CHECK(!overlay.isOpaque(3, 2));
 
-	// Frame 1 (rows 2-3) drawn over a filled surface keeps the transparent pixel.
+	// Frame 1 (rows 2-3, stored bottom up) drawn over a filled surface keeps
+	// the transparent pixel.
 	Graphics::Surface dst;
 	dst.create(4, 2, Graphics::PixelFormat::createFormatCLUT8());
 	dst.fillRect(Common::Rect(4, 2), 5);
 	overlay.drawFrame(dst, 1, 2, 0, 0);
-	CHECK_EQ(dst.getPixel(0, 0), 1u);
-	CHECK_EQ(dst.getPixel(3, 0), 5u);
-	CHECK_EQ(dst.getPixel(3, 1), 9u);
+	CHECK_EQ(dst.getPixel(0, 1), 1u);
+	CHECK_EQ(dst.getPixel(3, 1), 5u);
+	CHECK_EQ(dst.getPixel(3, 0), 9u);
 
 	// A row whose runs overflow the width is rejected.
 	std::vector<byte> bad = file.getData();

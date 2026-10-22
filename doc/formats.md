@@ -59,7 +59,10 @@ rows: int16 runs until the row reaches `width`
 Every row of both samples decodes to exactly the width. The **frame height
 is not stored**. It looks like 252 for the 504- and 640-wide overlays and 88 for
 NUPLANT (152 wide), so it presumably comes from the game script. There's no
-palette either; the overlay uses the palette of the current scene.
+palette either; the overlay uses the palette of the current scene. The frames
+are stacked top down, but each frame's rows are stored bottom up: only that
+way up do NUPLANT's nozzle tips sit on the hotspots sgens.exe gives its poses,
+and Kirk's fists in KIRKHIT swing up from the bottom of the view.
 
 ## GS2 sprite sets: decoded, `engines/stg/sprite.h`
 
@@ -462,6 +465,7 @@ Ctrl (or the left mouse button) attacks once per press (`0x43CF95`).
   muzzle as the player looks down, by an amount not worked out. A shot
   never hits the player.
 - **The gun held up** (`0x430D19`): the item's overlay, 12 frames of 88 rows
+  (each stored bottom up, like every overlay's frames)
   — poses 6–11 (right-low, right-high, centre-high, left-high, left-low,
   centre-low), and 0–5 the same while the muzzle flashes. For a cursor at
   (x, y) its hotspot goes to X = W/2 + 140 (x − W/2) / (W/2),
@@ -494,11 +498,14 @@ The 3D view is the top 640 x 252 (the original renders 640 x 320 and shows
 rows 34-285, the same picture; a narrower 504-wide view with borderl/borderr
 .bmp is also possible). The console below, at (0,252)-(639,479), is drawn
 from bitmaps: plain names from COMMON.DAT, the mission's from its folder.
+Each bitmap has its own palette; its colours are drawn in their nearest
+matches in the level's palette, as Windows did when blitting a DIB to the
+8-bit screen. Frame n of a strip is the n-th from the top.
 Rectangles are inclusive. `engines/stg/hudscreen.h`, `hud.h`.
 
 | Part | Where | What |
 |------|-------|------|
-| left panel | (0,253)-(205,458) | l-m-m-o.bmp, frames of 206 rows by mode: off, life, map, object; tabs at (6,261), (6,331), (6,401), 23 x 52 |
+| left panel | (0,253)-(205,458) | l-m-m-o.bmp, frames of 206 rows by mode, top down: off, object, map, life; tabs at (6,261), (6,331), (6,401), 23 x 52 |
 | life | (40,269), (118,393) | body picture (`SET_BODY_IMAGE`, -1 = BODY.BMP, frames of 177 rows); health: 3health.bmp (frames of 50 rows: over 15, over 5, else), then unithlt0.bmp units at x 119, unit k's top at 442 - h - 1 - 3k (- 7 from the 16th) |
 | map | (39,267)-(192,414) | walls flagged 0x800 in the height band shown, markers (map\dot-*.bmp), the player (agpface2.bmp, 8 headings); levels and zoom buttons at (43,415), (74,415) |
 | object | (39,267) | the mission's OBJECT.BMP |

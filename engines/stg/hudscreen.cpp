@@ -62,8 +62,9 @@ int HudScreen::Image::getFrameCount() const {
 	return frameHeight > 0 ? std::max(1, (int)surface.h / frameHeight) : 1;
 }
 
-HudScreen::HudScreen(const ResourceManager &resources, const ResourceRef &level, const ScriptFile &script)
-	: _resources(resources), _level(level), _script(script) {
+HudScreen::HudScreen(const ResourceManager &resources, const ResourceRef &level, const ScriptFile &script,
+                     const Graphics::Palette &palette)
+	: _resources(resources), _level(level), _script(script), _palette(palette) {
 	_console = load("actionx.bmp", kGlobal);
 }
 
@@ -102,6 +103,12 @@ const HudScreen::Image *HudScreen::load(const Common::String &name, Scope scope,
 		const Graphics::Surface &s = decoder.getSurface();
 		image->surface.create(s.w, s.h, Graphics::PixelFormat::createFormatCLUT8());
 		image->surface.copyRectToSurface(s, 0, 0, Common::Rect(s.w, s.h));
+		const Graphics::Palette &own = decoder.getPalette();
+		for (int i = 0; i < 256; i++) {
+			byte r, g, b;
+			own.get(i, r, g, b);
+			image->remap[i] = _palette.findBestColor(r, g, b);
+		}
 		// A negative frame height asks for that many frames.
 		image->frameHeight = frameHeight < 0 ? s.h / -frameHeight : frameHeight;
 	}
@@ -135,7 +142,7 @@ void HudScreen::blit(Graphics::Surface &dst, const Image &image, int frame, int 
 			int sx = x + col;
 			if (sx < area.left || sx >= area.right || src[col] == key)
 				continue;
-			out[sx] = src[col];
+			out[sx] = image.remap[src[col]];
 		}
 	}
 }
@@ -158,8 +165,10 @@ void HudScreen::draw(Graphics::Surface &screen, Mission &mission, const LevelFil
 	byte black = level.getPalette().findBestColor(0, 0, 0);
 	screen.fillRect(Common::Rect(0, kView.bottom, screen.w, screen.h), black);
 	blit(screen, *_console, 0, 206, 252);
+	// Its frames, top down: off, object, map, life (0x4434B1).
+	static const int kLeftFrames[] = { 0, 3, 2, 1 };
 	if (const Image *left = load("l-m-m-o.bmp", kGlobal, 206))
-		blit(screen, *left, (int)_leftMode, kLeftPanel.left, kLeftPanel.top);
+		blit(screen, *left, kLeftFrames[_leftMode], kLeftPanel.left, kLeftPanel.top);
 
 	switch (_leftMode) {
 	case kLeftLife:
@@ -195,12 +204,12 @@ void HudScreen::drawWeaponDisplay(Graphics::Surface &screen, Mission &mission) {
 	if (!display)
 		return;
 	blit(screen, *display, 0, kWeaponDisplay.left, kWeaponDisplay.top);
-	if (const Image *arrow = load("p-arrow.bmp", kGlobal))
+	if (const Image *arrow = load("p-arrow.bmp", kGlobal, 14))
 		blit(screen, *arrow, 0, kWeaponDisplay.left + 11 * item->level - 4, kWeaponDisplay.top, 0, &kWeaponDisplay);
 	int full = item->maxCharge > 0 ? (59 * item->charge + item->maxCharge - 1) / item->maxCharge : 0;
 	for (int k = 0; k < 59 - full; k++) {
 		int x = kWeaponDisplay.left + 191 - 3 * k;
-		screen.fillRect(Common::Rect(x, kWeaponDisplay.top + 28, x + 2, kWeaponDisplay.top + 35), 0);
+		screen.fillRect(Common::Rect(x, kWeaponDisplay.top + 28, x + 2, kWeaponDisplay.top + 35), display->remap[0]);
 	}
 }
 

@@ -608,7 +608,7 @@ void STGEngine::showLevel(const ResourceRef &ref) {
 	_hudScreen.reset();
 	_heldItem.load(_resources, _levelRef, 0);
 	if (_mission) {
-		_hudScreen.reset(new HudScreen(_resources, ref, *_levelScript));
+		_hudScreen.reset(new HudScreen(_resources, ref, *_levelScript, _level->getPalette()));
 		if (!_hudScreen->isAvailable())
 			_hudScreen.reset();
 		_levelRenderer->setMapWalls(&_level->getWalls());

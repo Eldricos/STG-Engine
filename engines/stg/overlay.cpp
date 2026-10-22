@@ -76,10 +76,15 @@ bool Overlay::load(Common::SeekableReadStream &stream) {
 }
 
 void Overlay::drawFrame(Graphics::Surface &dst, int frame, int frameHeight, int x, int y) const {
+	// Each frame's rows are stored bottom up, like a DIB's; the frames
+	// themselves run top down.
 	int top = frame * frameHeight;
-	for (int fy = 0; fy < frameHeight && top + fy < _surface.h; fy++) {
-		const byte *src = (const byte *)_surface.getBasePtr(0, top + fy);
-		const byte *mask = &_mask[(size_t)(top + fy) * _surface.w];
+	for (int fy = 0; fy < frameHeight; fy++) {
+		int row = top + frameHeight - 1 - fy;
+		if (row < 0 || row >= _surface.h)
+			continue;
+		const byte *src = (const byte *)_surface.getBasePtr(0, row);
+		const byte *mask = &_mask[(size_t)row * _surface.w];
 		for (int fx = 0; fx < _surface.w; fx++) {
 			if (mask[fx])
 				dst.setPixel(x + fx, y + fy, src[fx]);

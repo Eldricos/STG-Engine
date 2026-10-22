@@ -47,7 +47,9 @@ public:
 
 	/**
 	 * Copy one frame of the given height into dst at (x, y), leaving
-	 * transparent pixels untouched.
+	 * transparent pixels untouched. Frames are stacked top down, but each
+	 * one's rows are stored bottom up: the plant sampler's nozzle lands on
+	 * the hotspots sgens.exe gives its poses only that way up.
 	 */
 	void drawFrame(Graphics::Surface &dst, int frame, int frameHeight, int x, int y) const;
 

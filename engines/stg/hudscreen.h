@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 
+#include "common/graphics/palette.h"
 #include "common/graphics/surface.h"
 #include "common/rect.h"
 #include "engines/stg/resources.h"
@@ -49,7 +50,9 @@ public:
 		kLeftObject
 	};
 
-	HudScreen(const ResourceManager &resources, const ResourceRef &level, const ScriptFile &script);
+	/** palette is the level's: the console's bitmaps are drawn in its nearest colours. */
+	HudScreen(const ResourceManager &resources, const ResourceRef &level, const ScriptFile &script,
+	          const Graphics::Palette &palette);
 	~HudScreen();
 
 	/** Whether the console's art was found; without it the viewer keeps its own layout. */
@@ -77,7 +80,10 @@ public:
 private:
 	/** A bitmap, cut into frames of frameHeight rows (0 for one frame; -n asks for n frames). */
 	struct Image {
+		/** The bitmap's own indices; keys are compared with these. */
 		Graphics::Surface surface;
+		/** Its colours in the level's palette (Windows matched a DIB's colours to the screen's). */
+		byte remap[256];
 		int frameHeight = 0;
 		int getFrameCount() const;
 	};
@@ -102,6 +108,7 @@ private:
 	const ResourceManager &_resources;
 	ResourceRef _level;
 	const ScriptFile &_script;
+	Graphics::Palette _palette;
 	std::map<Common::String, std::unique_ptr<Image>> _images;
 	const Image *_console = nullptr;
 	void drawWeaponDisplay(Graphics::Surface &screen, Mission &mission);
