@@ -377,13 +377,15 @@ TEST(stg_sprite_format) {
 	file.writeUint32LE(3);
 	const byte frame0[] = { 1, 2, 0xFF, 4, 5, 6 }; // column 0 bottom-up, column 1 bottom-up
 	file.write(frame0, sizeof(frame0));
-	const byte tables0[6] = {};
+	// Column 0 is one run (class 2); column 1 is marked empty (class 0),
+	// so its pixels aren't drawn.
+	const byte tables0[6] = { 0, 0, 0, 0, 2, 0 };
 	file.write(tables0, sizeof(tables0));
 
 	file.writeUint32LE(2 << 8);
 	file.writeUint32LE(1);
 	file.writeUint32LE(2);
-	const byte frame1[] = { 7, 8, 0, 0, 0 };
+	const byte frame1[] = { 7, 8, 0, 0, 3 };
 	file.write(frame1, sizeof(frame1));
 
 	Common::MemoryReadStream stream(file.getData().data(), file.size());
@@ -400,7 +402,7 @@ TEST(stg_sprite_format) {
 	CHECK_EQ(s0.getPixel(0, 2), 1u); // bottom row first
 	CHECK_EQ(s0.getPixel(0, 1), 2u);
 	CHECK_EQ(s0.getPixel(0, 0), 0xFFu);
-	CHECK_EQ(s0.getPixel(1, 0), 6u);
+	CHECK_EQ(s0.getPixel(1, 0), 0xFFu);
 	CHECK_EQ(sprites.getFrame(1).surface.getPixel(0, 0), 8u);
 
 	// Truncated data is rejected.

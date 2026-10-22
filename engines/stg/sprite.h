@@ -35,9 +35,11 @@ namespace STG {
  *     uint32 column height
  *     uint8  pixels[columns][height]   column-major, bottom row first,
  *                                      0xFF is transparent
- *     uint8  tables[3][columns]        per-column trimming hints (the
- *                                      first is twice the topmost opaque
- *                                      row); not needed to draw
+ *     uint8  tables[3][columns]        per-column hints: first and last
+ *                                      solid rows (scaled), then a class,
+ *                                      0 for an empty column; empty
+ *                                      columns aren't drawn whatever their
+ *                                      pixels hold
  *
  * Both samples parse to exactly their end with the advertised frame count.
  */

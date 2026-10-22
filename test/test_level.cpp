@@ -818,7 +818,7 @@ bool loadTestSprites(uint16 number, STG::SpriteSet &set) {
 		file.writeUint32LE(1 << 16); // half width 1.0
 		file.writeUint32LE(1);
 		file.writeUint32LE(1);
-		const byte pixel[4] = { (byte)(10 + i), 0, 0, 0 };
+		const byte pixel[4] = { (byte)(10 + i), 0, 0, 3 }; // a solid column
 		file.write(pixel, sizeof(pixel));
 	}
 	std::vector<byte> data = file.getData();

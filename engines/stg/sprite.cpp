@@ -60,15 +60,24 @@ bool SpriteSet::load(Common::SeekableReadStream &stream) {
 			warning("SpriteSet: frame %u is truncated", i);
 			return false;
 		}
-		stream.skip(3 * columnCount); // per-column tables
+		// Per-column tables: first and last solid rows, then a class: 0
+		// empty, 1 with holes, 2 one run, 3 solid. The original skips empty
+		// columns whatever their texels hold, and blank frames such as
+		// amargos1/007.gs2's frame 0 rely on it: 2 columns of colour 0.
+		std::vector<byte> tables(3 * columnCount);
+		if (stream.read(tables.data(), (uint32)tables.size()) != tables.size()) {
+			warning("SpriteSet: frame %u is truncated", i);
+			return false;
+		}
 
 		Frame frame;
 		frame.halfWidth = width / 65536.0;
 		frame.surface.create((int16)columnCount, (int16)height, Graphics::PixelFormat::createFormatCLUT8());
 		for (uint32 x = 0; x < columnCount; x++) {
 			const byte *column = &columns[x * height];
+			bool empty = tables[2 * columnCount + x] == 0;
 			for (uint32 y = 0; y < height; y++)
-				frame.surface.setPixel(x, height - 1 - y, column[y]);
+				frame.surface.setPixel(x, height - 1 - y, empty ? kTransparent : column[y]);
 		}
 		_frames.push_back(std::move(frame));
 	}
