@@ -55,7 +55,7 @@ public:
 			vm.push((int16)(a + b));
 		}
 	}
-	void unhandledEvent(ScriptVM &vm, ScriptInstance &self, uint16 event) override {
+	void unhandledEvent(ScriptVM &vm, ScriptInstance &self, uint16 event, const std::vector<int16> &args) override {
 		unhandled.push_back(event);
 	}
 	std::vector<uint16> calls;

@@ -116,6 +116,14 @@ public:
 	/** The same, skipping floors with any of ignoredFlags instead of setIgnoredFloors()'s. */
 	int findFloor(double x, double y, double maxHeight, uint64 zones, uint32 ignoredFlags) const;
 
+	/**
+	 * Whether nothing blocks the view from a to b, as the original's test
+	 * for actors seeing the player (0x4BB900): visible walls and floors in
+	 * the given zones block, with a quarter unit of slack on walls; nothing
+	 * steeper than twice as high as it is long is ever seen.
+	 */
+	bool lineOfSight(double ax, double ay, double az, double bx, double by, double bz, uint64 zones) const;
+
 	struct Hit {
 		/** Fraction of the move before touching. */
 		double t;

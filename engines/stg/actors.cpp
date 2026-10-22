@@ -81,6 +81,8 @@ struct Actors::Actor {
 	double centreDistance = 0;
 	// Proximity.
 	bool near = false, inRange = false;
+	/** Projectile type fired in attack mode, or -1. */
+	int weapon = -1;
 };
 
 Actors::Actors(const LevelFile &level, const Walker &prototype, const SpriteLoader &loader) : _level(level) {
@@ -221,6 +223,77 @@ void Actors::setBodyHeight(uint16 id, double height) {
 void Actors::setReach(uint16 id, double reach) {
 	for (int index : findAll(id))
 		_actors[index]->data.reach = (int32)std::lround(reach * kFixed);
+}
+
+void Actors::setCombatStats(uint16 id, const int32 values[7]) {
+	std::vector<int> parts = findAll(id);
+	if (parts.empty())
+		return;
+	CombatStats &stats = _combat[(uint16)(_actors[parts[0]]->data.objectId | kObjectType)];
+	int32 *fields[7] = { &stats.fullThreshold, &stats.stunThreshold, &stats.noticeThreshold, &stats.stunMax,
+	                     &stats.stun, &stats.hitPointsMax, &stats.hitPoints };
+	for (int i = 0; i < 7; i++) {
+		if (values[i] != kKeep)
+			*fields[i] = values[i];
+	}
+}
+
+Actors::CombatStats Actors::getCombatStats(uint16 id) const {
+	std::vector<int> parts = findAll(id);
+	if (parts.empty())
+		return CombatStats();
+	auto it = _combat.find((uint16)(_actors[parts[0]]->data.objectId | kObjectType));
+	return it == _combat.end() ? CombatStats() : it->second;
+}
+
+void Actors::setTeam(uint16 id, int16 team) {
+	std::vector<int> parts = findAll(id);
+	if (!parts.empty())
+		_teams[(uint16)(_actors[parts[0]]->data.objectId | kObjectType)] = team;
+}
+
+int16 Actors::getTeam(uint16 id) const {
+	std::vector<int> parts = findAll(id);
+	if (parts.empty())
+		return 0;
+	auto it = _teams.find((uint16)(_actors[parts[0]]->data.objectId | kObjectType));
+	return it == _teams.end() ? 0 : it->second;
+}
+
+uint16 Actors::takeHit(uint16 id, int damage, int power) {
+	std::vector<int> parts = findAll(id);
+	if (parts.empty())
+		return 0;
+	CombatStats &stats = _combat[(uint16)(_actors[parts[0]]->data.objectId | kObjectType)];
+	if (power > stats.fullThreshold) {
+		stats.hitPoints -= damage;
+		stats.stun -= damage;
+		if (stats.hitPoints <= 0) {
+			stats.hitPoints = stats.stun = 0;
+			return kEventKilled;
+		}
+		if (stats.stun <= 0) {
+			stats.stun = 0;
+			return kEventKnockedOut;
+		}
+		return kEventHurt;
+	}
+	if (power > stats.stunThreshold) {
+		stats.stun -= damage;
+		if (stats.stun <= 0) {
+			stats.stun = 0;
+			return kEventKnockedOut;
+		}
+		return kEventStunned;
+	}
+	if (power > stats.noticeThreshold)
+		return kEventGrazed;
+	return 0;
+}
+
+void Actors::setWeapon(uint16 id, int weapon) {
+	for (int index : findAll(id))
+		_actors[index]->weapon = weapon;
 }
 
 void Actors::setAnimationRate(uint16 id, int mode, byte rate) {
@@ -399,13 +472,24 @@ void Actors::runProximity(Actor &actor, const Walker &player, bool frozen, std::
 		actor.near = false;
 		return;
 	}
-	// From the player's eye to the actor's feet. The original also needs a
-	// line of sight for "near" (0x4BB900); that isn't checked here.
+	// From the player's eye to the actor's feet; seeing the player also
+	// takes a line of sight (0x4BB900) from halfway between the actor's
+	// muzzle and the top of its sprite to the player's eye, past walls and
+	// floors in the zones of both.
 	double d = distance3D(player.getX() - actor.x, player.getY() - actor.y, player.getEye() - actor.z);
-	if (!actor.near && r[1] > 0 && d < r[1]) {
+	auto sees = [&]() {
+		double base = actor.z + fromFixed(actor.data.drawOffset), muzzle = fromFixed(actor.data.muzzleZ);
+		double eye = base + muzzle + (fromFixed(actor.data.height) - muzzle) / 2;
+		int floor = actor.walker.getFloor();
+		uint64 zones = player.getActiveZones();
+		if (floor >= 0)
+			zones |= _level.getSectors()[floor].activeZones;
+		return player.lineOfSight(actor.x, actor.y, eye, player.getX(), player.getY(), player.getEye(), zones);
+	};
+	if (!actor.near && r[1] > 0 && d < r[1] && sees()) {
 		actor.near = true;
 		events.push_back({ object, kEventPlayerNear });
-	} else if (actor.near && d > r[2]) {
+	} else if (actor.near && (d > r[2] || !sees())) {
 		actor.near = false;
 		events.push_back({ object, kEventPlayerLost });
 	}

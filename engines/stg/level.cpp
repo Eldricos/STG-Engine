@@ -248,6 +248,9 @@ bool LevelFile::loadTables() {
 		actor.minWalk = (int32)READ_LE_UINT32(r + 0x9C);
 		actor.maxWalk = (int32)READ_LE_UINT32(r + 0xA0);
 		actor.stepHeight = (int32)READ_LE_UINT32(r + 0xAC);
+		actor.muzzleX = (int32)READ_LE_UINT32(r + 0x84);
+		actor.muzzleZ = (int32)READ_LE_UINT32(r + 0x88);
+		actor.muzzleY = (int32)READ_LE_UINT32(r + 0x8C);
 		for (int m = 0; m < kAnimationCount; m++) {
 			const byte *a = r + 0xC4 + m * 8;
 			Animation &anim = actor.animations[m];

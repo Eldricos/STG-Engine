@@ -36,6 +36,24 @@ bool containsPoint(const std::vector<LevelFile::Vertex> &vertices, const LevelFi
 	return inside;
 }
 
+/** Whether (x, y) is inside the flat or within margin of its edges. */
+bool nearPolygon(const std::vector<LevelFile::Vertex> &vertices, const LevelFile::Sector &flat, double x, double y,
+                 double margin) {
+	if (containsPoint(vertices, flat, x, y))
+		return true;
+	size_t n = flat.vertices.size();
+	for (size_t i = 0, j = n - 1; i < n; j = i++) {
+		double xi = fromFixed(vertices[flat.vertices[i]].x), yi = fromFixed(vertices[flat.vertices[i]].y);
+		double xj = fromFixed(vertices[flat.vertices[j]].x), yj = fromFixed(vertices[flat.vertices[j]].y);
+		double ex = xj - xi, ey = yj - yi, length2 = ex * ex + ey * ey;
+		double t = length2 > 0 ? std::max(0.0, std::min(1.0, ((x - xi) * ex + (y - yi) * ey) / length2)) : 0;
+		double dx = xi + ex * t - x, dy = yi + ey * t - y;
+		if (dx * dx + dy * dy <= margin * margin)
+			return true;
+	}
+	return false;
+}
+
 } // End of anonymous namespace
 
 Walker::Walker(const LevelFile &level) : _level(level) {
@@ -290,6 +308,56 @@ void Walker::followFloor(double seconds) {
 		_feet = height;
 		_fallSpeed = 0;
 	}
+}
+
+bool Walker::lineOfSight(double ax, double ay, double az, double bx, double by, double bz, uint64 zones) const {
+	const double kSlack = 0.25, kFlatMargin = 0.5;
+	double dx = bx - ax, dy = by - ay, dz = bz - az;
+	double length = std::sqrt(dx * dx + dy * dy);
+	if (length == 0 && dz == 0)
+		return false;
+	if (std::fabs(dz) > 2 * length)
+		return false;
+
+	const std::vector<LevelFile::Wall> &walls = _level.getWalls();
+	double lowZ = std::min(az, bz), highZ = std::max(az, bz);
+	for (const WallLine &w : *_walls) {
+		if (!(walls[w.index].flags & LevelFile::kFlagVisible) || !(w.zones & zones))
+			continue;
+		if (highZ < w.bottom - kSlack || lowZ > w.top + kSlack)
+			continue;
+		// a and b strictly on opposite sides of the wall's line...
+		double sa = w.nx * ax + w.ny * ay + w.d, sb = w.nx * bx + w.ny * by + w.d;
+		if ((sa > 0) == (sb > 0) || sa == 0 || sb == 0)
+			continue;
+		// ...and the wall, a little longer at each end, across the line of sight.
+		double ex = w.x2 - w.x1, ey = w.y2 - w.y1, wallLength = std::sqrt(ex * ex + ey * ey);
+		if (wallLength == 0)
+			continue;
+		double px = ex / wallLength * kSlack, py = ey / wallLength * kSlack;
+		double s1 = dx * (w.y1 - py - ay) - dy * (w.x1 - px - ax);
+		double s2 = dx * (w.y2 + py - ay) - dy * (w.x2 + px - ax);
+		if ((s1 > 0) == (s2 > 0))
+			continue;
+		double z = az + dz * (sa / (sa - sb));
+		if (z >= w.bottom - kSlack && z <= w.top + kSlack)
+			return false;
+	}
+
+	if (dz != 0) {
+		const std::vector<LevelFile::Sector> &flats = _level.getSectors();
+		for (const LevelFile::Sector &flat : flats) {
+			if (!(flat.flags & LevelFile::kFlagVisible) || !(flat.zones & zones) || flat.vertices.size() < 3)
+				continue;
+			double h = fromFixed(flat.height);
+			if (h <= lowZ || h >= highZ)
+				continue;
+			double t = (h - az) / dz;
+			if (nearPolygon(_level.getVertices(), flat, ax + dx * t, ay + dy * t, kFlatMargin))
+				return false;
+		}
+	}
+	return true;
 }
 
 } // End of namespace STG

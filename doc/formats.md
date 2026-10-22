@@ -308,14 +308,15 @@ during an engine tick and delivered at its end (`0x4B8120`, `0x4B80D0`).
 | 6 | broadcast when the mission begins (`0x43E742`); verid1 places the player then |
 | 9 / 10 | broadcast: the player was hurt / healed |
 | 14 / 15 | the player started / stopped touching a wall, a billboard's area, an actor, or the floor stood on |
-| 16 | the object was hit by the player's attack |
+| 16 | the object was hit: damage, power, the attacker's team. Without a handler, an actor not on that team takes the hit (`0x457B29`) |
 | 22–25 | a door or lift starts opening, is open, starts closing, is closed |
 | 36 / 37 | an actor arrived or finished turning / finished an animation cycle |
-| 38–42 | an actor was hit: lesser hits, hurt, stunned, dead |
+| 38–42 | an actor took a hit (`0x45747E`): 38 stunned, 39 noticed only, 40 hurt, 41 knocked out, 42 killed. Power above the full threshold takes damage from hit points and stun points, above the stun threshold from stun points only (`SET_ACTOR_COMBAT_STATS`) |
+| 29 / 31 | an actor started / stopped seeing the player: within its near distance and in line of sight (`0x4BB900`: walls and floors in its and the player's zones block, from halfway between its muzzle and its top to the player's eye) |
 | 45 | `TRIGGER`, or the player used an item |
 | 51 / 52, 53 / 54 | the ceiling / floor above or under the player changed: new / old |
 | 55 | a screen effect finished |
-| 59, 61 | broadcast: hit report; the player left or landed on the ground |
+| 59, 61 | broadcast: hit report (the object hit or 0, damage, power, team); the player left or landed on the ground |
 
 Broadcasts go only to objects that subscribed with `SUBSCRIBE`. Contacts are
 reported on change only: the old thing gets 15 and the new one 14.

@@ -9,6 +9,7 @@
 #ifndef STG_ACTORS_H
 #define STG_ACTORS_H
 
+#include <climits>
 #include <functional>
 #include <map>
 #include <memory>
@@ -64,8 +65,32 @@ public:
 		kEventPlayerNear = 29,
 		kEventPlayerLost = 31,
 		kEventPlayerInRange = 33,
-		kEventPlayerOutOfRange = 35
+		kEventPlayerOutOfRange = 35,
+		// The outcome of a hit (0x45747E).
+		kEventStunned = 38,
+		kEventGrazed = 39,
+		kEventHurt = 40,
+		kEventKnockedOut = 41,
+		kEventKilled = 42
 	};
+
+	/**
+	 * An actor object's toughness (SET_ACTOR_COMBAT_STATS). A hit with
+	 * power above fullThreshold takes damage from both hit points and stun
+	 * points; above stunThreshold from stun points only; above
+	 * noticeThreshold it is only noticed.
+	 */
+	struct CombatStats {
+		int32 fullThreshold = INT32_MAX;
+		int32 stunThreshold = INT32_MAX;
+		int32 noticeThreshold = INT32_MAX;
+		int32 stunMax = 0;
+		int32 stun = 0;
+		int32 hitPointsMax = 0;
+		int32 hitPoints = 0;
+	};
+	/** In SET_ACTOR_COMBAT_STATS, this keeps a value as it is. */
+	static const int32 kKeep = 0x8000;
 
 	struct ScriptEvent {
 		/** The actor's script object id (id | 0xA000). */
@@ -124,6 +149,20 @@ public:
 	 */
 	void setProximity(int actorClass, int targetClass, const double radii[5]);
 
+	/** Set the stats; values of kKeep leave a stat as it is. Order as CombatStats. */
+	void setCombatStats(uint16 id, const int32 values[7]);
+	CombatStats getCombatStats(uint16 id) const;
+	/** Actors on the same team don't hurt each other. */
+	void setTeam(uint16 id, int16 team);
+	int16 getTeam(uint16 id) const;
+	/**
+	 * Take a hit (0x45747E): returns the event the actor's object gets
+	 * (kEventHurt and so on), or 0 if it doesn't notice.
+	 */
+	uint16 takeHit(uint16 id, int damage, int power);
+	/** The projectile type it fires in attack mode, or -1 for none. */
+	void setWeapon(uint16 id, int weapon);
+
 	/** Headings: 65536 is a full turn, 0 faces +y and 16384 faces -x. */
 	static uint16 headingTowards(double dx, double dy);
 
@@ -147,6 +186,9 @@ private:
 	std::vector<Walker::Obstacle> _obstacles;
 	/** (actor class << 8 | target class) -> radii. */
 	std::map<uint16, std::vector<double>> _proximity;
+	/** By script object id: stats belong to the object, not its parts. */
+	std::map<uint16, CombatStats> _combat;
+	std::map<uint16, int16> _teams;
 	uint32 _seed = 1;
 };
 

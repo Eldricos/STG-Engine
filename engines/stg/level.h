@@ -312,6 +312,8 @@ public:
 		int32 minWalk;
 		int32 maxWalk;
 		int32 stepHeight;
+		/** Where shots leave from: across (x), up from the sprite's bottom (z) and ahead (y). */
+		int32 muzzleX, muzzleZ, muzzleY;
 		Animation animations[kAnimationCount];
 		/** Sprite set number (NNN.gs2), which is also the actor's class. */
 		uint16 spriteSet;

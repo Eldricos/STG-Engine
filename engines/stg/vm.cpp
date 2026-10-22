@@ -118,7 +118,7 @@ int16 ScriptVM::sendEvent(ScriptInstance &self, uint16 event, const std::vector<
 	}
 
 	if (_host)
-		_host->unhandledEvent(*this, self, event);
+		_host->unhandledEvent(*this, self, event, args);
 	return 0;
 }
 

@@ -55,6 +55,8 @@ public:
 		kEventPlayerDamaged = 9,
 		kEventPlayerHealed = 10,
 		kEventTouch = 14,
+		/** Something hit the object: damage, power, the attacker's team. */
+		kEventHit = 16,
 		kEventUntouch = 15,
 		kEventActivate = 45,
 		kEventEffectDone = 55,
@@ -111,7 +113,7 @@ public:
 
 	// ScriptHost
 	void callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) override;
-	void unhandledEvent(ScriptVM &vm, ScriptInstance &self, uint16 event) override;
+	void unhandledEvent(ScriptVM &vm, ScriptInstance &self, uint16 event, const std::vector<int16> &args) override;
 
 	/** Send an event to the object with the given id, if there is one. */
 	int16 send(uint16 id, uint16 event, const std::vector<int16> &args = {});

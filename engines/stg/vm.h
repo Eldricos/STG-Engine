@@ -56,7 +56,7 @@ public:
 	virtual void callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) = 0;
 
 	/** Called when no script handles an event; the original falls back to built-in behaviour. */
-	virtual void unhandledEvent(ScriptVM &vm, ScriptInstance &self, uint16 event) {}
+	virtual void unhandledEvent(ScriptVM &vm, ScriptInstance &self, uint16 event, const std::vector<int16> &args) {}
 };
 
 /**

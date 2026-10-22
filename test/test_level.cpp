@@ -864,6 +864,66 @@ TEST(actors_headings_and_view_directions) {
 	CHECK(sprites.empty());
 }
 
+TEST(actors_take_hits) {
+	using namespace STG;
+	const uint16 P = OP_PUSH;
+	// Actor 1: hit points 10, stun 10; hits above power 11 hurt, above 6
+	// stun. Global 0 counts "hurt", global 1 "stunned", global 2 "killed".
+	std::vector<uint16> program = {
+		1, 0xA001,
+		0x8000,
+		kEventEnterState, 0xFFFF, P, 10, P, 10, P, 10, P, 10, P, 0, P, 6, P, 11, 0x41, P, 5, OP_PUSH_SELF, 0xF1,
+		OP_END,
+		Actors::kEventHurt, 0xFFFF, P, 0, OP_GET_GLOBAL, OP_INC, P, 0, OP_SET_GLOBAL, OP_END,
+		Actors::kEventStunned, 0xFFFF, P, 1, OP_GET_GLOBAL, OP_INC, P, 1, OP_SET_GLOBAL, OP_END,
+		Actors::kEventKilled, 0xFFFF, P, 1, P, 2, OP_SET_GLOBAL, OP_END,
+		0x3000,
+		0x2000,
+		0x1000
+	};
+	std::vector<byte> scriptBytes = makeScriptFile(program);
+	Common::MemoryReadStream scriptStream(scriptBytes.data(), (uint32)scriptBytes.size());
+	ScriptFile script;
+	CHECK(script.load(scriptStream));
+
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 40, 40, 0);
+	builder.addActor(1, 10, 10, 0, Actors::kModeIdle, 0);
+	LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	LevelRenderer renderer(level);
+	Walker walker(level);
+	walker.place(20, 20, 0);
+	Actors actors(level, walker, loadTestSprites);
+	Mission mission(level, script, renderer, walker, &actors);
+	mission.start();
+
+	mission.send(0xA001, Mission::kEventHit, { 3, 20, 5 }); // its own team: ignored
+	CHECK_EQ(mission.getVM().getGlobal(0), 0);
+	mission.send(0xA001, Mission::kEventHit, { 3, 9, 2 }); // stuns
+	CHECK_EQ(mission.getVM().getGlobal(1), 1);
+	CHECK_EQ(actors.getCombatStats(0xA001).stun, 7);
+	CHECK_EQ(actors.getCombatStats(0xA001).hitPoints, 10);
+	mission.send(0xA001, Mission::kEventHit, { 4, 20, 2 }); // hurts
+	CHECK_EQ(mission.getVM().getGlobal(0), 1);
+	CHECK_EQ(actors.getCombatStats(0xA001).hitPoints, 6);
+	mission.send(0xA001, Mission::kEventHit, { 6, 20, 2 }); // kills
+	CHECK_EQ(mission.getVM().getGlobal(2), 1);
+	CHECK(mission.getMissingNatives().empty());
+}
+
+TEST(walker_line_of_sight) {
+	STG::LevelFile level;
+	CHECK(loadLevel(level, makeRoom(12).build()));
+	STG::Walker walker(level);
+	// The wall along x = 10 stands between x = 5 and x = 15, up to 12 high.
+	CHECK(walker.lineOfSight(5, 5, 6, 8, 15, 6, ~0ull));
+	CHECK(!walker.lineOfSight(5, 5, 6, 15, 5, 6, ~0ull));
+	CHECK(walker.lineOfSight(5, 5, 13, 15, 5, 13, ~0ull)); // over the top
+	CHECK(walker.lineOfSight(5, 5, 6, 15, 5, 6, 2));       // not in those zones
+	CHECK(!walker.lineOfSight(5, 5, 0, 6, 5, 6, ~0ull));   // too steep
+}
+
 TEST(actors_walk_and_block) {
 	using STG::Actors;
 	LevelBuilder builder;

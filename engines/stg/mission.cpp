@@ -439,7 +439,16 @@ void Mission::skipNative(ScriptVM &vm, uint16 op) {
 		debugC(1, kDebugChannel, "native %02X (%s) is not implemented", op, info ? info->name : "?");
 }
 
-void Mission::unhandledEvent(ScriptVM &vm, ScriptInstance &self, uint16 event) {}
+void Mission::unhandledEvent(ScriptVM &vm, ScriptInstance &self, uint16 event, const std::vector<int16> &args) {
+	// An actor hit (damage, power, team) without a handler of its own takes
+	// it, unless the attacker is on its team (0x457B29).
+	if (event == kEventHit && _actors && args.size() >= 3 && _actors->isActor(self.object->id) &&
+	    _actors->getTeam(self.object->id) != args[2]) {
+		uint16 outcome = _actors->takeHit(self.object->id, args[0], args[1]);
+		if (outcome)
+			send(self.object->id, outcome);
+	}
+}
 
 void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 	switch (op) {
@@ -591,6 +600,37 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		double reach = pop32(vm);
 		if (_actors)
 			_actors->setReach(id, reach);
+		break;
+	}
+	case 0x41: { // SET_ACTOR_COMBAT_STATS
+		int32 values[7];
+		for (int i = 0; i < 7; i++)
+			values[i] = vm.pop();
+		if (_actors)
+			_actors->setCombatStats(self.object->id, values);
+		break;
+	}
+	case 0x42: { // GET_ACTOR_COMBAT_STATS
+		uint16 id = (uint16)vm.pop();
+		Actors::CombatStats stats;
+		if (_actors)
+			stats = _actors->getCombatStats(id ? id : self.object->id);
+		vm.push((int16)stats.hitPoints);
+		vm.push((int16)stats.stun);
+		break;
+	}
+	case 0x45: { // SET_ACTOR_WEAPON
+		uint16 id = (uint16)vm.pop();
+		int16 weapon = vm.pop();
+		if (_actors)
+			_actors->setWeapon(id, weapon);
+		break;
+	}
+	case 0xF1: { // SET_ACTOR_TEAM
+		uint16 id = (uint16)vm.pop();
+		int16 team = vm.pop();
+		if (_actors)
+			_actors->setTeam(id, team);
 		break;
 	}
 	case 0x4D: { // SET_POSITION
