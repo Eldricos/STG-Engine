@@ -39,6 +39,14 @@ const Common::Rect kWeaponDisplay = inclusive(222, 252, 431, 296);
 const Common::Rect kInventory = inclusive(435, 256, 639, 457);
 const Common::Rect kLevelsButton = Common::Rect(43, 415, 43 + 29, 415 + 27);
 const Common::Rect kZoomButton = Common::Rect(74, 415, 74 + 29, 415 + 27);
+/** The scan filters: life, energy, trilithium (s-life, s-energ, s-lith.bmp). */
+const Common::Rect kFilterButtons[3] = { Common::Rect(117, 415, 117 + 25, 415 + 27),
+	                                     Common::Rect(141, 415, 141 + 25, 415 + 27),
+	                                     Common::Rect(165, 415, 165 + 25, 415 + 27) };
+const char *const kFilterImages[3] = { "s-life.bmp", "s-energ.bmp", "s-lith.bmp" };
+const int kButtonHeight = 27;
+/** Markers are 7 x 7, four frames blinking. */
+const int kMarkerFrames = 4;
 const int kSlotX[3] = { 436, 505, 574 };
 const int kSlotY[4] = { 257, 308, 359, 410 };
 const int kIconWidth = 64, kIconHeight = 46;
@@ -179,7 +187,7 @@ void HudScreen::draw(Graphics::Surface &screen, Mission &mission, const LevelFil
 		drawLifePanel(screen, mission);
 		break;
 	case kLeftMap:
-		drawMap(screen, mission, level, playerX, playerY, playerZ, yaw);
+		drawMap(screen, mission, level, playerX, playerY, playerZ, yaw, time);
 		break;
 	case kLeftObject:
 		if (const Image *object = load("OBJECT.BMP", kMission))
@@ -240,7 +248,7 @@ void HudScreen::drawLifePanel(Graphics::Surface &screen, Mission &mission) {
 }
 
 void HudScreen::drawMap(Graphics::Surface &screen, Mission &mission, const LevelFile &level, double playerX,
-                        double playerY, double playerZ, double yaw) {
+                        double playerY, double playerZ, double yaw, uint32 time) {
 	const Graphics::Palette &palette = level.getPalette();
 	byte wallColour = palette.findBestColor(0, 220, 0);
 	byte dark = palette.findBestColor(0, 0, 0);
@@ -279,11 +287,19 @@ void HudScreen::drawMap(Graphics::Surface &screen, Mission &mission, const Level
 			continue;
 		int sx, sy;
 		toScreen(x, y, sx, sy);
+		// Each kind shows only while its filter is on.
+		if (!_filters[entry.second.kind])
+			continue;
 		const Image *dot = nullptr;
 		if (entry.second.kind == Hud::kMarkerLife && entry.second.style >= 0 && entry.second.style < 8)
-			dot = load(Common::String("map/dot-") + kMarkerStyles[entry.second.style] + ".bmp", kGlobal);
+			dot = load(Common::String("map/dot-") + kMarkerStyles[entry.second.style] + ".bmp", kGlobal, -kMarkerFrames);
+		else if (entry.second.kind == Hud::kMarkerEnergy)
+			dot = load("map/dot-enrg.bmp", kGlobal, -kMarkerFrames);
+		else if (entry.second.kind == Hud::kMarkerTrilithium)
+			dot = load("map/dot-tril.bmp", kGlobal, -kMarkerFrames);
 		if (dot) {
-			blit(screen, *dot, 0, sx - dot->surface.w / 2, sy - dot->surface.h / 2, kFirstPixel, &kMap);
+			int frame = (int)(time / 150 % kMarkerFrames);
+			blit(screen, *dot, frame, sx - dot->surface.w / 2, sy - dot->frameHeight / 2, kFirstPixel, &kMap);
 		} else {
 			byte colour = palette.findBestColor(255, entry.second.kind == Hud::kMarkerLife ? 0 : 255, 0);
 			for (int dy = -1; dy <= 1; dy++) {
@@ -304,10 +320,16 @@ void HudScreen::drawMap(Graphics::Surface &screen, Mission &mission, const Level
 		                palette.findBestColor(255, 255, 255));
 	}
 
-	if (const Image *levelsButton = load("levels.bmp", kGlobal))
-		blit(screen, *levelsButton, 0, kLevelsButton.left, kLevelsButton.top);
-	if (const Image *zoom = load("zoomz.bmp", kGlobal))
-		blit(screen, *zoom, 0, kZoomButton.left, kZoomButton.top);
+	// The buttons are strips of 27-row frames: the height band lit, the
+	// zoom, and each filter dim (0) or lit (1).
+	if (const Image *levelsButton = load("levels.bmp", kGlobal, kButtonHeight))
+		blit(screen, *levelsButton, _mapBand, kLevelsButton.left, kLevelsButton.top);
+	if (const Image *zoom = load("zoomz.bmp", kGlobal, kButtonHeight))
+		blit(screen, *zoom, _mapZoom, kZoomButton.left, kZoomButton.top);
+	for (int i = 0; i < 3; i++) {
+		if (const Image *filter = load(kFilterImages[i], kGlobal, kButtonHeight))
+			blit(screen, *filter, _filters[i] ? 1 : 0, kFilterButtons[i].left, kFilterButtons[i].top);
+	}
 }
 
 void HudScreen::drawPanel(Graphics::Surface &screen, Mission &mission, uint32 time) {
@@ -379,6 +401,12 @@ bool HudScreen::mouseDown(Mission &mission, int x, int y, bool right) {
 		if (kLevelsButton.contains(x, y)) {
 			_mapBand = (_mapBand + 1) % 3;
 			return true;
+		}
+		for (int i = 0; i < 3; i++) {
+			if (kFilterButtons[i].contains(x, y)) {
+				_filters[i] = !_filters[i];
+				return true;
+			}
 		}
 		if (kZoomButton.contains(x, y)) {
 			_mapZoom = (_mapZoom + 1) % 3;

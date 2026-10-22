@@ -110,7 +110,7 @@ private:
 	                 const Common::Rect *clip = nullptr);
 	void drawLifePanel(Graphics::Surface &screen, Mission &mission);
 	void drawMap(Graphics::Surface &screen, Mission &mission, const LevelFile &level, double playerX,
-	             double playerY, double playerZ, double yaw);
+	             double playerY, double playerZ, double yaw, uint32 time);
 	void drawPanel(Graphics::Surface &screen, Mission &mission, uint32 time);
 	void drawInventory(Graphics::Surface &screen, Mission &mission);
 	/** The inventory slot whose hit rectangle holds (x, y), or -1. */
@@ -131,6 +131,8 @@ private:
 	LeftMode _leftMode = kLeftLife;
 	int _mapBand = 1;
 	int _mapZoom = 1;
+	/** Which markers the map shows: life, energy, trilithium. */
+	bool _filters[3] = { true, true, true };
 };
 
 } // End of namespace STG

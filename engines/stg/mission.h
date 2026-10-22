@@ -288,6 +288,7 @@ public:
 	/** Fire a projectile of the given type (see Projectiles::fire), sounding it. */
 	void fire(int type, double x, double y, double z, double yaw, double pitch, int shooter);
 	Projectiles &getProjectiles() { return *_projectiles; }
+	Movers &getMovers() { return *_movers; }
 
 	// ScriptHost
 	void callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) override;

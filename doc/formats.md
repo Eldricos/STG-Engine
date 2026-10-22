@@ -594,7 +594,7 @@ Rectangles are inclusive. `engines/stg/hudscreen.h`, `hud.h`.
 |------|-------|------|
 | left panel | (0,253)-(205,458) | l-m-m-o.bmp, frames of 206 rows by mode: off, object, map, life; tabs at (6,261), (6,331), (6,401), 23 x 52 |
 | life | (40,269), (118,393) | body picture (`SET_BODY_IMAGE`, -1 = BODY.BMP, frames of 177 rows); health: 3health.bmp (frames of 50 rows: over 15, over 5, else), then unithlt0.bmp units at x 119, unit k's top at 442 - h - 1 - 3k (- 7 from the 16th) |
-| map | (39,267)-(192,414) | walls flagged 0x800 in the height band shown, markers (map\dot-*.bmp), the player (agpface2.bmp, 8 headings); levels and zoom buttons at (43,415), (74,415) |
+| map | (39,267)-(192,414) | walls flagged 0x800 in the height band shown, markers (map\dot-*.bmp, 7 x 7, four frames; dot-enrg and dot-tril for energy and trilithium), the player (agpface2.bmp, 8 headings); buttons of 27-row frames: levels.bmp (43,415) and zoomz.bmp (74,415), three frames for the band and zoom; s-life, s-energ, s-lith.bmp at (117,415), (141,415), (165,415), dim (0) or lit (1), filtering the markers |
 | object | (39,267) | the mission's OBJECT.BMP |
 | right | (206,252)-(639,479) | actionx.bmp |
 | weapon display | (222,252)-(431,296) | weapphas.bmp for the phaser, p-arrow.bmp at x 222 + 11 level − 4 (clicking sets level (x − 239) / 11 + 1), and a gauge of 59 ticks 3 apart whose empty part, 59 − ⌈59 charge / most⌉ ticks, is wiped in colour 0 from (413,280) leftwards, 2 x 7 each; wepcycle.bmp at (207,253) picks the next weapon |
