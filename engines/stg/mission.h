@@ -239,12 +239,26 @@ public:
 	 */
 	struct TransitionView {
 		bool active = false;
-		bool briefing = false;
-		double brightness = 1.0;
-		/** What it fades through (SET_TRANSITION_COLOUR, 0x94); black by default. */
+		/**
+		 * The briefing gives way to the game, the game to black (the
+		 * ending), or the game before a teleport to the game after it.
+		 */
+		enum Kind { kBriefing, kEnding, kTeleport } kind = kBriefing;
+		/**
+		 * 0x43E13A: 1 speckles grow over the first picture, 2 it
+		 * crossfades to the second under a quarter's speckles, 3 they
+		 * clear from the second; 0 once over.
+		 */
+		int phase = 0;
+		/** In 1024ths: 0-256 in phases 1 and 3, 0-1024 in phase 2. */
+		int amount = 0;
+		/** SET_TRANSITION_STYLE (0x95): 1 pixels, 2 streaks. */
+		int style = 1;
+		/** The speckles' colour (SET_TRANSITION_COLOUR, 0x94). */
 		byte r = 0, g = 0, b = 0;
 	};
 	TransitionView getTransitionView() const;
+	bool isInTransition() const { return _transition.active; }
 
 	/**
 	 * How the player moves (SET_PLAYER_MOTION, 0xB2), in the original's
@@ -336,6 +350,8 @@ private:
 	std::vector<int> getStartOrder() const;
 
 	void runTimers();
+	/** A transition (0x91-0x93) going on: its time, the teleport, its end. */
+	void updateTransition(uint32 ms);
 	void checkPlayerContacts();
 	/** The pass-through floor at the player's feet, or -1. */
 	int findPassThroughFloor() const;

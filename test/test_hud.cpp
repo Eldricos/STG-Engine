@@ -11,6 +11,7 @@
 #include <cmath>
 #include <vector>
 
+#include "engines/stg/dissolve.h"
 #include "engines/stg/helditem.h"
 #include "engines/stg/hud.h"
 #include "engines/stg/render3d.h"
@@ -174,4 +175,47 @@ TEST(level_unproject) {
 	camera.pitch = 0.1;
 	STG::LevelRenderer::unproject(camera, 640, 252, 319.5, 125.5 + 32, 8, x, y, z);
 	CHECK(std::fabs(z - 5) < 1e-9);
+}
+
+TEST(transition_dissolve) {
+	using namespace STG;
+	Common::RandomSource random(1);
+	auto count = [](const Graphics::Surface &s, byte value) {
+		int n = 0;
+		for (int y = 0; y < s.h; y++)
+			for (int x = 0; x < s.w; x++)
+				n += *(const byte *)s.getBasePtr(x, y) == value;
+		return n;
+	};
+	Graphics::Surface a, b, out;
+	a.create(64, 16, Graphics::PixelFormat::createFormatCLUT8());
+	b.create(64, 16, Graphics::PixelFormat::createFormatCLUT8());
+	out.create(64, 16, Graphics::PixelFormat::createFormatCLUT8());
+	a.fillRect(Common::Rect(64, 16), 1);
+	b.fillRect(Common::Rect(64, 16), 2);
+
+	// Nothing at 0; a quarter of each row asked for at 256, fewer landing
+	// where picks repeat.
+	Dissolve::speckle(a, 9, 0, 1, random);
+	CHECK_EQ(count(a, 9), 0);
+	Dissolve::speckle(a, 9, 256, 1, random);
+	int speckled = count(a, 9);
+	CHECK(speckled > 0 && speckled <= 16 * 16);
+	// Past half, the colour with the picture showing through.
+	a.fillRect(Common::Rect(64, 16), 1);
+	Dissolve::speckle(a, 9, 0x3FF, 1, random);
+	CHECK_EQ(count(a, 9), 64 * 16);
+	// A streak is a sixteenth of the width (less at the right edge).
+	a.fillRect(Common::Rect(64, 16), 1);
+	Dissolve::speckle(a, 9, 4, 2, random);
+	CHECK(count(a, 9) > 0 && count(a, 9) <= 4);
+
+	// The crossfade goes from all of one to all of the other.
+	a.fillRect(Common::Rect(64, 16), 1);
+	Dissolve::crossfade(out, a, b, 0, random);
+	CHECK_EQ(count(out, 1), 64 * 16);
+	Dissolve::crossfade(out, a, b, 600, random);
+	CHECK(count(out, 2) > count(out, 1));
+	Dissolve::crossfade(out, a, b, 0x3FF, random);
+	CHECK_EQ(count(out, 2), 64 * 16);
 }

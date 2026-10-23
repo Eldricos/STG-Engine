@@ -164,7 +164,7 @@ the story's data isn't there.
 
 The starting screen lists the away missions found in the game's data (the
 fifteen locations sgens.exe knows, from AMARGOS1 to VERID1): Up/Down choose
-one and Enter plays it in the 3D view, after its briefing picture. Esc leaves a
+one and Enter plays it in the 3D view, after its briefing picture (click PROCEED, or press Enter or Space). Esc leaves a
 mission for the list, and a mission that ends itself returns there too, saying
 whether its objectives were met. F5 saves a mission in progress and F7 picks
 it up again.

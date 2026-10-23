@@ -71,6 +71,8 @@ Mission::Mission(LevelFile &level, const ScriptFile &script, LevelRenderer &rend
 		if (billboard.flags & LevelFile::kBillboardItem)
 			dropBillboard(billboard);
 	}
+	// Until SET_TRANSITION_COLOUR, the transitions use the palette's 0x30.
+	level.getPalette().get(0x30, _transitionColour[0], _transitionColour[1], _transitionColour[2]);
 }
 
 Mission::~Mission() {}
@@ -95,31 +97,24 @@ Mission::TransitionView Mission::getTransitionView() const {
 	if (!_transition.active)
 		return view;
 	view.active = true;
-	const uint32 *t = _transition.phase;
-	uint32 e = _transition.elapsed;
-	auto ratio = [](uint32 part, uint32 whole) { return whole ? std::min(1.0, (double)part / whole) : 1.0; };
+	view.kind = _transition.ending ? TransitionView::kEnding
+	            : _transition.teleport ? TransitionView::kTeleport : TransitionView::kBriefing;
+	view.style = _transitionStyle;
 	view.r = _transitionColour[0];
 	view.g = _transitionColour[1];
 	view.b = _transitionColour[2];
-	if (_transition.ending) {
-		// From the screen as it is to the colour.
-		if (e >= t[0])
-			view.brightness = e < t[0] + t[1] ? 1.0 - ratio(e - t[0], t[1]) : 0.0;
-		return view;
-	}
-	if (_transition.teleport) {
-		// Out over the first phase, back in over the rest.
-		view.brightness = e < t[0] ? 1.0 - ratio(e, t[0]) : ratio(e - t[0], t[1] + t[2]);
-		return view;
-	}
-	// The briefing picture out of black, then the mission in its place.
-	if (e < t[0]) {
-		view.briefing = true;
-		view.brightness = ratio(e, t[0]);
-	} else if (e < t[0] + t[1]) {
-		uint32 half = t[1] / 2, into = e - t[0];
-		view.briefing = into < half;
-		view.brightness = view.briefing ? 1.0 - ratio(into, half) : ratio(into - half, t[1] - half);
+	// 0x43E13A: each phase ends at the sum of the times before it.
+	const uint32 *t = _transition.phase;
+	uint32 e = _transition.elapsed, end1 = t[0], end2 = end1 + t[1], end3 = end2 + t[2];
+	if (e < end1) {
+		view.phase = 1;
+		view.amount = (int)((uint64)e * 256 / t[0]);
+	} else if (e < end2) {
+		view.phase = 2;
+		view.amount = (int)((uint64)(e - end1) * 1024 / t[1]);
+	} else if (e < end3) {
+		view.phase = 3;
+		view.amount = 256 - (int)((uint64)(e - end2) * 256 / t[2]);
 	}
 	return view;
 }
@@ -396,9 +391,34 @@ void Mission::start() {
 	checkPlayerContacts();
 }
 
+void Mission::updateTransition(uint32 ms) {
+	// 0x43E13A: at its end the briefing gives way to the mission (event 7);
+	// the ending one ends it.
+	_transition.elapsed += ms;
+	// The player moves as the crossfade starts (the original moves at once
+	// but shows the old view until then).
+	if (_transition.teleport && !_transition.moved && _transition.elapsed >= _transition.phase[0]) {
+		_transition.moved = true;
+		_walker.place(_transition.x, _transition.y, _transition.z);
+		setPlayerHeading(_transition.heading);
+	}
+	if (_transition.elapsed >= _transition.phase[0] + _transition.phase[1] + _transition.phase[2]) {
+		_transition.active = false;
+		if (_transition.ending)
+			_finished = true;
+		else
+			broadcast(kEventBriefingDone);
+	}
+}
+
 void Mission::update(uint32 ms) {
 	// The original clamps its frame time the same way (0x4309C5).
 	ms = std::max<uint32>(8, std::min<uint32>(ms, 1000));
+	// 0x43A7BD: while a transition runs, nothing else does.
+	if (_transition.active) {
+		updateTransition(ms);
+		return;
+	}
 	_time += ms;
 	runTimers();
 
@@ -444,24 +464,6 @@ void Mission::update(uint32 ms) {
 	if (_objectivesDone == _objectives && !_accomplished) {
 		_accomplished = true;
 		broadcast(kEventObjectivesDone);
-	}
-	// 0x43E13A: at its end the briefing gives way to the mission (event 7);
-	// the ending one ends it.
-	if (_transition.active) {
-		_transition.elapsed += ms;
-		// The teleport happens in the dark, at the end of the first phase.
-		if (_transition.teleport && !_transition.moved && _transition.elapsed >= _transition.phase[0]) {
-			_transition.moved = true;
-			_walker.place(_transition.x, _transition.y, _transition.z);
-			setPlayerHeading(_transition.heading);
-		}
-		if (_transition.elapsed >= _transition.phase[0] + _transition.phase[1] + _transition.phase[2]) {
-			_transition.active = false;
-			if (_transition.ending)
-				_finished = true;
-			else
-				broadcast(kEventBriefingDone);
-		}
 	}
 	// SET_ENVIRONMENT_DAMAGE (0x43B310): past the shield, no lower than 1.
 	if (_environmentPeriod) {

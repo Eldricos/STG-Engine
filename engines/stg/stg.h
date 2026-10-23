@@ -108,6 +108,13 @@ private:
 	bool findSoundFile(const Common::String &name, const Common::String &archivePrefix, ResourceRef &ref) const;
 	/** Load the level's GAME.BIN, if there is one, and start its mission. */
 	void startMission(const ResourceRef &levelRef, bool run = true);
+	/** The briefing and its PROCEED button, until it is clicked. */
+	void drawBriefing(Graphics::Surface &screen, bool withProceed, bool pressed);
+	bool isOverProceed(int x, int y) const;
+	/** PROCEED: its sound, then the mission (event 6). */
+	void proceed();
+	/** A mission transition's blends over the screen (0x43E13A). */
+	void drawTransition(const Mission::TransitionView &transition, Graphics::Palette &palette);
 	/** Jump to the first image of the next (direction 1) or previous (-1) archive. */
 	void jumpArchive(int direction);
 	/** Show the next (1) or previous (-1) 3D level, GAME.LV2. */
@@ -211,6 +218,17 @@ private:
 	/** The mission's BRIEFING.BMP, for its opening transition. */
 	Image::BitmapDecoder _briefing;
 	bool _briefingLoaded = false;
+	/**
+	 * The briefing waits for its PROCEED button (COMMON.DAT's PROCEED.BMP,
+	 * the normal look below the pressed one) before the mission starts.
+	 */
+	Image::BitmapDecoder _proceed;
+	bool _proceedLoaded = false;
+	int _proceedX = 0, _proceedY = 0;
+	bool _awaitingProceed = false, _proceedPressed = false;
+	/** The game as the first phase of a transition last showed it. */
+	Graphics::Surface _transitionFrom;
+	Common::RandomSource _dissolveRandom;
 	bool _imageLoaded = false;
 	Overlay _overlay;
 	bool _overlayLoaded = false;

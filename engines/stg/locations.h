@@ -17,14 +17,17 @@ namespace STG {
 
 /**
  * The away-team locations, as sgens.exe lists them (0x545600: records of
- * 132 bytes, a game class number and the folder). Each is a folder of a
- * data archive holding GAME.LV2, GAME.BIN and the rest.
+ * 132 bytes, a game class number, the PROCEED button's rectangle and the
+ * folder). Each is a folder of a data archive holding GAME.LV2, GAME.BIN
+ * and the rest.
  */
 struct Location {
 	/** The folder, e.g. "VERID1". */
 	const char *folder;
 	/** The game class the original builds for it (0x4331FA). */
 	int type;
+	/** Where PROCEED.BMP goes on its BRIEFING.BMP (0x461F24): the top left. */
+	int proceedX, proceedY;
 };
 
 const std::vector<Location> &getLocations();

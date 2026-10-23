@@ -432,8 +432,9 @@ heading in degrees.
     SET_HEALTH (0x8A); SET_WORN_ITEM (0x8B) id: a kind 9 item (30/30) soaks whole hits while it has
     charge, except kind 12, and gets event 48 when empty; SET_WORN_GAUGE (0xE7); SET_ITEM_CHARGE_MAX
     (0xCB, 0xE6) id, charge, most; GET_ITEM_VALUE (0xCC): a worn item's charge, a weapon's team.
-  - TRANSITION_TELEPORT (0x93) position, t1, t2, t3: out, the player moved, back in, then event 7;
-    SET_TRANSITION_COLOUR (0x94) r, g, b: what transitions fade through.
+  - TRANSITION_TELEPORT (0x93) position, t1, t2, t3: the game dissolves to the game at the new
+    place (see Transitions below), then event 7. SET_TRANSITION_COLOUR (0x94) r, g, b: the
+    speckles' colour, the palette's nearest (`0x43E084`; index 0x30 until set).
   - SET_MISSION_OUTCOME (0x97) code: up to five codes for the campaign (story branches).
   - SET_PLAYER_SPIN (0xAF) degrees a second. SET_PLAYER_CONTROLS: see above.
   - Actors: SET_ACTOR_MAP_MARKER (0x40), ACTOR_GO_TO_ACTOR (0x4A), SET_ACTOR_TARGET (0x5B),
@@ -441,8 +442,8 @@ heading in degrees.
     GET_ALERTED_COUNT (0xEF, actors seeing the player now).
   - ACTOR_GO_TO_BILLBOARD (0x4B) id, billboard: mode 7 towards a billboard (`0x456CC9`).
     DISENGAGE (0x74) id: forgets the ENGAGE object if it is this one, without event 35.
-    SET_TRANSITION_STYLE (0x95) n: game+0x330 (1 by default) passed to the transitions' blends
-    (epsion: 2); what the styles look like isn't known.
+    SET_TRANSITION_STYLE (0x95) n: game+0x330 (1 by default), the transitions' speckles: 1 single
+    pixels, 2 streaks a sixteenth of the screen wide (epsion uses 2).
   - No effect here: 0xED (a flat's +0x6C, unread), ALLOC_GLOBALS (0x15), the logging natives 0x27-0x2A (0x28 pops only its count
     and logs the words under it), LOAD_ACTOR_CLASS (0xA8), 0xAD, SET_PIXEL_PICK (0xE5).
 - **Doors** (movers, `engines/stg/movers.h`): built at load (`0x4B7CA0`) from walls with a mover id
@@ -456,13 +457,25 @@ heading in degrees.
   - SET_SOUND_VOLUME, SET_SOUND_LOOP, SET_SOUND_PRIORITY, SET_SOUND_POSITION, SET_SOUND_OBJECT, SET_SOUND_MAX_DISTANCE, MUTE_SOUND
   - PRELOAD_SOUND
 - **The mission:**
+  - While the mission loads, its BRIEFING.BMP shows; then COMMON.DAT's PROCEED.BMP (83 x 38: the
+    pressed look above the normal one, magenta see-through) goes on it at the place the location
+    table gives (0x545600, a rectangle per location: AMARGOS1's is 366,188-448,206). Clicking it
+    plays PROCEED.WAV (`0x46233F`) and the mission starts.
   - Event 6 starts it. verid1's e001 answers with BRIEFING_TRANSITION (0x91) t1, t2, t3 (32-bit ms,
-    1000 each): the mission's BRIEFING.BMP (with proceed.bmp) gives way to the game over three
-    phases (`0x43D8FF`, run by `0x43E13A`), then event 7 starts the mission proper. Its sound is
-    SET_TRANSITION_SOUND (0x96) sound, volume. How each phase blends isn't certain; the engine
-    fades the picture in from black, swaps it for the game through black, then holds.
-  - END_TRANSITION (0x92) t1, t2, t3: the screen to black, then the mission ends (`0x43DC37`);
-    ignored while another transition runs. verid1's death (e00b) and its leaving (e001 on 46) use it.
+    1000 each): the briefing gives way to the game (`0x43D8FF`), then event 7 starts the mission
+    proper. Its sound is SET_TRANSITION_SOUND (0x96) sound, volume.
+  - END_TRANSITION (0x92) t1, t2, t3: the game dissolves to black, then the mission ends
+    (`0x43DC37`); ignored while another transition runs. verid1's death (e00b) and its leaving
+    (e001 on 46) use it.
+  - Transitions (`0x43E13A`, run instead of the game's tick, so the game stands still): three
+    phases, each ending at the sum of the times so far. 1: the first picture with speckles of the
+    colour growing to a quarter of each row (the display's 0x64, `0x40BC05`, amount
+    elapsed·256/t1 in 1024ths: that many random pixels per row; past half it fills with the
+    colour and shows that many of the picture's instead). 2: a crossfade to the second picture
+    (0x6C, `0x40C852`: random pixels of each row taken from the second, then past half the other
+    way round), with a quarter's speckles over it. 3: the second picture with the speckles
+    clearing. The briefing goes to the game, the game to black for the ending, and the game
+    before a teleport to the game after it.
   - END_MISSION (0xBF): ends it at once (game.vt114 → the controller's `0x443384`, +0x50 = 1).
   - SET_OBJECTIVES (0x99) mask: game+0x94 (-1 until set); OBJECTIVE_DONE (0x9A) bits: game+0x90 |=
     bits; 0x9B clears them. Once they're equal the game broadcasts event 8, once (`0x43AD04`), and

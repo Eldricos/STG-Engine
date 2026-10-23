@@ -215,10 +215,10 @@ void HudScreen::drawLifePanel(Graphics::Surface &screen, Mission &mission) {
 
 void HudScreen::drawMap(Graphics::Surface &screen, Mission &mission, const LevelFile &level, double playerX,
                         double playerY, double playerZ, double yaw, uint32 time) {
+	// Over the left panel's blue map frame (l-m-m-o.bmp), in cyan, as the
+	// original draws it.
 	const Graphics::Palette &palette = level.getPalette();
-	byte wallColour = palette.findBestColor(0, 220, 0);
-	byte dark = palette.findBestColor(0, 0, 0);
-	screen.fillRect(kMap, dark);
+	byte wallColour = palette.findBestColor(104, 252, 252);
 	double cx = (kMap.left + kMap.right) / 2.0, cy = (kMap.top + kMap.bottom) / 2.0;
 	double scale = mission.getHud().getMapZoom(_mapZoom);
 	auto toScreen = [&](double x, double y, int &sx, int &sy) {

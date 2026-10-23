@@ -7,6 +7,7 @@ target_sources(stg_engines PRIVATE
 	combatrender.cpp
 	detection.cpp
 	disasm.cpp
+	dissolve.cpp
 	font.cpp
 	framedimage.cpp
 	ini.cpp

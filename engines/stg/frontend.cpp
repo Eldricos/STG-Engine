@@ -340,8 +340,10 @@ void STGEngine::openMenu(bool canReturn) {
 	_menuOpen = true;
 	_menu->setSlots(listSaves());
 	bool inMission = _playingMission && _mission;
-	// Combat can't be saved: its state isn't kept.
-	_menu->open(_settings, canReturn, (inMission || _menuOverBridge) && !_combat, !inMission && !_combat);
+	// Combat can't be saved: its state isn't kept. Nor can a mission that
+	// hasn't started.
+	_menu->open(_settings, canReturn, (inMission || _menuOverBridge) && !_combat && !_awaitingProceed,
+	            !inMission && !_combat);
 	_screen->getPalette() = _menu->getPalette();
 	_screen->applyPalette();
 	setCursor(false);

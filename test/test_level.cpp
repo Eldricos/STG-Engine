@@ -1140,14 +1140,16 @@ TEST(mission_flow) {
 	Mission mission(level, script, renderer, walker, nullptr);
 	mission.start();
 
-	// The briefing shows, out of black, then the mission takes over.
+	// The briefing speckles over, crossfades to the game, and the
+	// speckles clear; then the mission takes over.
 	Mission::TransitionView view = mission.getTransitionView();
-	CHECK(view.active && view.briefing && view.brightness < 0.01);
+	CHECK(view.active && view.kind == Mission::TransitionView::kBriefing && view.phase == 1 && view.amount == 0);
 	mission.update(50);
-	CHECK(mission.getTransitionView().briefing);
-	CHECK(std::fabs(mission.getTransitionView().brightness - 0.5) < 1e-9);
+	CHECK_EQ(mission.getTransitionView().phase, 1);
+	CHECK_EQ(mission.getTransitionView().amount, 128);
 	mission.update(130);
-	CHECK(!mission.getTransitionView().briefing);
+	CHECK_EQ(mission.getTransitionView().phase, 2);
+	CHECK_EQ(mission.getTransitionView().amount, 819);
 	mission.update(200);
 	CHECK(!mission.getTransitionView().active);
 	CHECK_EQ(mission.getVM().getGlobal(0), 1);
@@ -1201,7 +1203,8 @@ TEST(mission_flow) {
 	CHECK_EQ(mission.getVM().getGlobal(1), 1);
 	CHECK(!mission.isFinished());
 	mission.update(150);
-	CHECK(mission.getTransitionView().brightness < 1.0);
+	CHECK(mission.getTransitionView().kind == Mission::TransitionView::kEnding);
+	CHECK_EQ(mission.getTransitionView().phase, 2);
 	mission.update(200);
 	CHECK(mission.isFinished());
 	CHECK(mission.getMissingNatives().empty());

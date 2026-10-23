@@ -17,6 +17,7 @@
 #include "common/savefile.h"
 #include "common/serializer.h"
 #include "common/system.h"
+#include "engines/stg/dissolve.h"
 #include "engines/stg/locations.h"
 #include "engines/stg/movie.h"
 
@@ -223,6 +224,35 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		}
 		return;
 	}
+	if (_awaitingProceed) {
+		switch (event.type) {
+		case Common::EVENT_MOUSEMOVE:
+			_mouseX = event.mouse.x;
+			_mouseY = event.mouse.y;
+			return;
+		case Common::EVENT_LBUTTONDOWN:
+			_proceedPressed = isOverProceed(event.mouse.x, event.mouse.y);
+			return;
+		case Common::EVENT_LBUTTONUP:
+			if (_proceedPressed && isOverProceed(event.mouse.x, event.mouse.y))
+				proceed();
+			_proceedPressed = false;
+			return;
+		case Common::EVENT_KEYDOWN:
+			if (event.kbd.keycode == Common::KEYCODE_RETURN || event.kbd.keycode == Common::KEYCODE_KP_ENTER ||
+			    event.kbd.keycode == Common::KEYCODE_SPACE) {
+				proceed();
+				return;
+			}
+			if (event.kbd.keycode != Common::KEYCODE_ESCAPE)
+				return;
+			break;
+		default:
+			if (event.type != Common::EVENT_FOCUS_LOST && event.type != Common::EVENT_FOCUS_GAINED)
+				return;
+			break;
+		}
+	}
 	bool walking = _level && _levelPage == kLevelPage3D;
 	bool bracket = event.kbd.keycode == Common::KEYCODE_LEFTBRACKET || event.kbd.keycode == Common::KEYCODE_RIGHTBRACKET;
 	if (walking && bracket && !(event.kbd.flags & Common::KBD_SHIFT) && _mission &&
@@ -405,6 +435,17 @@ void STGEngine::drawFrame(uint32 delta) {
 		leaveMission(message);
 		return;
 	}
+	if (_awaitingProceed && _mission) {
+		// The original's loading screen: the briefing until PROCEED.
+		drawBriefing(_screen->getSurface(), true, _proceedPressed && isOverProceed(_mouseX, _mouseY));
+		_screen->getPalette() = _briefing.getPalette();
+		_screen->applyPalette();
+		_paletteBlended = true;
+		setCursor(false);
+		_screen->update();
+		_dirty = false;
+		return;
+	}
 	if (_level && _levelPage == kLevelPage3D && _hudScreen) {
 		drawMissionScreen(delta);
 		_screen->update();
@@ -581,35 +622,139 @@ void STGEngine::applyScreenEffects() {
 		}
 	}
 
-	// A transition (0x91, 0x92): the briefing picture, or the game, faded.
+	// A transition (0x91-0x93): the briefing, or the game, dissolving.
 	Mission::TransitionView transition = _mission->getTransitionView();
 	if (transition.active) {
 		any = true;
-		if (transition.briefing && _briefingLoaded) {
-			const Graphics::Surface &picture = _briefing.getSurface();
-			Graphics::Surface &screen = _screen->getSurface();
-			screen.fillRect(Common::Rect(screen.w, screen.h), 0);
-			screen.copyRectToSurface(picture, std::max(0, (screen.w - picture.w) / 2),
-			                         std::max(0, (screen.h - picture.h) / 2),
-			                         Common::Rect(std::min<int>(picture.w, screen.w), std::min<int>(picture.h, screen.h)));
-			blended = Graphics::Palette();
-			blended.set(_briefing.getPalette().data(), 0, _briefing.getPaletteColorCount());
-		} else if (transition.briefing) {
-			transition.brightness = 0;
-		}
-		double k = transition.brightness;
-		for (int i = 0; i < 256; i++) {
-			byte r, g, b;
-			blended.get(i, r, g, b);
-			blended.set(i, (byte)(r * k + transition.r * (1 - k)), (byte)(g * k + transition.g * (1 - k)),
-			            (byte)(b * k + transition.b * (1 - k)));
-		}
+		drawTransition(transition, blended);
+	} else if (!_transitionFrom.empty()) {
+		_transitionFrom.free();
 	}
 	if (any || _paletteBlended) {
 		_screen->getPalette() = blended;
 		_screen->applyPalette();
 	}
 	_paletteBlended = any;
+}
+
+void STGEngine::drawTransition(const Mission::TransitionView &transition, Graphics::Palette &palette) {
+	Graphics::Surface &screen = _screen->getSurface();
+	bool briefing = transition.kind == Mission::TransitionView::kBriefing && _briefingLoaded;
+	if (transition.phase == 1 && briefing) {
+		// The briefing in its own colours, speckled.
+		drawBriefing(screen, _proceedLoaded, false);
+		palette = _briefing.getPalette();
+		Dissolve::speckle(screen, palette.findBestColor(transition.r, transition.g, transition.b), transition.amount,
+		                  transition.style, _dissolveRandom);
+		return;
+	}
+	byte colour = palette.findBestColor(transition.r, transition.g, transition.b);
+	byte black = palette.findBestColor(0, 0, 0);
+	bool ending = transition.kind == Mission::TransitionView::kEnding;
+	auto copyScreen = [&screen](Graphics::Surface &to) {
+		if (to.w != screen.w || to.h != screen.h)
+			to.create(screen.w, screen.h, Graphics::PixelFormat::createFormatCLUT8());
+		to.copyRectToSurface(screen, 0, 0, Common::Rect(screen.w, screen.h));
+	};
+
+	switch (transition.phase) {
+	case 1:
+		// The game speckled; it is what the crossfade starts from.
+		copyScreen(_transitionFrom);
+		Dissolve::speckle(screen, colour, transition.amount, transition.style, _dissolveRandom);
+		break;
+	case 2: {
+		// The first picture to the second (the game, or black for the
+		// ending), under a quarter's speckles.
+		Graphics::Surface to;
+		copyScreen(to);
+		if (ending)
+			to.fillRect(Common::Rect(to.w, to.h), black);
+		if (briefing) {
+			// The briefing's colours brought into the game's.
+			Graphics::Palette from = _briefing.getPalette();
+			byte remap[256];
+			for (int i = 0; i < 256; i++) {
+				byte r, g, b;
+				from.get(i, r, g, b);
+				remap[i] = palette.findBestColor(r, g, b);
+			}
+			drawBriefing(screen, _proceedLoaded, false);
+			for (int y = 0; y < screen.h; y++) {
+				byte *row = (byte *)screen.getBasePtr(0, y);
+				for (int x = 0; x < screen.w; x++)
+					row[x] = remap[row[x]];
+			}
+		} else if (_transitionFrom.w == screen.w && _transitionFrom.h == screen.h) {
+			screen.copyRectToSurface(_transitionFrom, 0, 0, Common::Rect(screen.w, screen.h));
+		}
+		Dissolve::crossfade(screen, screen, to, transition.amount, _dissolveRandom);
+		Dissolve::speckle(screen, colour, 0x100, transition.style, _dissolveRandom);
+		break;
+	}
+	case 3:
+		// The second picture clearing.
+		if (ending)
+			screen.fillRect(Common::Rect(screen.w, screen.h), black);
+		Dissolve::speckle(screen, colour, transition.amount, transition.style, _dissolveRandom);
+		break;
+	default:
+		if (ending)
+			screen.fillRect(Common::Rect(screen.w, screen.h), black);
+		break;
+	}
+}
+
+void STGEngine::drawBriefing(Graphics::Surface &screen, bool withProceed, bool pressed) {
+	const Graphics::Surface &picture = _briefing.getSurface();
+	screen.fillRect(Common::Rect(screen.w, screen.h), 0);
+	screen.copyRectToSurface(picture, std::max(0, (screen.w - picture.w) / 2), std::max(0, (screen.h - picture.h) / 2),
+	                         Common::Rect(std::min<int>(picture.w, screen.w), std::min<int>(picture.h, screen.h)));
+	if (!withProceed)
+		return;
+	// PROCEED.BMP: pressed above, normal below; magenta is see-through.
+	const Graphics::Surface &button = _proceed.getSurface();
+	const Graphics::Palette &from = _proceed.getPalette();
+	const Graphics::Palette &to = _briefing.getPalette();
+	int height = button.h / 2;
+	for (int y = 0; y < height; y++) {
+		int sy = pressed ? y : y + height, dy = _proceedY + y;
+		if (dy < 0 || dy >= screen.h)
+			continue;
+		const byte *src = (const byte *)button.getBasePtr(0, sy);
+		byte *out = (byte *)screen.getBasePtr(0, dy);
+		for (int x = 0; x < button.w; x++) {
+			int dx = _proceedX + x;
+			if (dx < 0 || dx >= screen.w)
+				continue;
+			byte r, g, b;
+			from.get(src[x], r, g, b);
+			if (r == 255 && g == 0 && b == 255)
+				continue;
+			out[dx] = to.findBestColor(r, g, b);
+		}
+	}
+}
+
+bool STGEngine::isOverProceed(int x, int y) const {
+	const Graphics::Surface &button = _proceed.getSurface();
+	return x >= _proceedX && x < _proceedX + button.w && y >= _proceedY && y < _proceedY + button.h / 2;
+}
+
+void STGEngine::proceed() {
+	_awaitingProceed = false;
+	_proceedPressed = false;
+	ResourceRef ref;
+	if (findSoundFile("PROCEED.WAV", "COMMON.DAT", ref)) {
+		if (std::unique_ptr<Audio::RewindableAudioStream> stream = _resources.loadSound(ref))
+			_mixer->playStream(Audio::Mixer::kSFXSoundType, nullptr, std::move(stream));
+	}
+	if (!_mission)
+		return;
+	_mission->start();
+	double yaw;
+	if (_mission->takePlayerYaw(yaw))
+		_camera.yaw = yaw;
 }
 
 void STGEngine::drawTextPanel() {
@@ -695,6 +840,7 @@ void STGEngine::leaveMission(const Common::String &message) {
 	if (_mission)
 		_carriedArray = _mission->getCarriedArray();
 	_playingMission = false;
+	_awaitingProceed = false;
 	_subtitle.clear();
 	_missionSubtitle = false;
 	_missionMessage = message;
@@ -795,17 +941,36 @@ void STGEngine::showLevel(const ResourceRef &ref, bool run) {
 	loadActors(ref);
 	_camera = _levelRenderer->getStartCamera(Walker::kEyeHeight);
 	_walker->place(_camera.x, _camera.y, _camera.z - Walker::kEyeHeight);
-	startMission(ref, run);
-	// The mission's briefing picture, which its opening transition shows.
+	// The mission's briefing picture, which waits for PROCEED and then
+	// gives way to the game in the opening transition.
 	{
 		size_t slash = ref.name.find_last_of("/\\");
-		ResourceRef briefing = { ref.archive, ref.name.substr(0, slash + 1) + "BRIEFING.BMP" };
-		_briefingLoaded = false;
+		Common::String folder = ref.name.substr(0, slash + 1);
+		ResourceRef briefing = { ref.archive, folder + "BRIEFING.BMP" };
+		_briefingLoaded = _proceedLoaded = false;
 		for (const ResourceRef &image : _resources.getImages()) {
 			if (image.archive == briefing.archive && Common::toLower(image.name) == Common::toLower(briefing.name))
 				_briefingLoaded = _resources.loadImage(image, _briefing) && _briefing.hasPalette();
+			else if (Common::toLower(image.archive) == "common.dat" && Common::toLower(image.name) == "proceed.bmp")
+				_proceedLoaded = _resources.loadImage(image, _proceed) && _proceed.hasPalette();
 		}
+		_proceedX = _proceedY = 0;
+		Common::String name = Common::toLower(folder.substr(0, folder.empty() ? 0 : folder.size() - 1));
+		name = name.substr(name.find_last_of("/\\") == Common::String::npos ? 0 : name.find_last_of("/\\") + 1);
+		bool placed = false;
+		for (const Location &location : getLocations()) {
+			if (Common::toLower(location.folder) == name) {
+				_proceedX = location.proceedX;
+				_proceedY = location.proceedY;
+				placed = true;
+			}
+		}
+		_proceedLoaded = _proceedLoaded && placed;
 	}
+	bool wait = run && _briefingLoaded && _proceedLoaded;
+	startMission(ref, run && !wait);
+	_awaitingProceed = wait && _mission;
+	_proceedPressed = false;
 	_hudScreen.reset();
 	_heldItem.load(_resources, _levelRef, 0);
 	if (_mission) {
@@ -1070,7 +1235,7 @@ void STGEngine::updateWalk(uint32 delta) {
 	uint16 controls = _mission ? _mission->getControls() : 0xFFFF;
 	if (_walker->isAirborne() && !lowGravity)
 		controls &= Mission::kControlTurn | Mission::kControlLook;
-	if (_mission && _mission->getTransitionView().active)
+	if (_mission && _mission->isInTransition())
 		controls = 0;
 	if (!(controls & Mission::kControlWalk))
 		forward = strafe = 0;
@@ -1121,7 +1286,8 @@ void STGEngine::updateWalk(uint32 delta) {
 
 	// Move every frame, so falls carry on without a key held.
 	double oldX = _camera.x, oldY = _camera.y, oldZ = _camera.z;
-	_walker->move(dx, dy, seconds);
+	if (!_mission || !_mission->isInTransition())
+		_walker->move(dx, dy, seconds);
 	if (_mission) {
 		_mission->setPlayerYaw(_camera.yaw);
 		_mission->update(delta);
@@ -1521,6 +1687,8 @@ Common::String STGEngine::getSaveFileName(int slot) const {
 }
 
 Common::Error STGEngine::saveGameState(int slot, const Common::String &description) {
+	if (_awaitingProceed)
+		return Common::Error(Common::kWritingFailed, "the mission hasn't started");
 	std::unique_ptr<Common::OutSaveFile> out = _saveFileMan->openForSaving(getSaveFileName(slot));
 	if (!out)
 		return Common::kWritingFailed;
