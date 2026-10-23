@@ -34,9 +34,13 @@ namespace STG {
  * fight: the helm (by hand, or Close, Evade, Maintain distance, Full stop
  * and Warp out), phasers in their firing arcs, photon torpedo salvos,
  * shields by facing, damage to systems, waves of enemies, explosions, the
- * crew's reports with subtitles. The enemies fly the built-in rules (close
- * in, fire every seven seconds, Soran keeps away); the TACTICS scripts
- * (*.BIN) aren't run.
+ * crew's reports with subtitles. The enemies fly the original's own AI
+ * (0x4A7C91): they head for the Enterprise until within three quarters of
+ * phaser range, then hold their turn until they are out again; they fire
+ * every seven seconds, swerve off when about to collide, break off when
+ * badly hurt, and Soran keeps away while he has company. The TACTICS
+ * scripts (*.BIN) in COMBAT.DAT are left over from development: the game
+ * never attaches one to a ship.
  *
  * It ends won (every enemy gone, or Soran's ship beaten), lost (the
  * Enterprise warped out) or with the Enterprise destroyed.
@@ -112,6 +116,9 @@ private:
 	void steer(Ship &ship, const Vec3 &point, double dt, bool away = false);
 	void fly(Ship &ship, double dt);
 	void updateAi(Ship &ship, double dt);
+	/** Head for a point well off the Enterprise (0x4AFF2A). */
+	void runOff(Ship &ship);
+	bool isCollisionImminent(const Ship &a, const Ship &b) const;
 	void updateHelm(double dt);
 	void firePhasers(int shooter);
 	void firePhotons(int shooter);

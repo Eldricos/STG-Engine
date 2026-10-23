@@ -24,8 +24,16 @@ const char *const kArchive = "COMBAT.DAT";
 const int kViewX = 52, kViewY = 10, kViewW = 532, kViewH = 231;
 /** Rotation at full deflection: 228 angle units a frame at about 15 frames a second. */
 const double kMaxTurn = 75 * M_PI / 180;
-/** The AI fires every 2037 ticks of 1/291 s. */
-const uint32 kAiFireMillis = 7000;
+/** The AI's clock (0x47B83E) runs at 291.3 ticks a second (0x537260). */
+uint32 ticks(int count) {
+	return (uint32)(count * 1000 / 291.3 + 0.5);
+}
+/** The AI fires every 2037 ticks, about seven seconds (0x4A7C91). */
+const uint32 kAiFireMillis = ticks(0x7F5);
+/** Running off picks a new point at most every ten seconds (0x4AFF2A). */
+const uint32 kFleeMillis = ticks(0xB5E);
+/** A swerve from a collision holds for five seconds (0x4A53A1). */
+const uint32 kAvoidMillis = ticks(0x5AF);
 const uint32 kEndingMillis = 15000;
 const uint32 kLifeSupportMillis = 30000;
 const int kStars = 1500;
@@ -114,9 +122,11 @@ struct SpaceCombat::Ship {
 	int aimed = -1;
 	int number = 1;
 	uint32 aiTimer = 3000;
-	int aiState = 0;
-	uint32 aiStateTime = 0;
+	/** Flying at waypoint (+0x188 with flag 0x20), or holding the last turn. */
+	bool hasWaypoint = false;
 	Vec3 waypoint;
+	/** When the next point to run to may be picked (+0xE9C), and when a swerve ends (+0xEB0). */
+	uint32 fleeAt = 0, avoidUntil = 0;
 	int destroyedReported = 0;
 };
 
@@ -467,62 +477,89 @@ void SpaceCombat::steer(Ship &ship, const Vec3 &point, double dt, bool away) {
 }
 
 void SpaceCombat::updateAi(Ship &ship, double dt) {
+	// The enemies' own AI (0x4A7C91), with the steering of 0x4A53A1. The
+	// TACTICS scripts (*.BIN) in COMBAT.DAT are never attached to a ship.
 	const Ship &enterprise = _ships[0];
 	if (!enterprise.alive || !ship.cls)
 		return;
-	Vec3 toTarget = enterprise.position - ship.position;
-	double distance = toTarget.length();
+	double distance = (enterprise.position - ship.position).length();
 	uint32 ms = (uint32)(dt * 1000);
-	ship.aiStateTime += ms;
+	int index = (int)(&ship - &_ships[0]);
 
-	int destroyed = 0;
-	for (int s = ShipClass::kWeapons; s <= ShipClass::kCloak; s++)
-		destroyed += ship.cls->systems[s].max > 0 && ship.damage[s] >= ship.cls->systems[s].max;
-	bool others = false;
-	for (const Ship &s : _ships)
-		others |= &s != &ship && &s != &_ships[0] && (isEnemyAlive(s) || (s.hidden && s.alive));
-
-	if (destroyed >= 2 && !ship.soran) {
-		// Badly hurt: run (0x4AFF2A), and once far enough, gone.
-		steer(ship, enterprise.position, dt, true);
-		ship.setting = 100;
-		if (distance > 2.5 * ship.cls->phaserRange)
-			ship.gone = true;
-	} else if (ship.soran && others) {
-		// Soran keeps away until his escort is gone.
-		double keep = 2.0 * ship.cls->phaserRange;
-		steer(ship, enterprise.position, dt, distance < keep);
-		ship.setting = distance < keep ? 100 : 20;
-	} else if (distance < (ship.radius + enterprise.radius) * 1.5) {
-		steer(ship, enterprise.position, dt, true);
-		ship.setting = 100;
-	} else if (ship.aiState == 0) {
-		// An attack run, then a break and a loop back.
-		steer(ship, enterprise.position + enterprise.orientation.forward * (enterprise.speed * 1.0), dt);
-		ship.setting = distance > ship.cls->closeRadius ? 100 : 60;
-		if (distance < std::max(1500.0, ship.cls->closeRadius * 0.5)) {
-			ship.aiState = 1;
-			ship.aiStateTime = 0;
-			Vec3 side = ship.orientation.right * ((_random.getRandomNumber(1) ? 1 : -1) * 6000.0);
-			ship.waypoint = ship.position + ship.orientation.forward * 8000.0 + side + Vec3(0, (int)_random.getRandomNumber(4000) - 2000.0, 0);
-		}
-	} else {
-		steer(ship, ship.waypoint, dt);
-		ship.setting = 100;
-		if (ship.aiStateTime > 5000)
-			ship.aiState = 0;
-	}
-
-	// Fire every seven seconds or so, in range.
+	// Every seven seconds: phasers in range, and the tube facing the
+	// Enterprise if it has torpedoes and is in range.
 	ship.aiTimer = ship.aiTimer > ms ? ship.aiTimer - ms : 0;
 	if (ship.aiTimer == 0) {
-		ship.aiTimer = kAiFireMillis - 1000 + _random.getRandomNumber(2000);
-		int index = (int)(&ship - &_ships[0]);
-		if (distance <= ship.cls->phaserRange)
+		ship.aiTimer = kAiFireMillis;
+		if (distance < ship.cls->phaserRange)
 			firePhasers(index);
-		if (ship.cls->photons > 0 && distance <= ship.cls->photonRange && _random.getRandomNumber(1) == 0)
-			firePhotons(index);
+		firePhotons(index);
 	}
+
+	// About to collide: swerve to a point beside and below the Enterprise.
+	if (isCollisionImminent(ship, enterprise)) {
+		if (ship.avoidUntil < _time) {
+			ship.waypoint = enterprise.position + Vec3(_random.getRandomNumber(1) ? 1100 : -1100, -1100,
+			                                           _random.getRandomNumber(1) ? 1100 : -1100);
+			ship.hasWaypoint = true;
+			ship.avoidUntil = _time + kAvoidMillis;
+		}
+	} else if (ship.avoidUntil) {
+		ship.hasWaypoint = false;
+		ship.avoidUntil = 0;
+	}
+
+	if (ship.avoidUntil <= _time) {
+		// Soran keeps off while any other ship is left in the fight, or
+		// still to come (the ship list, 0x4A2450).
+		int others = 0;
+		for (const Ship &s : _ships)
+			others += &s != &ship && &s != &enterprise && s.alive && !s.gone;
+		bool keepsAway = ship.soran && others > 0;
+		if (distance >= 0.75 * ship.cls->phaserRange) {
+			if (keepsAway) {
+				runOff(ship);
+			} else {
+				ship.waypoint = enterprise.position;
+				ship.hasWaypoint = true;
+			}
+		} else if (keepsAway) {
+			runOff(ship);
+		}
+	}
+
+	// Full ahead at the waypoint; with none, the last turn holds.
+	ship.setting = 100;
+	if (ship.hasWaypoint)
+		steer(ship, ship.waypoint, dt);
+}
+
+void SpaceCombat::runOff(Ship &ship) {
+	// 0x4AFF2A: two phaser ranges off the Enterprise to either side, and
+	// below it.
+	if (_time < ship.fleeAt)
+		return;
+	const Ship &enterprise = _ships[0];
+	double r = 2.0 * enterprise.cls->phaserRange;
+	ship.fleeAt = _time + kFleeMillis;
+	ship.waypoint = enterprise.position + Vec3(_random.getRandomNumber(1) ? r : -r, -r,
+	                                           _random.getRandomNumber(1) ? r : -r);
+	ship.hasWaypoint = true;
+}
+
+bool SpaceCombat::isCollisionImminent(const Ship &a, const Ship &b) const {
+	// 0x4A7880: within 1000, moving or close, and too near now or a second
+	// from now (speeds are per second).
+	double distance = (a.position - b.position).length();
+	if (distance > 1000)
+		return false;
+	Vec3 va = a.orientation.forward * a.speed, vb = b.orientation.forward * b.speed;
+	if (std::fabs(a.speed) < 2 && std::fabs(b.speed) < 2 && distance > a.radius + b.radius + 500)
+		return false;
+	double clearance = std::max(a.radius, b.radius) + std::max(va.length(), vb.length()) * 8;
+	if (distance < clearance || ((a.position + va) - (b.position + vb)).length() < clearance)
+		return true;
+	return (va - vb).length() * 4 > distance;
 }
 
 void SpaceCombat::updateHelm(double dt) {
@@ -647,6 +684,11 @@ void SpaceCombat::firePhotons(int shooter) {
 	if (!ship.cls || targetIndex < 0 || targetIndex >= (int)_ships.size() || !isEnemyAlive(_ships[targetIndex]))
 		return;
 	const Ship &target = _ships[targetIndex];
+	if ((target.position - ship.position).length() > ship.cls->photonRange) {
+		if (shooter == 0)
+			speak(0x112);
+		return;
+	}
 	int arc = octant(ship, target.position);
 	// The tube facing the target fires all it holds (0x4999AB).
 	for (int t = 0; t < 4; t++) {
@@ -823,6 +865,9 @@ void SpaceCombat::hit(int index, int shield, double amount, int aimed) {
 		destroy(index);
 		return;
 	}
+	// An enemy with two systems or more gone breaks off (0x4B0103).
+	if (index != 0 && destroyed > 1)
+		runOff(ship);
 	// Soran's ship is beaten once it can't run or has no power.
 	if (ship.soran && (ship.damage[ShipClass::kEngines] >= cls.systems[ShipClass::kEngines].max ||
 	                   ship.damage[ShipClass::kPower] >= cls.systems[ShipClass::kPower].max)) {
