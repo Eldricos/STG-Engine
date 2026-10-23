@@ -153,6 +153,8 @@ private:
 	 * the resource viewer) if the data for it isn't there.
 	 */
 	bool startFrontEnd();
+	/** For testing: the story from one of its sections, as if a new game had got there. */
+	void startStoryAt(const Common::String &section);
 	void loadSettings();
 	/** Keep the settings and apply the volumes. */
 	void saveSettings();

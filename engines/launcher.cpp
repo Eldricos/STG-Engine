@@ -59,6 +59,9 @@ const char *const kHelpString =
 	"      --cd1=PATH           Disc 1 (or a copy of it), for files not installed to disk\n"
 	"      --cd2=PATH           Disc 2 (or a copy of it)\n"
 	"      --viewer             Browse the game's files instead of playing it\n"
+	"      --combat=N           For testing: straight into space combat N (1-25)\n"
+	"      --story=SECTION      For testing: the story from a section of STATES.INI\n"
+	"                           (e.g. Amargosa2, Veridian; --story=list names them)\n"
 	"  -c, --config=FILE        Use an alternate configuration file\n"
 	"  -d, --debuglevel=NUM     Set debug verbosity\n"
 	"      --debugflags=A,B     Enable engine debug channels (or 'all')\n"
@@ -97,6 +100,8 @@ bool parseCommandLine(int argc, char *argv[], Command &command) {
 		{ nullptr, "cd1", "cd1path", true, nullptr },
 		{ nullptr, "cd2", "cd2path", true, nullptr },
 		{ nullptr, "viewer", "viewer", false, "true" },
+		{ nullptr, "combat", "combat", true, nullptr },
+		{ nullptr, "story", "story", true, nullptr },
 		{ "c", "config", "config", true, nullptr },
 		{ "d", "debuglevel", "debuglevel", true, nullptr },
 		{ nullptr, "debugflags", "debugflags", true, nullptr },

@@ -76,13 +76,23 @@ bool STGEngine::startFrontEnd() {
 	_frontEnd = true;
 	loadSettings();
 
-	// For testing: straight into a space combat (debug_combat=n).
-	if (ConfMan.getInt("debug_combat") > 0) {
-		if (_bridge)
-			_bridge->reset();
-		_campaign.start(Common::format("SpaceCombat%dPlay", ConfMan.getInt("debug_combat")));
-		runCampaign();
-		return true;
+	// For testing: straight into a space combat (--combat=n), or the story
+	// from any section (--story=Amargosa2; --story=list names them).
+	Common::String story = ConfMan.get("story");
+	if (ConfMan.getInt("combat") > 0)
+		story = Common::format("SpaceCombat%dPlay", ConfMan.getInt("combat"));
+	if (story == "list") {
+		Common::String names;
+		for (const Common::String &name : _campaign.getSectionNames())
+			names += " " + name;
+		info("The story's sections:%s", names.c_str());
+	} else if (!story.empty()) {
+		if (!_campaign.hasSection(story)) {
+			warning("The story has no section [%s]; --story=list names them", story.c_str());
+		} else {
+			startStoryAt(story);
+			return true;
+		}
 	}
 
 	// The original goes from the title straight into a new game. Here the
@@ -90,6 +100,29 @@ bool STGEngine::startFrontEnd() {
 	showIntro();
 	openMenu(false);
 	return true;
+}
+
+void STGEngine::startStoryAt(const Common::String &section) {
+	// A new game's setup, then the section: the readings the scanner shows
+	// (NewGame's SetFlag 1-4) and the Enterprise at the section's star, or
+	// at Amargosa.
+	if (_bridge)
+		_bridge->reset();
+	_campaign.start(section);
+	for (int flag = 1; flag <= 4; flag++)
+		_campaign.setFlag(flag, true);
+	if (_bridge) {
+		Common::String sun = "Amargosa";
+		for (size_t length = section.size(); length >= 4; length--) {
+			if (_bridge->isSun(section.substr(0, length))) {
+				sun = section.substr(0, length);
+				break;
+			}
+		}
+		_bridge->bridgeCommand("move", { "Enterprise", sun });
+	}
+	info("Starting the story at [%s]", section.c_str());
+	runCampaign();
 }
 
 void STGEngine::loadSettings() {

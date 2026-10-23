@@ -14,7 +14,7 @@
 
 namespace STG {
 
-bool Overlay::load(Common::SeekableReadStream &stream) {
+bool Overlay::load(Common::SeekableReadStream &stream, int key) {
 	_surface.free();
 	_mask.clear();
 
@@ -62,7 +62,8 @@ bool Overlay::load(Common::SeekableReadStream &stream) {
 				return false;
 			}
 			stream.read(pixels + x, n);
-			memset(mask + x, 1, n);
+			for (int i = 0; i < n; i++)
+				mask[x + i] = pixels[x + i] != key || key < 0;
 			x += n;
 			if (n & 1)
 				stream.readByte(); // pad to even

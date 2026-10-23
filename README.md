@@ -152,6 +152,12 @@ beating Soran's); warping out loses the fight, and losing the Enterprise
 ends the game. The enemies fly simple built-in tactics, not the original's
 scripted manoeuvres.
 
+For testing, `--combat=N` goes straight into space combat N (1-25, the
+`SCn.MIS` files), and `--story=SECTION` starts the story at any section of
+`STATES.INI` as if a new game had got there, with the Enterprise at that
+section's star: `--story=Amargosa2`, `--story=Veridian`, `--story=Halee1Or2`.
+`--story=list` prints the section names to the console.
+
 `--viewer` starts the resource viewer instead, which is also what runs when
 the story's data isn't there.
 

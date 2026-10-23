@@ -90,6 +90,9 @@ public:
 	/** Read the script's text; false if it has no [Start]. */
 	bool load(const Common::String &text);
 	bool isLoaded() const { return !_sections.empty(); }
+	bool hasSection(const Common::String &name) const { return _sections.count(Common::toLower(name)) != 0; }
+	/** The sections, in lower case. */
+	std::vector<Common::String> getSectionNames() const;
 	void setWorld(CampaignWorld *world) { _world = world; }
 
 	/** Start the script at a section (e.g. "Start" or "NewGame"), with everything reset. */

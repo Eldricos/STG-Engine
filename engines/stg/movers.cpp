@@ -216,18 +216,20 @@ bool Movers::apply(Mover &mover, int position, Walker &player, std::vector<int> 
 				rotate(bx, by, theta);
 				break;
 			case 6:
-				// Slides up: the leader's bottom rises; followers' tops follow.
-				if (isLeader) {
-					w.bottom = p.bottom + toFixed(f * h);
+				// Slides up: the leader's bottom rises into its top, its
+				// texture cut short; a follower (a panel on the door, say)
+				// rides up whole, top and bottom (0x4B8810).
+				w.bottom = p.bottom + toFixed(f * h);
+				if (isLeader)
 					w.vLength = (int32)std::lround(p.vLength * (1 - f));
-				} else {
+				else
 					w.top = p.top + toFixed(f * h);
-				}
 				break;
 			case 7:
-				// Slides down: the leader's top sinks, its texture with it.
+				// Slides down: the leader's top sinks, its texture with it;
+				// a follower sinks whole.
+				w.top = p.top - toFixed(f * h);
 				if (isLeader) {
-					w.top = p.top - toFixed(f * h);
 					w.vStart = p.vStart + (int32)std::lround(f * p.vLength);
 					w.vLength = (int32)std::lround(p.vLength * (1 - f));
 				} else {

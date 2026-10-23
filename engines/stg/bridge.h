@@ -74,6 +74,8 @@ public:
 	bool isZooming() const override { return _zoomLeft > 0; }
 	bool isEnterpriseIdle() const override;
 
+	bool isSun(const Common::String &name) const { return findSun(name) >= 0; }
+
 	/** Another activity takes the screen: the bridge goes, with its sounds. */
 	void hide();
 	bool isShown() const { return _shown; }

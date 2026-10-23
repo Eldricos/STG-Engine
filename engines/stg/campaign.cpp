@@ -75,6 +75,13 @@ bool Campaign::load(const Common::String &text) {
 	return true;
 }
 
+std::vector<Common::String> Campaign::getSectionNames() const {
+	std::vector<Common::String> names;
+	for (const auto &section : _sections)
+		names.push_back(section.first);
+	return names;
+}
+
 void Campaign::start(const Common::String &section) {
 	_flags.clear();
 	_played.clear();

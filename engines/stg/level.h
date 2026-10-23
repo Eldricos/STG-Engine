@@ -193,6 +193,11 @@ public:
 	static const uint32 kWallOnMap = 0x800;
 	/** Wall flag: blocks movement from behind as well as from the front. */
 	static const uint32 kWallSolidBothSides = 0x8000;
+	/**
+	 * Wall flag: left out of the collision grid (0x4BE860), so nothing runs
+	 * into it: drawn openings such as epsion's hanging plants.
+	 */
+	static const uint32 kWallNoCollision = 0x1000;
 
 	/**
 	 * A floor or ceiling polygon. The original stores these in the same

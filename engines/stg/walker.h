@@ -173,6 +173,8 @@ private:
 		double top, bottom;
 		uint64 zones;
 		bool bothSides;
+		/** kWallNoCollision: never in the way. */
+		bool passable;
 		int index;
 	};
 

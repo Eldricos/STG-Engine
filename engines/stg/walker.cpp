@@ -80,6 +80,7 @@ void Walker::makeLine(int index, WallLine &line) const {
 	line.bottom = fromFixed(wall.bottom);
 	line.zones = wall.zones;
 	line.bothSides = (wall.flags & LevelFile::kWallSolidBothSides) != 0;
+	line.passable = (wall.flags & LevelFile::kWallNoCollision) != 0;
 }
 
 void Walker::refreshWalls(const std::vector<int> &walls) {
@@ -165,7 +166,7 @@ bool Walker::sweep(double x, double y, double dx, double dy, Hit &hit) const {
 	for (const WallLine &w : *_walls) {
 		// Like the original, only walls that are drawn get in the way, and
 		// scripts can hide them.
-		if (!(walls[w.index].flags & LevelFile::kFlagVisible))
+		if (!(walls[w.index].flags & LevelFile::kFlagVisible) || w.passable)
 			continue;
 		if (!(w.zones & _zones) || w.bottom > high || w.top < low)
 			continue;
@@ -356,7 +357,7 @@ bool Walker::lineOfSight(double ax, double ay, double az, double bx, double by, 
 	const std::vector<LevelFile::Wall> &walls = _level.getWalls();
 	double lowZ = std::min(az, bz), highZ = std::max(az, bz);
 	for (const WallLine &w : *_walls) {
-		if (!(walls[w.index].flags & LevelFile::kFlagVisible) || !(w.zones & zones))
+		if (!(walls[w.index].flags & LevelFile::kFlagVisible) || w.passable || !(w.zones & zones))
 			continue;
 		if (highZ < w.bottom - kSlack || lowZ > w.top + kSlack)
 			continue;

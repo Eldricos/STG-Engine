@@ -36,7 +36,12 @@ namespace STG {
  */
 class Overlay {
 public:
-	bool load(Common::SeekableReadStream &stream);
+	/**
+	 * Decode the rows; pixels of palette index key (if not -1) are
+	 * see-through too, as 255 is in the held weapons (NUPHASER.OVR,
+	 * NUKLIDIS.OVR), where the level palette may make it magenta.
+	 */
+	bool load(Common::SeekableReadStream &stream, int key = -1);
 
 	int getWidth() const { return _surface.w; }
 	int getRowCount() const { return _surface.h; }

@@ -127,7 +127,7 @@ void HeldItem::load(const ResourceManager &resources, const ResourceRef &level, 
 	if (!found)
 		return;
 	std::unique_ptr<Common::SeekableReadStream> stream = resources.open(*found);
-	_loaded = stream && _overlay.load(*stream) && _overlay.getRowCount() >= 12 * kFrameHeight;
+	_loaded = stream && _overlay.load(*stream, 255) && _overlay.getRowCount() >= 12 * kFrameHeight;
 }
 
 void HeldItem::draw(Graphics::Surface &view, int cursorX, int cursorY, bool firing) const {

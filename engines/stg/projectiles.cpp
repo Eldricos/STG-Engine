@@ -191,7 +191,7 @@ Projectiles::Hit Projectiles::sweep(const Shot &shot, double x0, double y0, doub
 	const std::vector<LevelFile::Wall> &walls = _level.getWalls();
 	for (size_t i = 0; i < walls.size(); i++) {
 		const LevelFile::Wall &wall = walls[i];
-		if (!(wall.flags & LevelFile::kFlagVisible) || !(wall.zones & zones))
+		if (!(wall.flags & LevelFile::kFlagVisible) || (wall.flags & LevelFile::kWallNoCollision) || !(wall.zones & zones))
 			continue;
 		const Line &w = _walls[i];
 		double s0 = w.nx * x0 + w.ny * y0 + w.d, s1 = w.nx * x1 + w.ny * y1 + w.d;
