@@ -125,6 +125,7 @@ void Walker::place(double x, double y, double feet) {
 		_feet = fromFixed(flat.height);
 		_zones = flat.getActiveZones() ? flat.getActiveZones() : kAllZones;
 	}
+	duck();
 }
 
 void Walker::move(double dx, double dy, double seconds) {
@@ -161,14 +162,19 @@ bool Walker::sweep(double x, double y, double dx, double dy, Hit &hit) const {
 
 	hit.t = 2;
 	hit.wall = hit.obstacle = -1;
-	double low = _feet + _stepHeight, high = _feet + _eyeHeight + _headroom;
+	double low = _feet + _stepHeight, high = getEye() + _headroom;
 	const std::vector<LevelFile::Wall> &walls = _level.getWalls();
 	for (const WallLine &w : *_walls) {
 		// Like the original, only walls that are drawn get in the way, and
 		// scripts can hide them.
 		if (!(walls[w.index].flags & LevelFile::kFlagVisible) || w.passable)
 			continue;
-		if (!(w.zones & _zones) || w.bottom > high || w.top < low)
+		// A wall whose bottom the head just touches doesn't get in the way.
+		if (!(w.zones & _zones) || w.bottom >= high || w.top < low)
+			continue;
+		// A door slid all the way open has no height left. The doorway can
+		// be exactly as tall as the player's head (AMARGOS1's upper doors).
+		if (w.top <= w.bottom)
 			continue;
 
 		// The wall's line, approached from its solid side.
@@ -315,6 +321,11 @@ void Walker::collideAndSlide(double dx, double dy) {
 }
 
 void Walker::followFloor(double seconds) {
+	followFloorOnly(seconds);
+	duck();
+}
+
+void Walker::followFloorOnly(double seconds) {
 	double maxHeight = _feet + _stepHeight;
 	int floor = findFloor(_x, _y, maxHeight, _zones);
 	if (floor < 0 && _zones != kAllZones)
@@ -343,6 +354,30 @@ void Walker::followFloor(double seconds) {
 		_landingSpeed = _fallSpeed;
 		_fallSpeed = 0;
 	}
+}
+
+double Walker::findCeiling(double x, double y, double minHeight, uint64 zones) const {
+	double best = 1e9;
+	for (const LevelFile::Sector &flat : _level.getSectors()) {
+		if (!flat.isCeiling() || flat.vertices.size() < 3 || !(flat.zones & zones))
+			continue;
+		double h = fromFixed(flat.height);
+		if (h > minHeight && h < best && containsPoint(_level.getVertices(), flat, x, y))
+			best = h;
+	}
+	return best;
+}
+
+void Walker::duck() {
+	// 0x4B46A0: with the head (eye + headroom) above the ceiling, the eye
+	// comes down to fit; it stands up again where there is room.
+	_ducked = 0;
+	if (_floor < 0)
+		return;
+	double ceiling = findCeiling(_x, _y, _feet, _zones);
+	double room = ceiling - _headroom - _feet;
+	if (room < _eyeHeight)
+		_ducked = _eyeHeight - std::max(room, _stepHeight);
 }
 
 bool Walker::lineOfSight(double ax, double ay, double az, double bx, double by, double bz, uint64 zones) const {

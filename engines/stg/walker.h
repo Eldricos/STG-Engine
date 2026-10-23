@@ -110,7 +110,8 @@ public:
 	double getX() const { return _x; }
 	double getY() const { return _y; }
 	double getFeet() const { return _feet; }
-	double getEye() const { return _feet + _eyeHeight; }
+	/** The eye, lowered under a low ceiling (see _ducked). */
+	double getEye() const { return _feet + _eyeHeight - _ducked; }
 
 	void setEyeHeight(double height) { _eyeHeight = height; }
 	void setStepHeight(double height) { _stepHeight = height; }
@@ -140,6 +141,11 @@ public:
 	}
 	/** The same, skipping floors with any of ignoredFlags instead of setIgnoredFloors()'s. */
 	int findFloor(double x, double y, double maxHeight, uint64 zones, uint32 ignoredFlags) const;
+	/** The lowest ceiling over (x, y) in the zones above minHeight, or a huge height. */
+	double findCeiling(double x, double y, double minHeight, uint64 zones) const;
+	/** Set _ducked for where the player stands. */
+	void duck();
+	void followFloorOnly(double seconds);
 
 	/**
 	 * Whether nothing blocks the view from a to b, as the original's test
@@ -196,6 +202,12 @@ private:
 	bool _falls = true;
 	uint32 _ignoredFloors = 0;
 	double _eyeHeight = kEyeHeight;
+	/**
+	 * How far the eye is lowered to keep the head (eye + headroom) under
+	 * the ceiling, as 0x4B46A0 does; AMARGOS1's upper doorways are no
+	 * taller than that.
+	 */
+	double _ducked = 0;
 	double _stepHeight = kStepHeight;
 	double _headroom = kHeadroom;
 	double _radius = kRadius;
