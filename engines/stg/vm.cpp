@@ -204,7 +204,7 @@ void ScriptVM::callNative(ScriptInstance &self, uint16 op) {
 	// No host: keep the stack balanced so execution can continue.
 	const OpcodeInfo *info = getOpcodeInfo(op);
 	if (_stubbed.insert(op).second)
-		debugC(1, "script", "Script: opcode %02x (%s) not implemented", op, info ? info->name : "?");
+		debugC(1, "scripts", "Script: opcode %02x (%s) not implemented", op, info ? info->name : "?");
 	if (info) {
 		for (int i = 0; i < info->pops; i++)
 			pop();

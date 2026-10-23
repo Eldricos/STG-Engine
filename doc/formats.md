@@ -92,12 +92,14 @@ The half width is always columns / 128 for 256-high frames and columns / 64
 for 128-high ones. Actors scale it (see Actors below). As with overlays,
 there's no palette.
 
-## GSF (`.GSF`): unknown
+## GSF (`.GSF`): not used
 
 These start like GS2 but with version 1:
 `01 00 00 00 33 00 00 00 f8 06 00 00 10 00 00 00 18 00 00 00 80 00 00 01 ...`
 (51 frames, with something in the third dword). They're refused by the GS2
-decoder rather than misread.
+decoder rather than misread. Only ANTILIOS.DAT has two, older than the
+`011.gs2` and `012.gs2` beside them, and the game only loads `NNN.gs2`
+(`0x4C01B0`), so they're leftovers.
 
 ## SGEN script (`GAME.BIN`): decoded, `engines/stg/script.h`, `vm.h`
 
@@ -406,7 +408,8 @@ heading in degrees.
     4 actors (0xAxxx), 5 lifts (0x8xxx), 6 light groups (0x6xxx), 7 flats (0xCxxx), 8 billboards
     (0x2xxx) (`0x43519F`).
   - LIFT_SETUP (0x5E) flat, count, 8 heights (16.16; on the lift itself); LIFT_GO_TO (0x64) id,
-    level: every flat of the group jumps to that height, carrying the player (`0x4583EA`).
+    level: every flat of the group jumps to that height (`0x4583EA`). The player isn't carried:
+    the car's own panel follows it with TELEPORT_PLAYER_RELATIVE by the same distance.
   - SET_LIGHT_LEVEL (0x66) id, percent: light group id & 0x1FFF; RESET_LIGHT_LEVEL (0x67) id.
   - SET_TEXTURE_SCROLL (0xAB) id, u speed, v speed: the texture moves by
     ((speed · ms) & 0x1FFFF) / 1024 of its 128 units (`0x4B78B0`).
@@ -472,10 +475,12 @@ heading in degrees.
   - the inventory and items (INVENTORY_*, ATTACH_ITEM_BEHAVIOUR, ...)
   - screen flashes and tints, view shake
 
-`engines/stg/mission.h` runs a level's scripts. It implements the natives
-for objects, timers, the level, positions, actors' modes and settings,
-sound, and the player's health and size. The rest balance the stack and are counted as missing; the viewer
-logs each one once with `--debugflags=scripts`.
+`engines/stg/mission.h` runs a level's scripts. Every native the eleven
+away missions use has a handler; a few only keep their arguments where
+what reads them isn't known (SET_FLAT_GROUPS, the 0x6C flat field, some
+control bits). Anything else balances the stack and is logged once with
+`--debugflags=scripts`; `-d2` with it also logs every event sent, with its
+signal value and the target's state.
 
 To get a full listing of a script:
 
@@ -945,8 +950,8 @@ the player's eye to the actor's feet:
 The player collides with actors as with wall ends. A bump sends 14 and 15,
 as walls do.
 
-`engines/stg/actors.h` implements all this. Shots, combat damage and the
-line-of-sight check are not implemented yet.
+`engines/stg/actors.h` implements all this, with shots (`projectiles.h`),
+damage and the line-of-sight check.
 
 ### Collision and zones
 
@@ -976,7 +981,10 @@ A move goes from the previous position to the new one (`0x4B9870`):
   with the record kind at +0x69 and the wall's +0x14.
 
 After moving, the player stands on the highest floor under them that is no
-more than the step height above the feet (`0x4B4C50`). This search uses the
+more than the step height above the feet (`0x4B4C50`). Under a ceiling lower
+than the eye plus the headroom, the eye comes down to fit (`0x4B46A0`); the
+upper doorways in AMARGOS1 are only that tall. A wall whose bottom the head
+just touches doesn't block. This search uses the
 64 × 64 grid of flats built at `0x4BEDE0`, where each flat's outline is
 pushed out by 3 units. With no floor underneath the player falls; the
 original's falling physics (`0x4B4800`) is not decoded yet.
@@ -1088,3 +1096,49 @@ lights when a short-range scan has found Soran in the Enterprise's system.
 The console is COMBAT.RAS with the 3D view in its hole at (52,10), 532 x 231,
 60 degrees across. The game reads the module's result as 0 the Enterprise
 destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
+
+### The enemies' AI
+
+Each enemy runs `0x4A7C91` every frame, then the steering at `0x4A53A1`. The
+AI's clock (`0x47B83E`) counts 291.3 ticks a second.
+
+- **Firing.** Every 2037 ticks (seven seconds): phasers if the Enterprise is
+  within the class's phaser range (`0x49ABBC`: each charged bank whose firing
+  octant covers it, each shot a roll to hit), and the photon tube facing it,
+  if it's loaded and the Enterprise is within photon range (`0x4999AB`: all
+  the tube holds, spread 230 angle units apart).
+- **Closing.** Beyond three quarters of phaser range, the waypoint is the
+  Enterprise, at full speed. Inside it, no new waypoint is set and the ship
+  holds its last turn, so it sweeps past and circles out until it's far
+  enough to dive in again.
+- **Collisions.** Within 1000 units, if the two ships are moving (or closer
+  than their radii plus 500) and are, or will be a second later, closer than
+  the larger radius plus eight times the faster speed (`0x4A7880`), the ship
+  swerves for 1455 ticks to a point 1100 units to either side of and below
+  the Enterprise.
+- **Running off** (`0x4AFF2A`): to a point two of the Enterprise's phaser
+  ranges off it on each axis, side and height at random, below it; at most
+  every 2910 ticks. A ship does this when a hit leaves two or more of its
+  systems destroyed (`0x4B0103`), and Soran (`soran`, `soran9`, `quarash`:
+  flag 0x40000) does it all the time while any other ship is left in the
+  fight, including waves still to come.
+
+### TACTICS (`*.BIN`): not used
+
+COMBAT.DAT's eleven `.BIN` files (KLINGON.BIN, WARBIRD.BIN, CHODAK.BIN, ...)
+are compiled AI scripts, and sgens.exe still has their interpreter
+(`0x4B0000`-`0x4B4630`). But only `0x4A40F2` attaches one, and the mission
+loader always passes it no name, so none is ever loaded. The format, for the
+record:
+
+- "TACTICS", then a header to 0x6B (a version, sizes, "MAIN").
+- Tokens: u32 kind, u32 code, u32 size, then size bytes.
+  - Kind 3 is a page: the code that follows, named at +8 ("KERNEL",
+    "ATTACK_SET", "SMALL_LOOP", ...). Branches name pages by file offset.
+  - Kind 0 is "when": a condition (table at `0x550BC8`; 14, 23, 28, 29 and
+    35 are used), followed by the action to take. Reaching it queues it; once
+    a page ends, the queue is tested every frame.
+  - Kind 1 is a command (table at `0x550C80`).
+  - Kind 2 is a branch to a page: codes 1, 4, 5, 0x16, 0x21, 0x22, 0x2B and
+    0x2D are used (5 and 0x22 also drop the condition that led there). What
+    each does wasn't traced, since nothing runs them.

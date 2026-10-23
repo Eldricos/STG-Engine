@@ -10,32 +10,30 @@ You need your own copy of the original game. No game data is included.
 
 ## Status
 
-The framework is in place and working:
+The whole game runs, from the title to the credits:
 
 | Area | State |
 |------|-------|
 | SDL3 backend: window, scaling, fullscreen, palette, software cursor, input, audio | Done |
-| `common/`: OSystem interface, files and archives (case-insensitive), streams, config, saves, events, surfaces, palettes, BMP decoder, software mixer, PCM/WAV | Done |
+| `common/`: OSystem interface, files and archives (case-insensitive), ZIP with our own DEFLATE decoder, streams, config, saves, events, surfaces, palettes, BMP decoder, software mixer, PCM/WAV | Done |
 | `engines/`: Engine/MetaEngine framework, table-driven detection, launcher and command line | Done |
-| `engines/stg`: detection, resource index, screen, save/load, and a viewer for the game's BMP/WAV files | Done |
-| `common/`: ZIP archives (stored and deflated, with our own DEFLATE decoder) | Done |
-| `engines/stg`: open the game's `.DAT`/`MUSIC.*` archives (they are ZIP files) | Done |
-| `engines/stg`: images (BMP), speech and music (WAV), subtitles (TXT), fonts (`.FNT`) | Done |
-| `engines/stg`: first-person overlay animations (`.OVR`) | Done (frame height guessed) |
-| `engines/stg`: 3D sprite sets (`.GS2`) | Done |
-| `engines/stg`: `.GSF` sprite sets | Not started |
-| `engines/stg`: scripts (`GAME.BIN`): format, interpreter, disassembler | Done |
-| `engines/stg`: the game opcodes the scripts call | Most of verid1's decoded; timers, signals, the level, the player, actors, sound and subtitles run; combat and the HUD to do |
-| `engines/stg`: levels (`GAME.LV2`): geometry, textures, sky, lighting, collision, actors, and a software 3D renderer to walk through them | Done (combat to do) |
-| `engines/stg`: game logic: the 3D away missions, starship combat, stellar cartography | **Not started** |
-| Cutscenes: Cinepak video with 22 kHz stereo PCM in AVI | Not started (well documented formats) |
+| Data: the `.DAT`/`MUSIC.*` archives, images, speech, music, subtitles, fonts, overlays (`.OVR`), sprite sets (`.GS2`) | Done |
+| Movies: Cinepak video with 22 kHz PCM in AVI | Done |
+| The front end: title, captain's menu (load, save, settings, controls), intro, scrolling text, credits | Done |
+| The story (`STATES.INI`): movies, away missions and combats in order, branching on how each went, autosaves, the endings | Done |
+| The bridge: the star map, warp, scans, the Nexus, fleets, the crew's reports | Done |
+| Away missions: levels (`GAME.LV2`) in a software 3D renderer, collision and zones, doors and lifts, scripts (`GAME.BIN`) with every instruction the eleven missions use, actors, weapons and damage, the HUD, inventory, close-up panels and map | Done |
+| Space combat: the ships (DRE models, `SYSTEMS.DAT`), the console, helm orders, phasers and torpedoes, shields and system damage, waves, the enemies' AI, the crew's reports | Done |
 
-Right now, the engine runs as a viewer for the game's data. You can browse
-every image in its archives, and play every speech line and music track, with
-speech subtitles drawn in the game's own font, and walk through each level in 3D
-with its scripts running. The 2 CD Windows release is in the detection table.
-Other versions are found by a fallback that looks for an executable mentioning
-"Generations", and reported as unknown versions.
+Still open:
+
+- A full playthrough looking for bugs.
+- A few script instructions are only partly understood (what some map marker
+  styles look like, which control bits do what). See [doc/formats.md](doc/formats.md).
+- The overlays' frame height is inferred, not read from the data.
+- Only the 2 CD Windows English release is in the detection table. Other
+  versions are found by a fallback that looks for an executable mentioning
+  "Generations", and reported as unknown versions.
 
 ## Layout
 
@@ -109,7 +107,8 @@ stg --help                       # every option
 ```
 
 Useful options: `-f` for fullscreen, `--filtering`, `--integer-scaling`,
-`-d<level>` and `--debugflags=resources` for debug output, and
+`-d<level>` with `--debugflags=` `resources`, `scripts` and/or `sound` for
+debug output (`-d2 --debugflags=scripts` logs every script event), and
 `--engine=stg --game=stg` to force the engine on files detection doesn't
 recognise.
 
@@ -120,8 +119,7 @@ In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
 With disc 1's `STELLAR.DAT` (which holds the story script, `DESIGN/STATES.INI`)
 and `OPTIONS.DAT`, the game starts as the original does: the title, then the
 captain's menu (`CAPTAINS.BMP`). The original goes straight from the title into
-a new game; here the menu comes first, because there is no bridge yet to land
-on, so a saved game can be loaded instead. New starts the story: its movies,
+a new game; here the menu comes first, so a saved game can be loaded instead. New starts the story: its movies,
 then each away mission in the order the script gives, branching on whether its
 objectives were met, through to one of the endings and the credits. Esc in a
 mission opens the menu: Load, Save (nine slots plus the automatic save the
@@ -149,8 +147,9 @@ torpedoes; T or the button by the radar picks the next target, V switches
 between the forward and enemy views, and clicking the target's schematic
 picks a system to aim at. Win by destroying or driving off every ship (or
 beating Soran's); warping out loses the fight, and losing the Enterprise
-ends the game. The enemies fly simple built-in tactics, not the original's
-scripted manoeuvres.
+ends the game. The enemies fly the original's own AI: they make attack runs
+at the Enterprise, fire every seven seconds, swerve off before a collision and
+break off when badly hurt, and Soran keeps his distance while he has company.
 
 For testing, `--combat=N` goes straight into space combat N (1-25, the
 `SCn.MIS` files), and `--story=SECTION` starts the story at any section of
@@ -203,26 +202,13 @@ settings file is `stg.ini` and saves go in `saves/`.
 3. Add an entry to `engines/stg/detection_tables.h` with their names, sizes and
    MD5s (the template is in the comment there).
 
-## Next steps
+## How the work was done
 
-The real work is reverse engineering the original game, then filling in
-`engines/stg`:
-
-1. **Inventory the data.** Done for the 2 CD Windows release: the `.DAT` and
-   `MUSIC.*` files are plain ZIP archives, which `common/zip.h` reads.
-   `stg --probe --path=<file>.DAT` lists an archive's members and identifies
-   or hex dumps one member of each file type.
-2. **Inner formats.** Most are standard (BMP, WAV, TXT). The `FONT`,
-   `OVERLAY` and `GS2` sprite formats are decoded, and so is most of the `GAME.LV2` level format. See [doc/formats.md](doc/formats.md) for
-   everything known so far, including the `SGEN` script format and
-   its instruction set.
-3. **Graphics and video.** Decode the sprite, background and palette formats
-   into `Graphics::Surface`s, and add AVI and Cinepak decoders for the cutscenes.
-4. **Sound and music.** Add an `Audio::AudioStream` for each audio encoding the
-   game uses.
-5. **Game logic.** Disassemble the executable (Ghidra or IDA) to recover the
-   scene, script, inventory, dialogue and 3D sections. Port each one into its
-   own file under `engines/stg/` as it's understood.
+Everything was worked out from the original: the data formats by reading the
+files, and the behaviour by disassembling `sgens.exe` with Ghidra. Addresses in
+the code's comments (like `0x4A7C91`) point at the original functions each
+piece follows. [doc/formats.md](doc/formats.md) records what is known about
+each format and system.
 
 New platform-neutral code (a decoder, a format reader) goes in `common/` so
 other engines could use it. Anything specific to Generations stays in
