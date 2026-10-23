@@ -664,6 +664,46 @@ TEST(walker_steps_up_and_falls) {
 	CHECK(walker.getFeet() == -10);
 }
 
+TEST(walker_steps_down_jumps_and_passes_through) {
+	LevelBuilder builder;
+	builder.addFloor(0, 0, 10, 10, 0);
+	builder.addFloor(10, 0, 20, 10, -0.25);  // small enough to step down
+	builder.addFloor(20, 0, 30, 10, -1);     // a drop
+	builder.addFloor(0, 10, 10, 20, -5);
+	builder.addFloor(0, 10, 10, 20, -1, 1, 1, STG::LevelFile::kFlagPassThrough);
+	STG::LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	STG::Walker walker(level);
+
+	// A quarter unit down is one step; more is a fall.
+	walker.place(5, 5, 0);
+	walker.move(10, 0, 0.05);
+	CHECK(walker.getFeet() == -0.25);
+	CHECK(!walker.isAirborne());
+	walker.move(10, 0, 0.05);
+	CHECK(walker.isAirborne());
+	CHECK(walker.getFeet() > -1);
+
+	// A jump goes up, then lands where it started.
+	walker.place(5, 5, 0);
+	walker.jump(13.9);
+	double top = 0;
+	for (int i = 0; i < 40 && walker.isAirborne(); i++) {
+		walker.move(0, 0, 0.033);
+		top = std::max(top, walker.getFeet());
+	}
+	CHECK(top > 1);
+	CHECK(walker.getFeet() == 0);
+	CHECK(walker.takeLanding() > 0);
+
+	// Nothing rests on a pass-through floor.
+	walker.place(5, 15, 0);
+	for (int i = 0; i < 50; i++)
+		walker.move(0, 0, 0.05);
+	CHECK_EQ(walker.getFloor(), 3);
+	CHECK(walker.getFeet() == -5);
+}
+
 namespace {
 
 /** Wrap program words in an SGEN file with empty sections. */
@@ -771,7 +811,7 @@ TEST(mission_items_rest_on_floors) {
 	LevelBuilder builder;
 	builder.addFloor(0, 0, 20, 20, 0, 1, 1);
 	builder.addFloor(20, 0, 40, 40, 3, 2, 2);
-	builder.addFloor(0, 0, 10, 10, 1, 1, 1, LevelFile::kFlagNoActors);
+	builder.addFloor(0, 0, 10, 10, 1, 1, 1, LevelFile::kFlagPassThrough);
 	// Items wait in a storage zone until they are placed.
 	const uint32 item = LevelFile::kBillboardItem | LevelFile::kFlagVisible;
 	builder.addBillboard(7, 5, 5, 1.5, item, 0x80);
@@ -783,7 +823,7 @@ TEST(mission_items_rest_on_floors) {
 	walker.place(30, 30, 3);
 
 	Mission mission(level, script, renderer, walker, nullptr);
-	// At the start: item 7 settles past the floor actors don't use onto
+	// At the start: item 7 settles past the pass-through floor onto
 	// the one below, and takes its zones. Item 8 has no floor under it.
 	const LevelFile::Billboard &seven = level.getBillboards()[0], &eight = level.getBillboards()[1];
 	CHECK(seven.z == 0);

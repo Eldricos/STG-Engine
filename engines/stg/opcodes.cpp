@@ -255,7 +255,7 @@ static const OpcodeInfo kOpcodes[kOpcodeCount] = {
 	{ "NATIVE_EA", 2, 0, 1, "obj.vt[0xb4], game.vt[0x148]" },
 	{ "NATIVE_EB", 1, 0, 1, "game.vt[0x478]" },
 	{ "SET_FULLBRIGHT", 2, 0, 1, "pop id, on; obj.vt[0x178], game.vt[0x148]" },
-	{ "NATIVE_ED", 2, 0, 1, "obj.vt[0x240], game.vt[0x168]" },
+	{ "SET_FLAT_SAFE", 2, 0, 1, "pop id, on: no harm landing on it or bumping into it; obj.vt[0x240], game.vt[0x168]" },
 	{ "NATIVE_EE", 4, 0, 1, "game.vt[0x484]" },
 	{ "NATIVE_EF", 0, 1, 1, "" },
 	{ "NATIVE_F0", 0, 1, 1, "" },

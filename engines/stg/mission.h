@@ -10,6 +10,7 @@
 #define STG_MISSION_H
 
 #include <map>
+#include <set>
 #include <memory>
 #include <vector>
 
@@ -74,7 +75,11 @@ public:
 		/** Broadcast when the player fires a weapon: its cost. */
 		kEventItemUsed = 50,
 		kEventFloorLeft = 54,
-		kEventFloorEntered = 53
+		kEventFloorEntered = 53,
+		/** The water state changed (0x43D0C9): under it, wading or afloat, out of it. */
+		kEventUnderWater = 56,
+		kEventInWater = 57,
+		kEventOutOfWater = 58
 	};
 
 	/** Type bits that turn a level record's id into its script object's id. */
@@ -254,8 +259,25 @@ public:
 		double jump = 13.9;
 	};
 	const Motion &getMotion() const { return _motion; }
-	/** SET_PLAYER_CONTROLS (0xAE): game+0x1E8, 0x5F by default. */
+	/**
+	 * SET_PLAYER_CONTROLS (0xAE): game+0x1E8, 0x5F by default. The bits
+	 * (tested in 0x43AD04): 1 walk and strafe, 2 turn, 4 look up and down,
+	 * 8 jump, 0x10 crouch, 0x20 the view bobs while walking (no script
+	 * sets it), 0x40 in low gravity, walking goes where the view points.
+	 */
+	enum Control {
+		kControlWalk = 1,
+		kControlTurn = 2,
+		kControlLook = 4,
+		kControlJump = 8,
+		kControlCrouch = 0x10,
+		kControlBob = 0x20,
+		kControlSwim = 0x40
+	};
 	uint16 getControls() const { return _controls; }
+	bool isLowGravity() const { return _lowGravity; }
+	/** Zones to draw as well as the player's: above the water while afloat. */
+	uint64 getExtraZones() const { return _waterZones; }
 	/**
 	 * GET_ARRAY/SET_ARRAY's words, which outlive a mission (0x56F844):
 	 * verid1 leaves the player's health and phaser charge there.
@@ -315,6 +337,10 @@ private:
 
 	void runTimers();
 	void checkPlayerContacts();
+	/** The pass-through floor at the player's feet, or -1. */
+	int findPassThroughFloor() const;
+	void setPool(uint16 surfaceBelow, uint16 surfaceAbove, uint16 bottom);
+	void updateWater();
 	void setTimer(uint16 id, uint32 ms);
 
 	/** Pop a 16.16 dword (high word on top). */
@@ -400,6 +426,12 @@ private:
 	int _transitionSound = -1, _transitionVolume = 64, _transitionStyle = 1;
 	Motion _motion;
 	uint16 _controls = 0x5F;
+	/** LOW_GRAVITY (0xB5) is on (game+0x148). */
+	bool _lowGravity = false;
+	/** Flat objects safe to land on (SET_FLAT_SAFE, 0xED). */
+	std::set<uint16> _safeFlats;
+	/** The save version that first holds _lowGravity and _safeFlats. */
+	static const uint32 kLowGravitySaveVersion = 6;
 	int _difficulty = 1;
 	// SET_FALL_DAMAGE: the defaults are 1 and 32.0 (game+0x270, +0x26C).
 	double _fallMultiplier = 1, _fallDivisor = 32.0;
@@ -428,6 +460,21 @@ private:
 	int16 _maxHealth = 50;
 	int _touchedWall = -1;
 	int _standingFlat = -1;
+	int _passingFlat = -1;
+	/** SET_FLAT_GROUPS's pools: the surface's two sides and the bottom (flat object ids). */
+	struct Pool {
+		uint16 below = 0, above = 0, bottom = 0;
+	};
+	std::vector<Pool> _pools;
+	/** Per flat: 1 a surface from above, 2 from below, 3 a pool's bottom; its surface. */
+	std::vector<byte> _flatMark;
+	std::vector<uint16> _poolSurface;
+	/** 0 out of the water, 1 wading or afloat, 2 under it. */
+	int _waterState = 0;
+	/** Zones seen above the surface while afloat (0x43D765). */
+	uint64 _waterZones = 0;
+	/** How far the eye goes either side of the surface before it counts (0x999A). */
+	static constexpr double kWaterBand = 0.6;
 	int _billboard = -1;
 	uint16 _touchedActor = 0;
 	std::vector<Actors::ScriptEvent> _actorEvents;

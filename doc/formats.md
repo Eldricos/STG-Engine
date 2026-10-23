@@ -384,13 +384,22 @@ heading in degrees.
     jump (popped in that order; 32-bit 16.16 or words). 0x80000000 / 0x8000 keep a value,
     0x80000001 / 0x8001 restore the default (`0x545334`: 1.5, 15, 10, 1.0, 10, 10, 13.9).
     Cutscenes set speed 0.
-  - SET_PLAYER_CONTROLS (0xAE) mask: game+0x1E8, 0x5F by default; the bits gate input but which
-    does what isn't known yet.
-  - SET_GRAVITY (0xA3) gravity, fastest fall, a third value (16.16; keep / default as above):
-    defaults 64.4 and 200 (verid1: 80 and 25000). LOW_GRAVITY (0xB5): 0 and 10, or the defaults.
-  - SET_FALL_DAMAGE (0xEE) multiplier, divisor (16.16): landing at speed v hurts
-    v · multiplier / divisor, damage kind 1 (`0x43A662`); defaults 1 and 32 (verid1: 47). That v
-    is the speed is a guess.
+  - SET_PLAYER_CONTROLS (0xAE) mask: game+0x1E8, 0x5F by default, tested in `0x43AD04` (through
+    the copy at +0x1E4, which is 6 while the player falls outside low gravity: no walking in the
+    air): 1 walk and strafe, 2 turn, 4 look up and down, 8 jump (X or keypad .: from the floor, or
+    once a second in low gravity), 0x10 crouch (C or Enter: the eye eases to 2.5), 0x20 the view
+    bobs while walking (no script sets it), 0x40 in low gravity, walking follows the view's pitch.
+  - SET_GRAVITY (0xA3) gravity, fastest fall, step down (16.16; keep / default as above):
+    defaults 64.4, 200 and 0.25 (verid1: 80 and 25000). The step down is the drop onto a lower
+    floor taken without falling (`0x4B4904`); the original sets it only when the fastest fall
+    isn't kept (`0x441257`). LOW_GRAVITY (0xB5): 0, 10 and 0, or the defaults. A fall adds
+    gravity · t to the speed, up to the fastest, and moves by speed · t (`0x4B4800`). A jump
+    (`0x4B6800`) takes the jump speed (SET_PLAYER_MOTION's last, 13.9) off the fall speed; going
+    up, the head stops at the ceiling (event 3).
+  - SET_FALL_DAMAGE (0xEE) multiplier, divisor (16.16): landing at fall speed v (event 2), or a
+    jump hitting the ceiling at v (event 3), hurts v · multiplier / divisor, damage kind 1
+    (`0x4357E5`, `0x43A662`); defaults 1 and 32 (verid1: 47), and keep / default as above. A flat
+    marked with SET_FLAT_SAFE (0xED) id, on (its object's +0x6C) does no harm either way.
   - PUSH_PLAYER (0x77) position, strength, tRamp, tHold, tEnd: moves the player towards the point
     (away for a negative strength), ramping up, holding, easing off (`0x43B447`); 0x78 stops it.
   - GET_DIFFICULTY (0xD5): the configuration's +0x340, 1 by default.
@@ -399,8 +408,8 @@ heading in degrees.
   - SET_ACTOR_COMBAT_STATS, SET_ACTOR_WEAPON, SET_ACTOR_TEAM, and size and reach settings
   - ACTOR_GO_TO (0x4C) id, x, y, height: mode 7 towards a point (waypoints; event 37 on arrival)
   - SET_ACTOR_ALWAYS_ACTIVE (0x5D) and SET_ACTOR_FLYER (0xEA) id, on: flags 0x400000, 0x1000000
-  - SET_ACTOR_CLIMB_ANGLE (0xE8) id, degrees: the share of a flyer's speed going across (+0x80;
-    whether it is the sine or the cosine isn't known)
+  - SET_ACTOR_CLIMB_ANGLE (0xE8) id, degrees: the share of a flyer's speed going across, +0x80 =
+    cos(|degrees|) in 16.16 (`0x456E9C`)
   - RELEASE_ACTOR_CLASS (0xA9): frees a sprite class's frames when unused
   - FIRE_PROJECTILE_AT (0xE2) type, from x, y, height, to x, y, height: a shot from no one
 - **Lifts, lights and the world** (from amargos1, arvada1, enterp, galorn1/2, halee1):
@@ -426,8 +435,7 @@ heading in degrees.
   - TRANSITION_TELEPORT (0x93) position, t1, t2, t3: out, the player moved, back in, then event 7;
     SET_TRANSITION_COLOUR (0x94) r, g, b: what transitions fade through.
   - SET_MISSION_OUTCOME (0x97) code: up to five codes for the campaign (story branches).
-  - SET_PLAYER_SPIN (0xAF) degrees a second. SET_PLAYER_CONTROLS bits: 1 walk, 2 turn, 4 look,
-    8 jump, 0x10 run, 0x20 footsteps (?), 0x40 swimming (?); a locked player gets 6.
+  - SET_PLAYER_SPIN (0xAF) degrees a second. SET_PLAYER_CONTROLS: see above.
   - Actors: SET_ACTOR_MAP_MARKER (0x40), ACTOR_GO_TO_ACTOR (0x4A), SET_ACTOR_TARGET (0x5B),
     SET_ACTOR_ANIM_SPEED (0x5C, 16.16 stored as 8.8), FIRE_PROJECTILE_AT_OBJECT (0xE3),
     GET_ALERTED_COUNT (0xEF, actors seeing the player now).
@@ -469,16 +477,15 @@ heading in degrees.
   - SET_ITEM_ICON (0x83) id, icon: the item's INVENT.BMP frame
   - MAP_ZOOM_LEVELS (0xC8): per level a scale and a shift, pixels = units · 65536 · scale >> shift
   - SET_BILLBOARD_UNPICKABLE (0xF4) id, on: flag 0x400, which picking passes over
-  - SET_FLAT_GROUPS (0xCD) a, b, c marks groups of flats (`0x440D3D`); not understood, not done
+  - SET_FLAT_GROUPS (0xCD) a, b, c: a pool of water (see Water below). SET_FLAT_FLAG_68 (0xAD) sets
+    the flat object's +0x68, which nothing reads (its getter is only reachable by an actor opcode).
   - the close-up panel (PANEL_*)
   - the automap (MAP_*)
   - the inventory and items (INVENTORY_*, ATTACH_ITEM_BEHAVIOUR, ...)
   - screen flashes and tints, view shake
 
 `engines/stg/mission.h` runs a level's scripts. Every native the eleven
-away missions use has a handler; a few only keep their arguments where
-what reads them isn't known (SET_FLAT_GROUPS, the 0x6C flat field, some
-control bits). Anything else balances the stack and is logged once with
+away missions use has a handler. Anything else balances the stack and is logged once with
 `--debugflags=scripts`; `-d2` with it also logs every event sent, with its
 signal value and the target's state.
 
@@ -723,7 +730,7 @@ make rooms over rooms.
 | 0x60, 0x62 | i16 u and v scroll speeds |
 | 0x64, 0x66, 0x68 | lighting: i16 light group, u16 brightness, byte light level (see Lighting) |
 | 0x69 | byte record kind: 2 on floors and 3 on ceilings |
-| 0x6C | u32 flags: 0x100 visible, 0x100000 ceiling, 0x4000 extra pass (`0x4C8120`), 0x1 left out of the zone lists, 0x1000 not a floor for actors and items: their ground searches (`0x4B6AB0` callers `0x4C3AC0`, `0x4B7AA0`) pass over it |
+| 0x6C | u32 flags: 0x100 visible, 0x100000 ceiling, 0x4000 extra pass (`0x4C8120`), 0x1 left out of the zone lists, 0x1000 pass-through: nothing rests on it. The player (`0x4B4904`), actors (`0x4B6AB0`) and items (`0x4B7AA0`) go through to the floor below; the player's script events still fire. These are trigger floors and water surfaces; as ceilings, they don't stop the head |
 | 0x74 | u64 zones in play while standing on this floor |
 | 0x7C | 16 bytes per vertex: an edge plane a, c, d (a·x + c·y + d = 0) at +0, +8 and +12; +4 receives the transformed vertex's address at load time |
 | 0xFC | animation start time (run time) |
@@ -998,10 +1005,35 @@ above one another, or caves under a canyon, apart. With no floor
 underfoot, every zone is active. A script can add zones of its own; these
 are kept at `0x57D9AC`.
 
+### Water
+
+SET_FLAT_GROUPS (0xCD, `0x440D3D`) a, b, c makes a pool from three flat ids
+(the flats' own +0x14, not script ids): a is the surface seen from below (a
+pass-through ceiling), b the surface seen from above (a pass-through floor)
+and c the pool's bottom. It marks them 2, 1 and 3 at the flat's +0x18 (the
+bottom also records b). antilios has six pools, verid1 two, and arvada1,
+bersus, galorn1/2 and halee1 more.
+
+Every frame `0x43D0C9` looks at the floor under the player. On a bottom, it
+measures the eye's depth under the surface above it (the eye height, if
+there's no surface overhead): 0.6 or more is under water (2), more than 0.6
+above is wading or afloat (1), and in between the player goes under if
+sinking and floats up if not. A change is broadcast: 56 under water, 57
+wading, 58 out of the water. Gravity follows, unless control 0x40 is off:
+afloat, it is (height of the eye over the surface − 1) / 6 of normal
+(buoyancy), under water none. With 0x40 off, under water it is half, with a
+fastest fall of 100. Afloat, the zones above the surface are shown too
+(`0x43D765`).
+
+The scripts do the rest. antilios's pools, on 56, turn LOW_GRAVITY on, tint
+the screen, show a view overlay, slow the player (SET_PLAYER_MOTION) and take
+control 0x40 away, so the player sinks slowly and walks along the bottom; 58
+undoes it.
+
 Opening a `GAME.LV2` in the viewer draws its floor plan. `]` switches to a
 3D view of the level that you can walk through (arrows or WASD, PgUp/PgDn
 to look up and down, End to level the view, L to switch lighting off and on,
-C to walk through walls). Pressing `]` again steps
+Shift+C to walk through walls, X to jump, C to crouch). Pressing `]` again steps
 through the textures.
 
 ## The story (`STELLAR.DAT:DESIGN/STATES.INI`): decoded, `engines/stg/campaign.h`

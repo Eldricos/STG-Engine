@@ -9,6 +9,7 @@
 #ifndef STG_WALKER_H
 #define STG_WALKER_H
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 
@@ -48,10 +49,19 @@ public:
 	static constexpr double kRadius = 1.2;
 	/** How much slimmer than the player wall ends are as posts. */
 	static constexpr double kPostSlack = 0.1;
-	/** Units per second squared; the original's falling is not decoded yet. */
-	/** The original's defaults (game+0x10C): 64.4 (2 x 32.2) and 200. */
+	/**
+	 * The original's defaults (game+0x10C): gravity 64.4 units/s/s (2 x
+	 * 32.2), the fastest fall 200 units/s, and a drop of up to 0x4000 (a
+	 * quarter unit) taken without falling (0x4B4904).
+	 */
 	static constexpr double kGravity = 64.4;
 	static constexpr double kMaxFallSpeed = 200.0;
+	static constexpr double kStepDown = 0.25;
+	/** Crouching: the eye 2.5 above the feet (0x28000), moving half a unit a frame. */
+	static constexpr double kCrouchEye = 2.5;
+	static constexpr double kCrouchSpeed = 12.0;
+	/** The save version that first holds the step-down (see sync()). */
+	static const uint32 kStepDownSaveVersion = 6;
 
 	static const uint64 kAllZones = ~(uint64)0;
 
@@ -92,16 +102,31 @@ public:
 		_maxFallSpeed = maxFallSpeed;
 	}
 	double getGravity() const { return _gravity; }
+	/** Falling speed in units/s, negative while rising. */
+	double getFallSpeed() const { return _fallSpeed; }
+	double getStepHeight() const { return _stepHeight; }
 	double getMaxFallSpeed() const { return _maxFallSpeed; }
+	/** The drop onto a lower floor taken in one step, without falling (SET_GRAVITY's third value). */
+	void setStepDown(double height) { _stepDown = height; }
+	double getStepDown() const { return _stepDown; }
 	/** How fast a fall hit the floor since the last call, or 0 (for fall damage). */
 	double takeLanding() {
 		double speed = _landingSpeed;
 		_landingSpeed = 0;
 		return speed;
 	}
+	/** The floor the last landing was on (index into the flats), or -1. */
+	int getLandingFloor() const { return _landingFloor; }
+	/** How fast a jump hit a ceiling since the last call, or 0; and which ceiling. */
+	double takeCeilingHit(int &ceiling) {
+		double speed = _ceilingSpeed;
+		ceiling = _ceilingFlat;
+		_ceilingSpeed = 0;
+		return speed;
+	}
 
-	/** Floors with any of these flags are ignored, e.g. LevelFile::kFlagNoActors. */
-	void setIgnoredFloors(uint32 flags) { _ignoredFloors = flags; }
+	/** Floors with any of these flags are ignored; LevelFile::kFlagPassThrough always is. */
+	void setIgnoredFloors(uint32 flags) { _ignoredFloors = flags | LevelFile::kFlagPassThrough; }
 
 	/** With collision off the player walks through walls but keeps to floors. */
 	void setCollisionEnabled(bool enabled) { _collision = enabled; }
@@ -110,8 +135,19 @@ public:
 	double getX() const { return _x; }
 	double getY() const { return _y; }
 	double getFeet() const { return _feet; }
-	/** The eye, lowered under a low ceiling (see _ducked). */
-	double getEye() const { return _feet + _eyeHeight - _ducked; }
+	/** The eye, lowered under a low ceiling (see _ducked) or crouching. */
+	double getEye() const { return _feet + _eyeHeight - std::max(_ducked, _crouch); }
+
+	/** Start a jump at this speed upwards (units per second). */
+	void jump(double speed);
+	/** Rising or falling, not standing on a floor. */
+	bool isAirborne() const;
+	/** Crouch (or stand up again) over this time: the eye eases down to kCrouchEye. */
+	void crouch(bool down, double seconds);
+	/** Whether (x, y) is inside the outline of a flat (index into the level's flats). */
+	bool flatContains(int flat, double x, double y) const;
+	/** Move straight up or down, between the floor and the ceiling (no falling). */
+	void moveVertically(double dz);
 
 	void setEyeHeight(double height) { _eyeHeight = height; }
 	void setStepHeight(double height) { _stepHeight = height; }
@@ -141,8 +177,8 @@ public:
 	}
 	/** The same, skipping floors with any of ignoredFlags instead of setIgnoredFloors()'s. */
 	int findFloor(double x, double y, double maxHeight, uint64 zones, uint32 ignoredFlags) const;
-	/** The lowest ceiling over (x, y) in the zones above minHeight, or a huge height. */
-	double findCeiling(double x, double y, double minHeight, uint64 zones) const;
+	/** The lowest ceiling over (x, y) in the zones above minHeight, or a huge height; which in index. */
+	double findCeiling(double x, double y, double minHeight, uint64 zones, int *index = nullptr) const;
 	/** Set _ducked for where the player stands. */
 	void duck();
 	void followFloorOnly(double seconds);
@@ -193,14 +229,18 @@ private:
 	double _x = 0, _y = 0, _feet = 0;
 	double _fallSpeed = 0;
 	double _gravity = kGravity, _maxFallSpeed = kMaxFallSpeed;
+	double _stepDown = kStepDown;
 	double _landingSpeed = 0;
+	int _landingFloor = -1;
+	double _ceilingSpeed = 0;
+	int _ceilingFlat = -1;
 	int _floor = -1;
 	int _contactWall = -1;
 	int _contactObstacle = -1;
 	const std::vector<Obstacle> *_obstacles = nullptr;
 	int _ignoredObstacle = -1;
 	bool _falls = true;
-	uint32 _ignoredFloors = 0;
+	uint32 _ignoredFloors = LevelFile::kFlagPassThrough;
 	double _eyeHeight = kEyeHeight;
 	/**
 	 * How far the eye is lowered to keep the head (eye + headroom) under
@@ -208,6 +248,8 @@ private:
 	 * taller than that.
 	 */
 	double _ducked = 0;
+	/** How far crouching has brought the eye down. */
+	double _crouch = 0;
 	double _stepHeight = kStepHeight;
 	double _headroom = kHeadroom;
 	double _radius = kRadius;

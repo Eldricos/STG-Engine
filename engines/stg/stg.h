@@ -40,7 +40,7 @@ const uint32 kSaveMagic = MKTAG('S', 'T', 'G', 'S');
 // 1: the viewer's place; 2: adds a mission in progress; 3: doors, lifts,
 // lights and the rest the other missions need; 4: the date saved and the
 // campaign; 5: the bridge. Missions saved by an older version can't be read.
-const uint32 kSaveVersion = 5;
+const uint32 kSaveVersion = 6;
 const uint32 kFirstMissionSaveVersion = 3;
 const uint32 kFirstDatedSaveVersion = 4;
 const uint32 kFirstBridgeSaveVersion = 5;
@@ -95,7 +95,7 @@ private:
 	/** Page 0 is the map, page 1 the 3D view, page n + 1 the n-th texture. */
 	void showLevelPage(int page);
 	/** Handle a key on the 3D view; returns false if it isn't a movement key. */
-	bool handleWalkKey(Common::KeyCode key, bool down);
+	bool handleWalkKey(const Common::KeyState &state, bool down);
 	/** Move the camera by the keys held, over delta ms, keeping it on the floor. */
 	void updateWalk(uint32 delta);
 	void updateWalkStatus();
@@ -238,8 +238,11 @@ private:
 	Camera _camera;
 	uint32 _levelTime = 0;
 	enum WalkKey { kWalkForward, kWalkBack, kWalkTurnLeft, kWalkTurnRight, kWalkStrafeLeft, kWalkStrafeRight,
-	               kWalkLookUp, kWalkLookDown, kWalkKeyCount };
+	               kWalkLookUp, kWalkLookDown, kWalkCrouch, kWalkJump, kWalkKeyCount };
 	bool _walkKeys[kWalkKeyCount] = {};
+	/** A jump asked for, taken at the next step; and the low gravity jump's wait (ms). */
+	bool _jumpPressed = false;
+	uint32 _jumpWait = 0;
 	// The mouse, where the weapon aims (in the view), and the view's size.
 	int _mouseX = -1, _mouseY = -1;
 	int _aimX = 0, _aimY = 0, _viewW = 1, _viewH = 1;

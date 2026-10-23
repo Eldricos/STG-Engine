@@ -27,6 +27,13 @@ public:
 	/** One of in and out is null. */
 	Serializer(ReadStream *in, WriteStream *out) : _in(in), _out(out) {}
 
+	/**
+	 * The version of the data, so a sync() can skip fields older saves
+	 * don't have. Saving writes the current version; 0 means unversioned.
+	 */
+	void setVersion(uint32 version) { _version = version; }
+	uint32 getVersion() const { return _version; }
+
 	bool isLoading() const { return _in != nullptr; }
 	bool isSaving() const { return _out != nullptr; }
 	/** A read ran past the end or a stream failed. */
@@ -129,6 +136,7 @@ private:
 	ReadStream *_in;
 	WriteStream *_out;
 	bool _failed = false;
+	uint32 _version = 0;
 };
 
 } // End of namespace Common

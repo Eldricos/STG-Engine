@@ -271,8 +271,13 @@ public:
 	 */
 	static const uint32 kFlagTranslucent = 0x8;
 	static const uint32 kFlagColumnTests = 0x4;
-	/** Floors actors don't stand on (0x4B6AB0); the player still does. */
-	static const uint32 kFlagNoActors = 0x1000;
+	/**
+	 * Floors nothing rests on: the player (0x4B4904), actors (0x4B6AB0) and
+	 * dropped items (0x4B7AA0) all pass through to the floor below. They
+	 * are trigger floors (stepping through still tells their script) and
+	 * water surfaces (SET_FLAT_GROUPS).
+	 */
+	static const uint32 kFlagPassThrough = 0x1000;
 
 	/** A camera-facing sprite, standing on (x, y, z). */
 	struct Billboard {

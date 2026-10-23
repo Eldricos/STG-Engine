@@ -239,7 +239,7 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		}
 	}
 	if (walking && (event.type == Common::EVENT_KEYDOWN || event.type == Common::EVENT_KEYUP) &&
-	    handleWalkKey(event.kbd.keycode, event.type == Common::EVENT_KEYDOWN))
+	    handleWalkKey(event.kbd, event.type == Common::EVENT_KEYDOWN))
 		return;
 
 	switch (event.type) {
@@ -947,7 +947,8 @@ void STGEngine::showLevelPage(int page) {
 	_dirty = true;
 }
 
-bool STGEngine::handleWalkKey(Common::KeyCode key, bool down) {
+bool STGEngine::handleWalkKey(const Common::KeyState &state, bool down) {
+	Common::KeyCode key = state.keycode;
 	int walkKey;
 	switch (key) {
 	case Common::KEYCODE_UP:
@@ -981,11 +982,28 @@ bool STGEngine::handleWalkKey(Common::KeyCode key, bool down) {
 			_camera.pitch = 0;
 		return true;
 	case Common::KEYCODE_c:
-		if (down) {
-			_walker->setCollisionEnabled(!_walker->isCollisionEnabled());
-			updateWalkStatus();
+		// Shift+C walks through walls (for testing); C alone crouches.
+		if (state.hasFlags(Common::KBD_SHIFT)) {
+			if (down) {
+				_walker->setCollisionEnabled(!_walker->isCollisionEnabled());
+				updateWalkStatus();
+			}
+			return true;
 		}
-		return true;
+		walkKey = kWalkCrouch;
+		break;
+	case Common::KEYCODE_RETURN:
+	case Common::KEYCODE_KP_ENTER:
+		// The original's crouch keys (table 0x545500, action 11).
+		walkKey = kWalkCrouch;
+		break;
+	case Common::KEYCODE_x:
+	case Common::KEYCODE_KP_PERIOD:
+		// Jump (action 10), once per press.
+		if (down && !_walkKeys[kWalkJump])
+			_jumpPressed = true;
+		walkKey = kWalkJump;
+		break;
 	case Common::KEYCODE_l:
 		if (down) {
 			_levelRenderer->setLightingEnabled(!_levelRenderer->isLightingEnabled());
@@ -1046,19 +1064,32 @@ void STGEngine::updateWalk(uint32 delta) {
 	double turn = (_walkKeys[kWalkTurnLeft] ? 1 : 0) - (_walkKeys[kWalkTurnRight] ? 1 : 0);
 	double look = (_walkKeys[kWalkLookDown] ? 1 : 0) - (_walkKeys[kWalkLookUp] ? 1 : 0);
 	// No moving while a transition holds the screen, nor without the
-	// controls the scripts allow (SET_PLAYER_CONTROLS: 1 walk, 2 turn,
-	// 4 look; the rest gate jumping, running and swimming).
+	// controls the scripts allow (SET_PLAYER_CONTROLS; see Mission::Control).
+	// In the air, outside low gravity, only turning and looking (0x43AD04).
+	bool lowGravity = _mission && _mission->isLowGravity();
+	uint16 controls = _mission ? _mission->getControls() : 0xFFFF;
+	if (_walker->isAirborne() && !lowGravity)
+		controls &= Mission::kControlTurn | Mission::kControlLook;
 	if (_mission && _mission->getTransitionView().active)
-		forward = strafe = turn = look = 0;
-	if (_mission) {
-		uint16 controls = _mission->getControls();
-		if (!(controls & 1))
-			forward = strafe = 0;
-		if (!(controls & 2))
-			turn = 0;
-		if (!(controls & 4))
-			look = 0;
+		controls = 0;
+	if (!(controls & Mission::kControlWalk))
+		forward = strafe = 0;
+	if (!(controls & Mission::kControlTurn))
+		turn = 0;
+	if (!(controls & Mission::kControlLook))
+		look = 0;
+	_walker->crouch(_walkKeys[kWalkCrouch] && (controls & Mission::kControlCrouch), seconds);
+	// A jump from the floor, or in low gravity once a second.
+	_jumpWait = _jumpWait > delta ? _jumpWait - delta : 0;
+	if (_jumpPressed && (controls & Mission::kControlJump) && _jumpWait == 0 &&
+	    (!_walker->isAirborne() || lowGravity)) {
+		_walker->jump(_mission ? _mission->getMotion().jump : Mission::Motion().jump);
+		if (lowGravity)
+			_jumpWait = 1000;
 	}
+	_jumpPressed = false;
+	// Low gravity with 0x40: walking goes where the view points.
+	bool swim = lowGravity && (controls & Mission::kControlSwim);
 	// The scripts' motion settings (SET_PLAYER_MOTION) scale the viewer's
 	// speeds, the original's defaults giving these; cutscenes set 0.
 	double moveScale = 1, turnScale = 1, lookScale = 1;
@@ -1076,8 +1107,17 @@ void STGEngine::updateWalk(uint32 delta) {
 		_camera.yaw -= _mission->getSpin() * kPi / 180 * seconds;
 	_camera.pitch = std::max(-1.0, std::min(1.0, _camera.pitch + look * kLookSpeed * lookScale * seconds));
 	double step = kSpeed * moveScale * seconds;
-	double dx = (std::cos(_camera.yaw) * forward + std::sin(_camera.yaw) * strafe) * step;
-	double dy = (std::sin(_camera.yaw) * forward - std::cos(_camera.yaw) * strafe) * step;
+	double across = 1, up = 0;
+	if (swim) {
+		// The pitch is a shear of the view; its angle's cosine and sine.
+		double length = std::sqrt(1 + _camera.pitch * _camera.pitch);
+		across = 1 / length;
+		up = -_camera.pitch / length;
+	}
+	double dx = (std::cos(_camera.yaw) * forward * across + std::sin(_camera.yaw) * strafe) * step;
+	double dy = (std::sin(_camera.yaw) * forward * across - std::cos(_camera.yaw) * strafe) * step;
+	if (swim)
+		_walker->moveVertically(forward * up * step);
 
 	// Move every frame, so falls carry on without a key held.
 	double oldX = _camera.x, oldY = _camera.y, oldZ = _camera.z;
@@ -1103,7 +1143,7 @@ void STGEngine::updateWalk(uint32 delta) {
 	_camera.x = _walker->getX();
 	_camera.y = _walker->getY();
 	_camera.z = _walker->getEye();
-	_levelRenderer->setVisibleZones(_walker->getActiveZones());
+	_levelRenderer->setVisibleZones(_walker->getActiveZones() | (_mission ? _mission->getExtraZones() : 0));
 	if (turn != 0 || look != 0 || _camera.x != oldX || _camera.y != oldY || _camera.z != oldZ)
 		updateWalkStatus();
 }
@@ -1245,7 +1285,7 @@ void STGEngine::updateWalkStatus() {
 	Common::String level = _levelName.substr(0, _levelName.find(':'));
 	if (Common::hasSuffixIgnoreCase(level, ".dat"))
 		level = level.substr(0, level.size() - 4);
-	_status = Common::format("%s 3D %.0f,%.0f,%.0f %.0fdeg  WASD PgUp/Dn  L: light %s  C: walls %s", level.c_str(),
+	_status = Common::format("%s 3D %.0f,%.0f,%.0f %.0fdeg  WASD PgUp/Dn  L: light %s  Shift+C: walls %s", level.c_str(),
 	                         _camera.x, _camera.y, _camera.z, degrees,
 	                         _levelRenderer->isLightingEnabled() ? "on" : "off",
 	                         _walker->isCollisionEnabled() ? "on" : "off");
@@ -1498,6 +1538,7 @@ Common::Error STGEngine::saveGameState(int slot, const Common::String &descripti
 	out->writeByte(_frontEnd ? 1 : 0);
 	if (_frontEnd) {
 		Common::Serializer s(nullptr, out.get());
+		s.setVersion(kSaveVersion);
 		_campaign.sync(s);
 		bool bridge = _bridge != nullptr;
 		s.syncAsBool(bridge);
@@ -1509,6 +1550,7 @@ Common::Error STGEngine::saveGameState(int slot, const Common::String &descripti
 	out->writeByte(inMission ? 1 : 0);
 	if (inMission) {
 		Common::Serializer s(nullptr, out.get());
+		s.setVersion(kSaveVersion);
 		Common::String name = _missions[_missionChoice].name;
 		s.syncString(name);
 		s.syncAsDouble(_camera.yaw);
@@ -1550,6 +1592,7 @@ Common::Error STGEngine::loadGameState(int slot) {
 			return Common::Error(Common::kReadingFailed, "saved by an older build, before the bridge; start a new game");
 		Campaign campaign = _campaign;
 		Common::Serializer s(in.get(), nullptr);
+		s.setVersion(version);
 		_campaign.sync(s);
 		bool bridge = false;
 		s.syncAsBool(bridge);
@@ -1573,6 +1616,7 @@ Common::Error STGEngine::loadGameState(int slot) {
 		return Common::Error(Common::kReadingFailed, "the mission was saved by an older build; start it again");
 	if (inMission) {
 		Common::Serializer s(in.get(), nullptr);
+		s.setVersion(version);
 		Common::String name;
 		s.syncString(name);
 		int index = -1;

@@ -108,7 +108,7 @@ Actors::Actors(const LevelFile &level, const Walker &prototype, const SpriteLoad
 		walker.setEyeHeight(fromFixed(data.bodyHeight));
 		walker.setHeadroom(0);
 		walker.setFalls(false);
-		walker.setIgnoredFloors(LevelFile::kFlagNoActors);
+		walker.setIgnoredFloors(LevelFile::kFlagPassThrough);
 		walker.setObstacles(&_obstacles, (int)_actors.size());
 		walker.place(actor->x, actor->y, actor->z);
 		if (!(data.flags & kFlagFlyer) && walker.getFloor() >= 0)
@@ -328,8 +328,8 @@ void Actors::setAnimationSpeed(uint16 id, int animation, uint16 speed) {
 }
 
 void Actors::setClimbAngle(uint16 id, int degrees) {
-	// 0x456E9C: +0x80 = trig(|degrees|); which function isn't known, so
-	// take the cosine (the share going across).
+	// 0x456E9C: +0x80 = cos(|degrees|) in 16.16 (the runtime's cos at
+	// 0x502F3A): the share of the speed going across.
 	for (int index : findAll(id))
 		_actors[index]->across = std::cos(std::abs(degrees) * kPi / 180);
 }

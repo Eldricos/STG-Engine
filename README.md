@@ -172,8 +172,9 @@ In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
 archives. Tab and Shift+Tab jump to the next and previous 3D level (`GAME.LV2`),
 whose name the 3D view shows on its status line. Away from the starting screen, Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
 from the floor plan to a 3D view and then through the textures. In the 3D view, the
-arrows or WASD move, PgUp/PgDn look up and down, End levels the view, L switches
-the lighting off and on, and C lets you walk through walls. Ctrl or the left
+arrows or WASD move, PgUp/PgDn look up and down, End levels the view, X (or
+keypad .) jumps, C (or Enter) crouches while held, L switches the lighting off
+and on, and Shift+C lets you walk through walls. Ctrl or the left
 mouse button attacks: with the weapon in use (verid1 starts with the phaser),
 held up in the view, it fires at the mouse cursor (or the centre of the view
 when the cursor is elsewhere); with none, bare-handed at the centre. `[` and

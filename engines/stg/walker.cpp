@@ -97,6 +97,7 @@ void Walker::sync(Common::Serializer &s) {
 	s.syncAsInt(_floor);
 	s.syncAsBool(_falls);
 	s.syncAsUint32(_ignoredFloors);
+	_ignoredFloors |= LevelFile::kFlagPassThrough;
 	s.syncAsDouble(_eyeHeight);
 	s.syncAsDouble(_stepHeight);
 	s.syncAsDouble(_headroom);
@@ -105,6 +106,10 @@ void Walker::sync(Common::Serializer &s) {
 	s.syncAsBool(_collision);
 	s.syncAsDouble(_gravity);
 	s.syncAsDouble(_maxFallSpeed);
+	if (s.getVersion() == 0 || s.getVersion() >= kStepDownSaveVersion)
+		s.syncAsDouble(_stepDown);
+	else
+		_stepDown = kStepDown;
 	if (s.isLoading()) {
 		_contactWall = -1;
 		_contactObstacle = -1;
@@ -341,7 +346,9 @@ void Walker::followFloorOnly(double seconds) {
 	const LevelFile::Sector &flat = _level.getSectors()[floor];
 	_zones = flat.getActiveZones() ? flat.getActiveZones() : kAllZones;
 	double height = fromFixed(flat.height);
-	if (height >= _feet || !_falls) {
+	// Standing (not already falling), a small drop is taken in one step.
+	// Rising from a jump, nothing holds the player down yet.
+	if (!_falls || (_fallSpeed >= 0 && (height >= _feet || (_fallSpeed == 0 && _feet - height <= _stepDown)))) {
 		// Step up (or stay on the level).
 		_feet = height;
 		_fallSpeed = 0;
@@ -349,21 +356,72 @@ void Walker::followFloorOnly(double seconds) {
 	}
 	_fallSpeed = std::min(_fallSpeed + _gravity * seconds, _maxFallSpeed);
 	_feet -= _fallSpeed * seconds;
+	if (_fallSpeed < 0) {
+		// The head stops at the ceiling (0x4B46A0, event 3).
+		int ceiling = -1;
+		double top = findCeiling(_x, _y, _feet, _zones, &ceiling) - _headroom - _eyeHeight;
+		if (_feet > top) {
+			_feet = std::max(height, top);
+			_ceilingSpeed = -_fallSpeed;
+			_ceilingFlat = ceiling;
+			_fallSpeed = 0;
+		}
+	}
 	if (_feet <= height) {
 		_feet = height;
 		_landingSpeed = _fallSpeed;
+		_landingFloor = floor;
 		_fallSpeed = 0;
 	}
 }
 
-double Walker::findCeiling(double x, double y, double minHeight, uint64 zones) const {
+bool Walker::flatContains(int flat, double x, double y) const {
+	const std::vector<LevelFile::Sector> &flats = _level.getSectors();
+	return flat >= 0 && flat < (int)flats.size() && flats[flat].vertices.size() >= 3 &&
+	       containsPoint(_level.getVertices(), flats[flat], x, y);
+}
+
+void Walker::jump(double speed) {
+	// 0x4B6800: the fall speed takes the jump away, upwards.
+	_fallSpeed -= speed;
+}
+
+bool Walker::isAirborne() const {
+	if (_fallSpeed != 0)
+		return true;
+	return _floor >= 0 && _feet > fromFixed(_level.getSectors()[_floor].height) + 1e-6;
+}
+
+void Walker::crouch(bool down, double seconds) {
+	// 0x43AD04: the eye eases to 2.5 above the feet, half a unit a frame.
+	double target = down ? std::max(0.0, _eyeHeight - kCrouchEye) : 0;
+	double step = kCrouchSpeed * seconds;
+	_crouch = _crouch < target ? std::min(target, _crouch + step) : std::max(target, _crouch - step);
+}
+
+void Walker::moveVertically(double dz) {
+	// Swimming in low gravity: between the floor and the ceiling.
+	_fallSpeed = 0;
+	double floor = _floor >= 0 ? fromFixed(_level.getSectors()[_floor].height) : -1e9;
+	double top = findCeiling(_x, _y, _feet, _zones) - _headroom - _eyeHeight;
+	_feet = std::max(floor, std::min(top, _feet + dz));
+}
+
+double Walker::findCeiling(double x, double y, double minHeight, uint64 zones, int *index) const {
 	double best = 1e9;
-	for (const LevelFile::Sector &flat : _level.getSectors()) {
-		if (!flat.isCeiling() || flat.vertices.size() < 3 || !(flat.zones & zones))
+	const std::vector<LevelFile::Sector> &flats = _level.getSectors();
+	for (size_t i = 0; i < flats.size(); i++) {
+		const LevelFile::Sector &flat = flats[i];
+		// Pass-through ceilings (water surfaces) don't stop the head (0x4B46A0).
+		if (!flat.isCeiling() || flat.vertices.size() < 3 || !(flat.zones & zones) ||
+		    (flat.flags & LevelFile::kFlagPassThrough))
 			continue;
 		double h = fromFixed(flat.height);
-		if (h > minHeight && h < best && containsPoint(_level.getVertices(), flat, x, y))
+		if (h > minHeight && h < best && containsPoint(_level.getVertices(), flat, x, y)) {
 			best = h;
+			if (index)
+				*index = (int)i;
+		}
 	}
 	return best;
 }

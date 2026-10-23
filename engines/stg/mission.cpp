@@ -278,6 +278,36 @@ void Mission::sync(Common::Serializer &s) {
 	s.syncAsUint16(_controls);
 	s.syncAsDouble(_fallMultiplier);
 	s.syncAsDouble(_fallDivisor);
+	if (s.getVersion() == 0 || s.getVersion() >= kLowGravitySaveVersion)
+		s.syncAsBool(_lowGravity);
+	else if (s.isLoading())
+		_lowGravity = _walker.getGravity() == 0;
+	if (s.getVersion() == 0 || s.getVersion() >= kLowGravitySaveVersion) {
+		uint32 count = (uint32)_safeFlats.size();
+		s.syncAsUint32(count);
+		std::vector<uint16> ids(_safeFlats.begin(), _safeFlats.end());
+		ids.resize(count);
+		for (uint16 &id : ids)
+			s.syncAsUint16(id);
+		if (s.isLoading())
+			_safeFlats = std::set<uint16>(ids.begin(), ids.end());
+		uint32 pools = (uint32)_pools.size();
+		s.syncAsUint32(pools);
+		_pools.resize(pools);
+		for (Pool &pool : _pools) {
+			s.syncAsUint16(pool.below);
+			s.syncAsUint16(pool.above);
+			s.syncAsUint16(pool.bottom);
+		}
+		s.syncAsInt(_waterState);
+		s.syncAsInt(_passingFlat);
+		if (s.isLoading()) {
+			_flatMark.clear();
+			_poolSurface.clear();
+			for (const Pool &pool : _pools)
+				setPool(pool.below, pool.above, pool.bottom);
+		}
+	}
 	s.syncAsBool(_push.active);
 	s.syncAsDouble(_push.x);
 	s.syncAsDouble(_push.y);
@@ -381,12 +411,23 @@ void Mission::update(uint32 ms) {
 		for (const Movers::Notice &notice : notices)
 			send(notice.object, notice.event);
 	}
-	// Landing hard hurts (0x43A662), as damage kind 1.
-	double landing = _walker.takeLanding();
-	if (landing > 0 && _fallDivisor > 0) {
-		int damage = (int)(landing * _fallMultiplier / _fallDivisor);
-		if (damage > 0)
-			damagePlayer(0, (int16)damage, 1);
+	// Landing hard, or a jump hitting the ceiling, hurts (0x4357E5,
+	// 0x43A662: kind 1), unless the flat is marked safe (SET_FLAT_SAFE).
+	{
+		const std::vector<LevelFile::Sector> &flats = _level.getSectors();
+		auto hurt = [&](double speed, int flat) {
+			uint16 id = flat >= 0 && flats[flat].objectId ? (uint16)(flats[flat].objectId | kTypeFlat) : 0;
+			if (speed <= 0 || _fallDivisor <= 0 || (id && _safeFlats.count(id)))
+				return;
+			int damage = (int)(speed * _fallMultiplier / _fallDivisor);
+			if (damage > 0)
+				damagePlayer(id, (int16)damage, 1);
+		};
+		double landing = _walker.takeLanding();
+		hurt(landing, _walker.getLandingFloor());
+		int ceiling;
+		double bump = _walker.takeCeilingHit(ceiling);
+		hurt(bump, ceiling);
 	}
 	if (_push.active)
 		runPush(ms);
@@ -446,6 +487,7 @@ void Mission::update(uint32 ms) {
 
 	_hud.update(ms, _walker.getX(), _walker.getY());
 
+	updateWater();
 	checkPlayerContacts();
 
 	MissionSound::Listener listener = { _walker.getX(), _walker.getY(), _walker.getEye(), _currentYaw };
@@ -765,6 +807,22 @@ void Mission::checkPlayerContacts() {
 			send(id, kEventTouch);
 		}
 	}
+	// A pass-through floor at the player's feet still hears it, as the
+	// original finds it first and steps through it (0x4B4904).
+	int passing = findPassThroughFloor();
+	if (passing != _passingFlat) {
+		if (_passingFlat >= 0) {
+			uint16 id = (uint16)(_level.getSectors()[_passingFlat].objectId | kTypeFlat);
+			send(id, kEventUntouch);
+			send(id, kEventFloorLeft);
+		}
+		_passingFlat = passing;
+		if (passing >= 0) {
+			uint16 id = (uint16)(_level.getSectors()[passing].objectId | kTypeFlat);
+			send(id, kEventFloorEntered);
+			send(id, kEventTouch);
+		}
+	}
 
 	// Billboards fire when the player enters the box around them (0x4B9940).
 	int inside = -1;
@@ -869,11 +927,114 @@ void Mission::dropAt(uint16 id, const Position &position) {
 	}
 }
 
+int Mission::findPassThroughFloor() const {
+	// The highest one over the player, between the feet and a step above.
+	const std::vector<LevelFile::Sector> &flats = _level.getSectors();
+	double feet = _walker.getFeet(), top = feet + _walker.getStepHeight();
+	int best = -1;
+	for (size_t i = 0; i < flats.size(); i++) {
+		const LevelFile::Sector &flat = flats[i];
+		if (flat.isCeiling() || !(flat.flags & LevelFile::kFlagPassThrough) || !flat.objectId)
+			continue;
+		double h = fromFixed(flat.height);
+		if (h < feet - 0.01 || h > top || (best >= 0 && h <= fromFixed(flats[best].height)))
+			continue;
+		if (_walker.flatContains((int)i, _walker.getX(), _walker.getY()))
+			best = (int)i;
+	}
+	return best;
+}
+
+void Mission::setPool(uint16 surfaceBelow, uint16 surfaceAbove, uint16 bottom) {
+	// SET_FLAT_GROUPS (0x440D3D): the water's surface seen from below
+	// (mark 2), from above (mark 1; a pass-through floor) and the pool's
+	// bottom (mark 3, knowing its surface).
+	std::vector<LevelFile::Sector> &flats = _level.getSectors();
+	_flatMark.resize(flats.size(), 0);
+	_poolSurface.resize(flats.size(), 0);
+	for (size_t i = 0; i < flats.size(); i++) {
+		// The flats' own ids (+0x14), as 0x4B7600 looks them up.
+		uint16 id = flats[i].objectId & 0x1FFF;
+		if (!id)
+			continue;
+		if (id == (surfaceAbove & 0x1FFF)) {
+			_flatMark[i] = 1;
+		} else if (id == (surfaceBelow & 0x1FFF)) {
+			_flatMark[i] = 2;
+		} else if (id == (bottom & 0x1FFF)) {
+			_flatMark[i] = 3;
+			_poolSurface[i] = surfaceAbove & 0x1FFF;
+		}
+	}
+}
+
+void Mission::updateWater() {
+	// 0x43D0C9: on a pool's bottom, the eye's depth under the surface says
+	// whether the player is out of the water (0), wading or afloat (1) or
+	// under it (2). Each change is broadcast (58, 57, 56), and gravity
+	// follows: with control 0x40, buoyancy at the surface and none under
+	// it; without, half gravity under it.
+	if (_flatMark.empty())
+		return;
+	const std::vector<LevelFile::Sector> &flats = _level.getSectors();
+	int floor = _walker.getFloor();
+	int mark = floor >= 0 && floor < (int)_flatMark.size() ? _flatMark[floor] : 0;
+	int state = 0;
+	double depth = 0;
+	_waterZones = 0;
+	if (mark == 1) {
+		state = 1;
+	} else if (mark == 3) {
+		double eye = _walker.getEye();
+		depth = -(eye - _walker.getFeet());
+		for (size_t i = 0; i < flats.size(); i++) {
+			if (_flatMark[i] == 1 && (flats[i].objectId & 0x1FFF) == _poolSurface[floor] &&
+			    _walker.flatContains((int)i, _walker.getX(), _walker.getY())) {
+				depth = fromFixed(flats[i].height) - eye;
+				_waterZones = flats[i].getActiveZones();
+				break;
+			}
+		}
+		if (depth >= kWaterBand)
+			state = 2;
+		else if (depth < -kWaterBand)
+			state = 1;
+		else
+			state = _walker.getFallSpeed() > 0 ? 2 : 1;
+	}
+	if (state != 1)
+		_waterZones = 0;
+	if (state == 0 && _waterState == 0)
+		return;
+
+	double gravity = Walker::kGravity, maxFall = _walker.getMaxFallSpeed();
+	if (!(_controls & kControlSwim)) {
+		if (state == 2) {
+			gravity *= 0.5;
+			maxFall = 100;
+		}
+	} else if (state == 1) {
+		// Afloat: the eye rides about a unit over the surface.
+		double above = depth < -kWaterBand ? -depth : kWaterBand;
+		if (above - 1 < Walker::kEyeHeight)
+			gravity = (above - 1) * Walker::kGravity / Walker::kEyeHeight;
+	} else if (state == 2) {
+		gravity = 0;
+	}
+	_walker.setGravity(gravity, maxFall);
+
+	if (state != _waterState) {
+		_waterState = state;
+		static const uint16 kEvents[3] = { kEventOutOfWater, kEventInWater, kEventUnderWater };
+		broadcast(kEvents[state]);
+	}
+}
+
 void Mission::dropBillboard(LevelFile::Billboard &b) {
 	// 0x4B7AA0: the highest floor no more than 2 units above the
-	// billboard's base, passing over floors actors don't use either.
+	// billboard's base, passing through pass-through floors.
 	double z = fromFixed(b.z);
-	int floor = _walker.findFloor(fromFixed(b.x), fromFixed(b.y), z + 2, Walker::kAllZones, LevelFile::kFlagNoActors);
+	int floor = _walker.findFloor(fromFixed(b.x), fromFixed(b.y), z + 2, Walker::kAllZones, LevelFile::kFlagPassThrough);
 	if (floor < 0)
 		return;
 	const LevelFile::Sector &flat = _level.getSectors()[floor];
@@ -1597,11 +1758,18 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		// their colour; what each style looks like isn't known.
 		_transitionStyle = vm.pop();
 		break;
-	case 0xED: // SET_FLAT_FIELD_6C
-		// A flat's +0x6C (0x45BA40), next to 0xAD's +0x68; nothing found reads it.
-		vm.pop();
-		vm.pop();
+	case 0xED: { // SET_FLAT_SAFE
+		// The flat object's +0x6C (0x45BA40): landing on it, or bumping a
+		// jump into it, does no harm (0x4357E5).
+		uint16 id = (uint16)vm.pop();
+		bool safe = vm.pop() != 0;
+		id = id ? id : self.object->id;
+		if (safe)
+			_safeFlats.insert(id);
+		else
+			_safeFlats.erase(id);
 		break;
+	}
 	case 0x5B: { // SET_ACTOR_TARGET
 		uint16 id = (uint16)vm.pop();
 		uint16 target = (uint16)vm.pop();
@@ -1784,7 +1952,9 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		break;
 	}
 	case 0xAD: // SET_FLAT_FLAG_68
-		// A flat's +0x68 = 1 (0x45BA00); nothing found reads it.
+		// The flat object's +0x68 = 1 (0x45BA00). Its getter (slot 0x23C)
+		// is only reached by opcode 0x5B, which scripts use on actors, so
+		// nothing reads it.
 		vm.pop();
 		break;
 	case 0xAF: // SET_PLAYER_SPIN
@@ -1953,28 +2123,40 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		break;
 	}
 	case 0xA3: { // SET_GRAVITY
-		// 0x441257: 0x80000000 keeps a value, 0x80000001 restores its default.
-		uint32 gravity = popRaw32(vm), maxFall = popRaw32(vm);
-		popRaw32(vm); // a third setting, not understood
+		// 0x441257: gravity, the fastest fall and the step down; 0x80000000
+		// keeps a value, 0x80000001 restores its default. The step down is
+		// set only when the fastest fall is, as the original does.
+		uint32 gravity = popRaw32(vm), maxFall = popRaw32(vm), stepDown = popRaw32(vm);
 		auto pick = [](uint32 raw, double current, double fallback) {
 			return raw == 0x80000000 ? current : raw == 0x80000001 ? fallback : fromFixed((int32)raw);
 		};
 		_walker.setGravity(pick(gravity, _walker.getGravity(), Walker::kGravity),
 		                   pick(maxFall, _walker.getMaxFallSpeed(), Walker::kMaxFallSpeed));
+		if (maxFall != 0x80000000)
+			_walker.setStepDown(maxFall == 0x80000001 ? Walker::kStepDown : fromFixed((int32)stepDown));
 		break;
 	}
 	case 0xB5: // LOW_GRAVITY
-		// 0x440C72: no gravity and a slow fall, or back to the defaults.
-		if (vm.pop())
+		// 0x440C72: no gravity, a slow fall and no step down, or back to
+		// the defaults.
+		_lowGravity = vm.pop() != 0;
+		if (_lowGravity) {
 			_walker.setGravity(0, 10.0);
-		else
+			_walker.setStepDown(0);
+		} else {
 			_walker.setGravity(Walker::kGravity, Walker::kMaxFallSpeed);
+			_walker.setStepDown(Walker::kStepDown);
+		}
 		break;
 	case 0xEE: { // SET_FALL_DAMAGE
-		// 0x436F35: a landing at speed v hurts v * multiplier / divisor (kind 1).
+		// 0x436F35: a landing at fall speed v hurts v * multiplier / divisor
+		// (kind 1, 0x43A662). 0x80000000 keeps a value, 0x80000001 restores
+		// its default: 1 and 32.
 		uint32 multiplier = popRaw32(vm), divisor = popRaw32(vm);
-		_fallMultiplier = (double)multiplier;
-		_fallDivisor = fromFixed((int32)divisor);
+		if (multiplier != 0x80000000)
+			_fallMultiplier = multiplier == 0x80000001 ? 1.0 : (double)(int32)multiplier;
+		if (divisor != 0x80000000)
+			_fallDivisor = divisor == 0x80000001 ? 32.0 : fromFixed((int32)divisor);
 		break;
 	}
 	case 0xAE: // SET_PLAYER_CONTROLS
@@ -2011,13 +2193,12 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		}
 		break;
 	}
-	case 0xCD: // SET_FLAT_GROUPS
-		// 0x440D3D marks groups of flats; what reads the marks isn't known.
-		vm.pop();
-		vm.pop();
-		vm.pop();
-		_missing[op]++;
+	case 0xCD: { // SET_FLAT_GROUPS
+		uint16 below = (uint16)vm.pop(), above = (uint16)vm.pop(), bottom = (uint16)vm.pop();
+		setPool(below, above, bottom);
+		_pools.push_back({ below, above, bottom });
 		break;
+	}
 	case 0xD5: // GET_DIFFICULTY
 		// The configuration's +0x340, 1 unless changed.
 		vm.push((int16)_difficulty);
