@@ -674,8 +674,10 @@ int16 Mission::send(uint16 id, uint16 event, const std::vector<int16> &args) {
 	int index = _vm->findInstance(id);
 	if (index < 0)
 		return 0;
-	debugC(2, kDebugChannel, "event %u to %04X", event, id);
-	return _vm->sendEvent(_vm->getInstance(index), event, args);
+	ScriptInstance &target = _vm->getInstance(index);
+	debugC(2, kDebugChannel, "event %u (%d) to %04X in state %d%s", event, args.empty() ? 0 : args[0], id,
+	       target.state, target.enabled ? "" : ", disabled");
+	return _vm->sendEvent(target, event, args);
 }
 
 void Mission::broadcast(uint16 event, const std::vector<int16> &args) {
