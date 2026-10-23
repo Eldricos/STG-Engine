@@ -147,23 +147,20 @@ void Mission::refreshGeometry(const std::vector<int> &walls) {
 }
 
 void Mission::moveLift(uint16 id, int level) {
-	// 0x4583EA: every flat of the group jumps to the level's height, and
-	// the player's footing is looked at again.
+	// 0x4583EA: every flat of the group jumps to the level's height. The
+	// player isn't carried: the car's own panel moves them with
+	// TELEPORT_PLAYER_RELATIVE straight after, and the next step finds
+	// their footing again.
 	auto it = _lifts.find(id);
 	if (it == _lifts.end() || level < 1 || level > it->second.count)
 		return;
 	const Lift &lift = it->second;
 	int32 height = lift.heights[level - 1];
-	bool carried = false;
 	std::vector<LevelFile::Sector> &flats = _level.getSectors();
-	for (int i = 0; i < (int)flats.size(); i++) {
-		if (!isObject(flats[i].objectId, kTypeFlat, lift.flat) || flats[i].isCeiling())
-			continue;
-		carried = carried || i == _walker.getFloor();
-		flats[i].height = height;
+	for (LevelFile::Sector &flat : flats) {
+		if (isObject(flat.objectId, kTypeFlat, lift.flat) && !flat.isCeiling())
+			flat.height = height;
 	}
-	if (carried)
-		_walker.place(_walker.getX(), _walker.getY(), fromFixed(height));
 }
 
 void Mission::runPush(uint32 ms) {
