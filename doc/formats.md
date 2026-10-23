@@ -1142,6 +1142,20 @@ The console is COMBAT.RAS with the 3D view in its hole at (52,10), 532 x 231,
 60 degrees across. The game reads the module's result as 0 the Enterprise
 destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
 
+- The forward view (`0x4A0D13`) sits two of the Enterprise's radii out along
+  its own axis, ahead of it, so the Enterprise is never in sight.
+- The right panel shows the Enterprise's schematic (SENT_n). Clicking the CONN
+  line (262,440-438,460, `0x4AECC6`) calls up the helm menu (CONNMNU0 at
+  (472,310)) over it, and letting go puts it away. The CONN line shows the
+  order in hand, row `mode`×19 (176 x 17) of CONNBUTT.RAS at (262,442).
+- The readouts are in FONTLIT (A-Z_0-9.RAS, whose cells include their
+  spacing). The ships' names go at (2,310) for the target and (604,310) for
+  the Enterprise: the class's name from `0x54E660` (NCC-1701D, BIRD OF PREY,
+  WARBIRD, DREADNOUGHT, VORCHA, PROBE), with " n" for the second of a kind and
+  on. Their speeds are `SPEED: %.3f` of the class's top speed at (123,449) and
+  (470,449) (`0x49F302`), and the range is `RANGE: %6.0f` at (209,365). FONTLIT's
+  minus sign looks like "=".
+
 ### The enemies' AI
 
 Each enemy runs `0x4A7C91` every frame, then the steering at `0x4A53A1`. The

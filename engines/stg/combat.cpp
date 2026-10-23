@@ -100,6 +100,8 @@ struct SpaceCombat::Ship {
 	Common::String type;
 	/** The class's three letters, also the console pictures' (SENT_0...). */
 	Common::String token;
+	/** On the console: the class's name, numbered from the second of a kind. */
+	Common::String name;
 	/** The effects' prefix: E, K, R, C, P or _. */
 	char effects = '_';
 	const ShipClass *cls = nullptr;
@@ -253,6 +255,9 @@ bool SpaceCombat::load(int mission) {
 	std::unique_ptr<Common::SeekableReadStream> font = open("FONTSCAN.MET");
 	if (font)
 		_font.load(*font);
+	font = open("FONTLIT.MET");
+	if (font)
+		_smallFont.load(*font);
 
 	// The Enterprise first.
 	_ships.clear();
@@ -302,15 +307,18 @@ bool SpaceCombat::load(int mission) {
 
 void SpaceCombat::addShip(const MissionShip &line) {
 	// 0x4A4DA2: the types, their models and classes.
+	// The console's names are the class names of 0x54E660; it has none of
+	// its own for the Garidian ship and the starbase.
 	struct Type {
 		const char *name, *model, *token;
 		char effects;
+		const char *display;
 	};
 	static const Type kTypes[] = {
-		{ "player", "ENTERPRS", "ent", 'E' }, { "sm_klingon", "KLINGON", "bop", 'K' },
-		{ "klingon", "VORCHA", "vor", 'K' },  { "romulan", "ROMULAN", "war", 'R' },
-		{ "chodak", "CHODAK", "cho", 'C' },   { "garidian", "GARIDIAN", "war", 'R' },
-		{ "probe", "PROBE", "pro", 'P' },     { "starbase", "STARBASE", "pro", '_' }
+		{ "player", "ENTERPRS", "ent", 'E', "NCC-1701D" },  { "sm_klingon", "KLINGON", "bop", 'K', "BIRD OF PREY" },
+		{ "klingon", "VORCHA", "vor", 'K', "VORCHA" },      { "romulan", "ROMULAN", "war", 'R', "WARBIRD" },
+		{ "chodak", "CHODAK", "cho", 'C', "DREADNOUGHT" },  { "garidian", "GARIDIAN", "war", 'R', "WARBIRD" },
+		{ "probe", "PROBE", "pro", 'P', "PROBE" },          { "starbase", "STARBASE", "pro", '_', "STARBASE" }
 	};
 	const Type *type = nullptr;
 	for (const Type &t : kTypes) {
@@ -324,6 +332,7 @@ void SpaceCombat::addShip(const MissionShip &line) {
 	Ship ship;
 	ship.type = line.type;
 	ship.token = type->token;
+	ship.name = type->display;
 	ship.effects = type->effects;
 	ship.cls = findClass(type->token);
 	ship.model = model(Common::String(type->model) + ".3DV");
@@ -354,6 +363,9 @@ void SpaceCombat::addShip(const MissionShip &line) {
 		if (other.type == ship.type)
 			ship.number++;
 	}
+	// The second of a kind and on are numbered.
+	if (ship.number > 1)
+		ship.name += Common::format(" %d", ship.number);
 	_ships.push_back(ship);
 }
 
@@ -1175,6 +1187,8 @@ void SpaceCombat::mouseDown(int x, int y) {
 		_pressed = 0;
 	else if (_phase == kFight && Common::Rect(320, 380, 425, 400).contains(x, y))
 		_pressed = 1;
+	else if (_phase == kFight && kConnLine.contains(x, y))
+		_helmMenu = !_helmMenu;
 }
 
 void SpaceCombat::mouseUp(int x, int y) {
@@ -1210,10 +1224,12 @@ void SpaceCombat::mouseUp(int x, int y) {
 	} else if (Common::Rect(177, 344, 190, 372).contains(x, y)) {
 		key.keycode = Common::KEYCODE_v;
 		keyDown(key);
-	} else if (Common::Rect(472, 319, 639, 459).contains(x, y)) {
-		// The helm menu (CONNMNU0): a row each 20 pixels.
+	} else if (_helmMenu && !kConnLine.contains(x, y)) {
+		// The helm menu (CONNMNU0), a row each 20 pixels: let go over one to
+		// give the order, anywhere else to put it away.
+		_helmMenu = false;
 		int row = (y - 319) / 20;
-		if (row >= 0 && row <= 6) {
+		if (Common::Rect(472, 319, 639, 459).contains(x, y) && row >= 0 && row <= 6) {
 			key.keycode = (Common::KeyCode)(Common::KEYCODE_1 + row);
 			keyDown(key);
 		}
@@ -1251,15 +1267,17 @@ void SpaceCombat::drawImage(Graphics::Surface &screen, const CombatImage *img, i
 	}
 }
 
-void SpaceCombat::drawText(Graphics::Surface &screen, const Common::String &text, int x, int y) {
-	const CombatImage *strip = image("SCANNER.RAS");
+void SpaceCombat::drawText(Graphics::Surface &screen, const Common::String &text, int x, int y, bool small) {
+	// FONTSCAN for messages, FONTLIT (capitals and digits) for the readouts.
+	const CombatImage *strip = image(small ? "A-Z_0-9.RAS" : "SCANNER.RAS");
 	if (!strip)
 		return;
+	const MetFont &font = small ? _smallFont : _font;
 	for (char ch : text) {
 		int c = (byte)ch;
 		if (c < 32 || c > 127)
 			c = 32;
-		const MetFont::Cell &cell = _font.cells[c - 32];
+		const MetFont::Cell &cell = font.cells[c - 32];
 		for (int gy = 0; gy < cell.h; gy++) {
 			for (int gx = 0; gx < cell.w; gx++) {
 				int sx = cell.x + gx, sy = cell.y + gy, dx = x + gx, dy = y + gy;
@@ -1271,7 +1289,8 @@ void SpaceCombat::drawText(Graphics::Surface &screen, const Common::String &text
 					*(uint32 *)screen.getBasePtr(dx, dy) = p;
 			}
 		}
-		x += std::max(cell.w, 3) + 1;
+		// FONTLIT's cells hold their own spacing.
+		x += small ? cell.w : std::max(cell.w, 3) + 1;
 		if (x > screen.w)
 			break;
 	}
@@ -1319,7 +1338,7 @@ void SpaceCombat::drawRadar(Graphics::Surface &screen) {
 			drawImage(screen, blip, x - blip->w / 2, y - blip->h / 2);
 	}
 	if (_target >= 0 && _target < (int)_ships.size())
-		drawText(screen, Common::format("RANGE: %6.0f", (_ships[_target].position - e.position).length()), 209, 362);
+		drawText(screen, Common::format("RANGE: %6.0f", (_ships[_target].position - e.position).length()), 209, 365, true);
 }
 
 void SpaceCombat::drawView(Graphics::Surface &screen) {
@@ -1332,8 +1351,10 @@ void SpaceCombat::drawView(Graphics::Surface &screen) {
 		camPos = e.position - dir * (e.radius * 3) + e.orientation.up * (e.radius * 0.6);
 		camRot = Mat3::lookAlong(_ships[_target].position - camPos, e.orientation.up);
 	} else {
+		// 0x4A0D13: two of its radii out along its axis, ahead of it, so the
+		// Enterprise itself is out of sight.
 		camRot = e.orientation;
-		camPos = e.position - e.orientation.forward * (e.radius * 3.2) + e.orientation.up * (e.radius * 0.7);
+		camPos = e.position + e.orientation.forward * (e.radius * 2);
 	}
 	_renderer.setCamera(camPos, camRot);
 	Common::Rect view(kViewX, kViewY, kViewX + kViewW, kViewY + kViewH);
@@ -1356,7 +1377,7 @@ void SpaceCombat::drawView(Graphics::Surface &screen) {
 	auto lookup = [this](const Common::String &name) { return texture(name); };
 	for (size_t i = 0; i < _ships.size(); i++) {
 		const Ship &s = _ships[i];
-		if (!s.alive || s.hidden || s.gone)
+		if (!s.alive || s.hidden || s.gone || (i == 0 && !_enemyView))
 			continue;
 		double distance = (s.position - camPos).length();
 		// The detailed model near, the rough one further off (0x54E5D8).
@@ -1441,11 +1462,28 @@ void SpaceCombat::drawConsole(Graphics::Surface &screen) {
 	}
 	drawImage(screen, image(Common::format("SENT_%d.RAS", state(e))), 466, 255);
 	drawBars(screen, e, 466, 255);
+	// The helm menu, while it is called up from the CONN line (0x4AECC6).
 	const CombatImage *menu = image("CONNMNU0.RAS"), *lit = image("CONNMNU1.RAS");
-	drawImage(screen, menu, 472, 310);
-	if (lit && _helm <= kMaintainStatus) {
-		Common::Rect band(472, 310 + _helm * 20 + 9, 472 + lit->w, 310 + _helm * 20 + 29);
-		drawImage(screen, lit, 472, 310, &band);
+	if (_helmMenu) {
+		drawImage(screen, menu, 472, 310);
+		if (lit && _helm <= kMaintainStatus) {
+			Common::Rect band(472, 310 + _helm * 20 + 9, 472 + lit->w, 310 + _helm * 20 + 29);
+			drawImage(screen, lit, 472, 310, &band);
+		}
+	}
+	// The CONN line: the order in hand, a row of CONNBUTT each (0x49FD41).
+	const CombatImage *conn = image("CONNBUTT.RAS");
+	if (conn && _helm < kMaintainStatus) {
+		Common::Rect clip(262, 442, 262 + 176, 442 + 17);
+		drawImage(screen, conn, 262, 442 - _helm * 19, &clip);
+	}
+	// Names and speeds (0x49F302), as a share of the ship's top speed.
+	auto speedOf = [](const Ship &s) { return s.cls && s.cls->maxSpeed ? s.speed / s.cls->maxSpeed : 0.0; };
+	drawText(screen, e.name, 604, 310, true);
+	drawText(screen, Common::format("SPEED: %.3f", speedOf(e)), 470, 449, true);
+	if (_target >= 0 && _target < (int)_ships.size() && isEnemyAlive(_ships[_target])) {
+		drawText(screen, _ships[_target].name, 2, 310, true);
+		drawText(screen, Common::format("SPEED: %.3f", speedOf(_ships[_target])), 123, 449, true);
 	}
 
 	// The fire buttons: 0 dim, 1 lit, 2 normal.
@@ -1484,14 +1522,12 @@ void SpaceCombat::drawConsole(Graphics::Surface &screen) {
 	}
 	drawRadar(screen);
 
-	// The message line: subtitles, else the helm and speed.
+	// The message line: subtitles, or how it ended.
 	Common::String line;
 	if (_subtitles && !_subtitle.empty())
 		line = _subtitle;
 	else if (_phase == kEnding)
 		line = _result == kWon ? "VICTORY" : _result == kLost ? "WARPED OUT OF THE SYSTEM" : "THE ENTERPRISE IS LOST";
-	else
-		line = Common::format("SPEED %4.0f", e.speed);
 	drawText(screen, line.substr(0, 110), 4, 462);
 }
 

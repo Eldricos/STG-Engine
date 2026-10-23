@@ -144,7 +144,7 @@ private:
 	void drawView(Graphics::Surface &screen);
 	void drawConsole(Graphics::Surface &screen);
 	void drawImage(Graphics::Surface &screen, const CombatImage *image, int x, int y, const Common::Rect *clip = nullptr);
-	void drawText(Graphics::Surface &screen, const Common::String &text, int x, int y);
+	void drawText(Graphics::Surface &screen, const Common::String &text, int x, int y, bool small = false);
 	void drawBars(Graphics::Surface &screen, const Ship &ship, int x, int y);
 	void drawRadar(Graphics::Surface &screen);
 
@@ -161,7 +161,7 @@ private:
 	std::map<Common::String, std::unique_ptr<Model3D>> _models;
 	std::map<Common::String, std::unique_ptr<std::vector<CombatMaterial>>> _materials;
 	uint32 _palette[256] = {};
-	MetFont _font;
+	MetFont _font, _smallFont;
 	RgbImage _briefing;
 	RgbImage _proceed;
 	int _proceedX = 535, _proceedY = 429;
@@ -181,6 +181,9 @@ private:
 	int _target = -1;
 	int _aimedSystem = -1;
 	Helm _helm = kStandBy;
+	/** The CONN line (hotspot 2), which calls up the helm menu over the Enterprise's panel. */
+	const Common::Rect kConnLine = Common::Rect(262, 440, 439, 461);
+	bool _helmMenu = false;
 	double _keepRange = 0;
 	bool _enemyView = false;
 	bool _phasersOnline = true, _photonsOnline = true;

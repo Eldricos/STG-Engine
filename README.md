@@ -142,7 +142,7 @@ Enterprise arrives. After the briefing (PROCEED), fly by hand with the arrows
 (Up dives, Down climbs), Ctrl / Q and Num 0 / E to roll, Num + and Num - (or
 = and -) for speed, or give the helm an order with 1-7 (Close on target,
 Evade, Maintain distance, Full stop, Stand by, Warp out, Maintain status) or
-the menu on the right. Shift (or F) fires phasers, Enter (or G) photon
+the menu the CONN line calls up. Shift (or F) fires phasers, Enter (or G) photon
 torpedoes; T or the button by the radar picks the next target, V switches
 between the forward and enemy views, and clicking the target's schematic
 picks a system to aim at. Win by destroying or driving off every ship (or
