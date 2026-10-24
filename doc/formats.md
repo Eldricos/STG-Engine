@@ -57,8 +57,12 @@ rows: int16 runs until the row reaches `width`
 ```
 
 Every row of both samples decodes to exactly the width. The **frame height
-is not stored**. It looks like 252 for the 504- and 640-wide overlays and 88 for
-NUPLANT (152 wide), so it presumably comes from the game script. There's no
+is not stored**: whoever loads an overlay sets it (`0x4029A5`), and without that
+it's one frame of every row (`0x402740`). The held items (nu*.ovr) are cut into
+88-row frames (`0x430E06`), and the punches of SET_PUNCH into frames as tall as
+the 3D view, 252 rows (`0x431D25`, view word +0x7A), so KIRKHIT's 1260 rows are 5
+frames and the 1008-row ones 4. The view overlays of SHOW_VIEW_OVERLAY are 640 x
+252, one frame. There's no
 palette either; the overlay uses the palette of the current scene. The frames
 are stacked top down, but each frame's rows are stored bottom up: only that
 way up do NUPLANT's nozzle tips sit on the hotspots sgens.exe gives its poses,
@@ -424,8 +428,10 @@ heading in degrees.
     ((speed · ms) & 0x1FFFF) / 1024 of its 128 units (`0x4B78B0`).
   - SET_FLAT_ZONES (0xC0) id, low, high: the zones in play standing there. ADD_FLAT_ZONE_BAND (0xC1)
     id, height, low, high: zones by height for a lift, the first at or below its height counting.
-  - SET_SKY (0xB6) n: sky n, and the sky on. SHOW_VIEW_OVERLAY (0xB8) image, frame: a script
-    resource's .OVR over the view (-1 removes it). MAP_HEIGHT_BAND (0xC9) below, above.
+  - SET_SKY (0xB6) n: sky n, and the sky on. SHOW_VIEW_OVERLAY (0xB8) image, mode: a script
+    resource's .OVR over the view, one frame of every row (-1 removes it). The mode is how it is
+    drawn (`0x409DDC`): 1 centred (helm.ovr, BIGCROP.OVR), 2 row by row (epsion's SHELL.OVR, the same
+    for these 640 x 252 pictures), anything else not at all. MAP_HEIGHT_BAND (0xC9) below, above.
   - ENGAGE (0x73) id: event 35 once the player walks 3 units off (another engaged object gets it at
     once). TELEPORT_PLAYER_RELATIVE (0x76) from, to: moved and turned by their difference.
   - Health: SET_ENVIRONMENT_DAMAGE (0x88) period: 1 health a period (kind 13), 0 stops;

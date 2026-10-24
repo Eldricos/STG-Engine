@@ -93,34 +93,4 @@ void Overlay::drawFrame(Graphics::Surface &dst, int frame, int frameHeight, int 
 	}
 }
 
-int Overlay::guessFrameHeight() const {
-	const int rows = _surface.h, width = _surface.w;
-	if (rows % 252 == 0)
-		return 252;
-
-	int best = rows;
-	double bestScore = 1e9;
-	for (int h = 48; h <= 320 && h <= rows / 2; h++) {
-		if (rows % h)
-			continue;
-		// Fraction of pixels whose opacity changes from one frame to the next.
-		long changed = 0;
-		int frames = rows / h;
-		for (int f = 0; f + 1 < frames; f++) {
-			for (int y = 0; y < h; y++) {
-				const byte *a = &_mask[(size_t)(f * h + y) * width];
-				const byte *b = &_mask[(size_t)((f + 1) * h + y) * width];
-				for (int x = 0; x < width; x++)
-					changed += a[x] != b[x];
-			}
-		}
-		double score = (double)changed / ((double)(frames - 1) * h * width);
-		if (score < bestScore) {
-			bestScore = score;
-			best = h;
-		}
-	}
-	return best;
-}
-
 } // End of namespace STG

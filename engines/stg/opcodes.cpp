@@ -202,7 +202,7 @@ static const OpcodeInfo kOpcodes[kOpcodeCount] = {
 	{ "LOW_GRAVITY", 1, 0, 1, "pop on; game.vt[0x420]" },
 	{ "NATIVE_B6", 1, 0, 1, "game.vt[0x444]" },
 	{ "SET_SKY_ENABLED", 1, 0, 1, "pop on; game.vt[0x448]" },
-	{ "NATIVE_B8", 2, 0, 1, "game.vt[0x44c]" },
+	{ "SHOW_VIEW_OVERLAY", 2, 0, 1, "pop image (-1 removes it), mode; game.vt[0x44c]" },
 	{ "NATIVE_B9", 2, 0, 1, "obj.vt[0xcc], game.vt[0x290]" },
 	{ "SCREEN_FLASH_NOTIFY", 11, 0, 1, "colour flash; event 55 to an object at the end; game.vt[0x450], obj.vt[0x124], game.vt[0x148]" },
 	{ "SCREEN_FLASH", 10, 0, 1, "colour flash; game.vt[0x450], obj.vt[0x124]" },

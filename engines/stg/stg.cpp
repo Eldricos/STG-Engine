@@ -1354,10 +1354,12 @@ void STGEngine::drawViewOverlay(Graphics::Surface &view) {
 				warning("Could not load the view overlay %s", overlay.image.c_str());
 		}
 	}
-	if (!_viewOverlayLoaded)
+	// Mode 1 centres it, mode 2 lays it down row by row (the same for
+	// these full-width pictures), anything else draws nothing.
+	if (!_viewOverlayLoaded || (overlay.mode != 1 && overlay.mode != 2))
 		return;
-	int height = _viewOverlay.guessFrameHeight();
-	_viewOverlay.drawFrame(view, overlay.frame, height, (view.w - _viewOverlay.getWidth()) / 2, 0);
+	// One frame of every row (0x431355 sets no frame height).
+	_viewOverlay.drawFrame(view, 0, _viewOverlay.getRowCount(), (view.w - _viewOverlay.getWidth()) / 2, 0);
 }
 
 void STGEngine::drawHands(Graphics::Surface &view, uint32 delta) {
@@ -1410,8 +1412,9 @@ void STGEngine::attack() {
 		size_t slash = _levelRef.name.find_last_of("/\\");
 		Common::String folder = slash == Common::String::npos ? "" : _levelRef.name.substr(0, slash + 1);
 		std::unique_ptr<Common::SeekableReadStream> stream = _resources.open({ _levelRef.archive, folder + punch.image });
+		// Frames as tall as the original's 3D view (0x431D25).
 		if (stream && _punchOverlay.load(*stream))
-			_punchFrameHeight = _punchOverlay.guessFrameHeight();
+			_punchFrameHeight = std::min<int>(Overlay::kViewHeight, _punchOverlay.getRowCount());
 		else if (!punch.image.empty())
 			warning("Could not load the punch overlay %s", punch.image.c_str());
 	}
@@ -1520,11 +1523,21 @@ void STGEngine::showOverlay(const ResourceRef &ref) {
 		initPalette();
 	}
 
-	_overlayFrameHeight = _overlay.guessFrameHeight();
+	// As the game cuts them: the held items (nu*.ovr) into 88-row frames,
+	// the punches into frames as tall as the view, the rest whole.
+	size_t slash = ref.name.find_last_of("/\\");
+	Common::String file = Common::toLower(ref.name.substr(slash == Common::String::npos ? 0 : slash + 1));
+	int rows = _overlay.getRowCount();
+	if (file.compare(0, 2, "nu") == 0 && rows % HeldItem::kFrameHeight == 0)
+		_overlayFrameHeight = HeldItem::kFrameHeight;
+	else if (rows > Overlay::kViewHeight && rows % Overlay::kViewHeight == 0)
+		_overlayFrameHeight = Overlay::kViewHeight;
+	else
+		_overlayFrameHeight = std::max(1, rows);
 	_overlayFrame = 0;
 	_overlayTime = 0;
-	_status = Common::format("%s  %dx%d, %d frames (frame height guessed)", ref.toString().c_str(), _overlay.getWidth(),
-	                         _overlayFrameHeight, _overlay.getRowCount() / _overlayFrameHeight);
+	_status = Common::format("%s  %dx%d, %d frames", ref.toString().c_str(), _overlay.getWidth(), _overlayFrameHeight,
+	                         rows / _overlayFrameHeight);
 }
 
 void STGEngine::jumpArchive(int direction) {

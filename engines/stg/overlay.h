@@ -31,11 +31,17 @@ namespace STG {
  *     positive n: n palette indices follow, padded to an even length
  *
  * Every row of both samples decodes to exactly the width. The file does
- * not say how tall a frame is; presumably the game script does. Until
- * that is known, guessFrameHeight() makes an educated guess.
+ * not say how tall a frame is: whoever loads it says (0x4029A5), and
+ * without that it is one frame of every row. The held items cut theirs
+ * into 88-row frames, the punches (SET_PUNCH) into frames as tall as the
+ * 3D view, kViewHeight; the view overlays (SHOW_VIEW_OVERLAY) are one
+ * frame.
  */
 class Overlay {
 public:
+	/** The original's 3D view height (view word +0x7A), a punch's frame height. */
+	static constexpr int kViewHeight = 252;
+
 	/**
 	 * Decode the rows; pixels of palette index key (if not -1) are
 	 * see-through too, as 255 is in the held weapons (NUPHASER.OVR,
@@ -57,13 +63,6 @@ public:
 	 * the hotspots sgens.exe gives its poses only that way up.
 	 */
 	void drawFrame(Graphics::Surface &dst, int frame, int frameHeight, int x, int y) const;
-
-	/**
-	 * Guess the frame height. 252 rows divides every overlay seen so far
-	 * that is 504 or 640 wide; otherwise pick the divisor of the row count
-	 * that makes consecutive frames most alike.
-	 */
-	int guessFrameHeight() const;
 
 private:
 	Graphics::Surface _surface;

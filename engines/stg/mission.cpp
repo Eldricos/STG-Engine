@@ -326,7 +326,7 @@ void Mission::sync(Common::Serializer &s) {
 	s.syncAsUint16(_gaugeItem);
 	s.syncAsInt(_spin);
 	s.syncString(_viewOverlay.image);
-	s.syncAsInt(_viewOverlay.frame);
+	s.syncAsInt(_viewOverlay.mode);
 	s.syncVector(_outcomes, [](Common::Serializer &ser, int32 &v) { ser.syncAsSint32(v); });
 	s.syncAsUint16(_engaged);
 	s.syncAsDouble(_engagedX);
@@ -1971,10 +1971,10 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 	case 0xB8: { // SHOW_VIEW_OVERLAY
 		// 0x4415A7: a script resource's .OVR over the whole view, or -1 to remove it.
 		int16 image = vm.pop();
-		int16 frame = vm.pop();
+		int16 mode = vm.pop();
 		const Common::StringArray &names = _script.getResourceNames();
 		_viewOverlay.image = image >= 0 && image < (int16)names.size() ? names[image] : Common::String();
-		_viewOverlay.frame = frame;
+		_viewOverlay.mode = mode;
 		break;
 	}
 	case 0xC0: { // SET_FLAT_ZONES
