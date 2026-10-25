@@ -10,21 +10,30 @@ You need your own copy of the original game. No game data is included.
 
 ## Status
 
-The framework is in place and working:
+The whole game runs, from the title to the credits:
 
 | Area | State |
 |------|-------|
 | SDL3 backend: window, scaling, fullscreen, palette, software cursor, input, audio | Done |
-| `common/`: OSystem interface, files and archives (case-insensitive), streams, config, saves, events, surfaces, palettes, BMP decoder, software mixer, PCM/WAV | Done |
+| `common/`: OSystem interface, files and archives (case-insensitive), ZIP with our own DEFLATE decoder, streams, config, saves, events, surfaces, palettes, BMP decoder, software mixer, PCM/WAV | Done |
 | `engines/`: Engine/MetaEngine framework, table-driven detection, launcher and command line | Done |
-| `engines/stg`: detection, resource index, screen, save/load, and a viewer for the game's BMP/WAV files | Done |
-| `engines/stg`: the game's own data formats, scripts, scenes, combat, FMV | **Not started**: needs reverse engineering |
+| Data: the `.DAT`/`MUSIC.*` archives, images, speech, music, subtitles, fonts, overlays (`.OVR`), sprite sets (`.GS2`) | Done |
+| Movies: Cinepak video with 22 kHz PCM in AVI | Done |
+| The front end: title, captain's menu (load, save, settings, controls), intro, scrolling text, credits | Done |
+| The story (`STATES.INI`): movies, away missions and combats in order, branching on how each went, autosaves, the endings | Done |
+| The bridge: the star map, warp, scans, the Nexus, fleets, the crew's reports | Done |
+| Away missions: levels (`GAME.LV2`) in a software 3D renderer, collision and zones, doors and lifts, scripts (`GAME.BIN`) with every instruction the eleven missions use, actors, weapons and damage, the HUD, inventory, close-up panels and map | Done |
+| Space combat: the ships (DRE models, `SYSTEMS.DAT`), the console, helm orders, phasers and torpedoes, shields and system damage, waves, the enemies' AI, the crew's reports | Done |
 
-Right now, running the engine against a game directory lists what's there,
-lets you browse any `.BMP` images and play any `.WAV` sounds, and otherwise
-shows a test pattern. The 2 CD Windows release is in the detection table.
-Other versions are found by a fallback that looks for an executable mentioning
-"Generations", and reported as unknown versions.
+Still open:
+
+- A full playthrough looking for bugs.
+- A few script effects haven't been seen in the original yet, so how they look
+  is unconfirmed: some map marker styles, and the space combat's enemy view.
+  See [doc/formats.md](doc/formats.md).
+- Only the 2 CD Windows English release is in the detection table. Other
+  versions are found by a fallback that looks for an executable mentioning
+  "Generations", and reported as unknown versions.
 
 ## Layout
 
@@ -93,17 +102,93 @@ stg stg-win                      # run a remembered target
 stg --detect --path=...          # only report what is detected
 stg --dump-files --path=...      # file sizes and detection checksums
 stg --probe --path=...           # identify each file's format; hex dump unknown ones
+stg --extract --path=X.DAT --pattern='*.OVR' -o DIR   # extract files from an archive
 stg --help                       # every option
 ```
 
 Useful options: `-f` for fullscreen, `--filtering`, `--integer-scaling`,
-`-d<level>` and `--debugflags=resources` for debug output, and
+`-d<level>` with `--debugflags=` `resources`, `scripts` and/or `sound` for
+debug output (`-d2 --debugflags=scripts` logs every script event), and
 `--engine=stg --game=stg` to force the engine on files detection doesn't
 recognise.
 
 In game: **Alt+Enter** toggles fullscreen and **Ctrl+Alt+F** toggles filtering.
-The current viewer also uses Left/Right to browse images, Space to play the next
-sound, click for a test tone, F5/F7 to save/load, and Esc to quit.
+
+### Playing
+
+With disc 1's `STELLAR.DAT` (which holds the story script, `DESIGN/STATES.INI`)
+and `OPTIONS.DAT`, the game starts as the original does: the title, then the
+captain's menu (`CAPTAINS.BMP`). The original goes straight from the title into
+a new game; here the menu comes first, so a saved game can be loaded instead. New starts the story: its movies,
+then each away mission in the order the script gives, branching on whether its
+objectives were met, through to one of the endings and the credits. Esc in a
+mission opens the menu: Load, Save (nine slots plus the automatic save the
+story makes), New, Quit (the credits, then out), Settings (effects and music
+volume, difficulty, subtitles) and Controls (the keys, which can't be changed
+yet). Settings are kept in the settings file.
+
+Between missions the story runs on the bridge, the star map of the ten
+stars. Click a star, planet, station or fleet to select it; SET COURSE warps
+the Enterprise there, FULL SECTOR VIEW / SYSTEM VIEW zoom, LONG / SHORT RANGE
+SCAN reads what's there (short range only in the same system), SIM.
+DESTRUCTION shows where the Nexus would go if a star died, and the button
+under SET COURSE offers TRANSPORT (beam down), TACTICAL (engage) or the
+COMPUTER LOG (the current hint). Time passes only as you act: a warp takes a
+stardate, a scan a tenth, and the story's deadlines run on stardates. Space
+skips the speech playing; Esc or OPTIONS opens the menu.
+
+Space combat starts from the bridge, or when a hostile fleet is where the
+Enterprise arrives. After the briefing (PROCEED), fly by hand with the arrows
+(Up dives, Down climbs), Ctrl / Q and Num 0 / E to roll, Num + and Num - (or
+= and -) for speed, or give the helm an order with 1-7 (Close on target,
+Evade, Maintain distance, Full stop, Stand by, Warp out, Maintain status) or
+the menu the CONN line calls up. Shift (or F) fires phasers, Enter (or G) photon
+torpedoes; T or the button by the radar picks the next target, V switches
+between the forward and enemy views, and clicking the target's schematic
+picks a system to aim at. Win by destroying or driving off every ship (or
+beating Soran's); warping out loses the fight, and losing the Enterprise
+ends the game. The enemies fly the original's own AI: they make attack runs
+at the Enterprise, fire every seven seconds, swerve off before a collision and
+break off when badly hurt, and Soran keeps his distance while he has company.
+
+For testing, `--combat=N` goes straight into space combat N (1-25, the
+`SCn.MIS` files), and `--story=SECTION` starts the story at any section of
+`STATES.INI` as if a new game had got there, with the Enterprise at that
+section's star: `--story=Amargosa2`, `--story=Veridian`, `--story=Halee1Or2`.
+`--story=list` prints the section names to the console.
+
+`--viewer` starts the resource viewer instead, which is also what runs when
+the story's data isn't there.
+
+### The resource viewer
+
+The starting screen lists the away missions found in the game's data (the
+fifteen locations sgens.exe knows, from AMARGOS1 to VERID1): Up/Down choose
+one and Enter plays it in the 3D view, after its briefing picture (click PROCEED, or press Enter or Space). Esc leaves a
+mission for the list, and a mission that ends itself returns there too, saying
+whether its objectives were met. F5 saves a mission in progress and F7 picks
+it up again.
+In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
+archives. Tab and Shift+Tab jump to the next and previous 3D level (`GAME.LV2`),
+whose name the 3D view shows on its status line. Away from the starting screen, Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
+from the floor plan to a 3D view and then through the textures. In the 3D view, the
+arrows or WASD move, PgUp/PgDn look up and down, End levels the view, X (or
+keypad .) jumps, C (or Enter) crouches while held, L switches the lighting off
+and on, and Shift+C lets you walk through walls. Ctrl or the left
+mouse button attacks: with the weapon in use (verid1 starts with the phaser),
+held up in the view, it fires at the mouse cursor (or the centre of the view
+when the cursor is elsewhere); with none, bare-handed at the centre. `[` and
+`]` set the weapon's power, which is what a shot costs and the damage it does
+(the phaser starts at 4 of 16; Shift+`[`/`]` still change pages). 1-9 use the
+items carried, as clicking them would; the status line shows health, the item
+in use, its power and charge. With the game's console art the 3D view takes
+the top of the screen above the original's console: click inventory items to
+use them (right click to have them described), drag them to another slot or
+out of the inventory to drop them, click the close-up panel the scripts open
+(Space uses it), and switch the left panel with its tabs or B (life), H (map)
+and O (object). Home
+returns to the starfield, F8 plays the movies in turn, F5/F7 save and load, and Esc quits (or, in a
+mission, leaves it; when playing the story, it opens the menu).
 
 Settings and saves go in the per-user directory SDL picks for the platform:
 `~/.local/share/STG-Engine/stg/` on Linux, `%APPDATA%\STG-Engine\stg\` on
@@ -118,24 +203,13 @@ settings file is `stg.ini` and saves go in `saves/`.
 3. Add an entry to `engines/stg/detection_tables.h` with their names, sizes and
    MD5s (the template is in the comment there).
 
-## Next steps
+## How the work was done
 
-The real work is reverse engineering the original game, then filling in
-`engines/stg`:
-
-1. **Inventory the data.** Use `--dump-files` on each release (DOS, Windows,
-   demos, localised versions), add the detection entries, and find which file
-   types are the game's own containers.
-2. **Container formats.** Write an `Common::Archive` for each one and register it
-   with `SearchMan` in `STGEngine::run()`. The rest of the engine can then open
-   resources by name with `Common::File`.
-3. **Graphics and video.** Decode the sprite, background and palette formats
-   into `Graphics::Surface`s, and write a decoder for the cutscene format.
-4. **Sound and music.** Add an `Audio::AudioStream` for each audio encoding the
-   game uses.
-5. **Game logic.** Disassemble the executable (Ghidra or IDA) to recover the
-   scene, script, inventory, dialogue and 3D sections. Port each one into its
-   own file under `engines/stg/` as it's understood.
+Everything was worked out from the original: the data formats by reading the
+files, and the behaviour by disassembling `sgens.exe` with Ghidra. Addresses in
+the code's comments (like `0x4A7C91`) point at the original functions each
+piece follows. [doc/formats.md](doc/formats.md) records what is known about
+each format and system.
 
 New platform-neutral code (a decoder, a format reader) goes in `common/` so
 other engines could use it. Anything specific to Generations stays in

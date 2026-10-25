@@ -62,6 +62,12 @@ public:
 	void vLine(int x, int y1, int y2, uint32 color);
 	void drawLine(int x0, int y0, int x1, int y1, uint32 color);
 
+	/**
+	 * Fill a polygon using the even-odd rule. A pixel is filled when its
+	 * centre lies inside, so polygons sharing an edge don't overlap.
+	 */
+	void fillPolygon(const Common::Point *points, int count, uint32 color);
+
 	/** Copy a block of pixels in this surface's format, clipping to its bounds. */
 	void copyRectToSurface(const void *buffer, int srcPitch, int destX, int destY, int width, int height);
 	void copyRectToSurface(const Surface &src, int destX, int destY, const Common::Rect &subRect);

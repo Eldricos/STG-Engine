@@ -30,6 +30,9 @@ TEST(endian_roundtrip) {
 	WRITE_BE_UINT16(buf, 0xABCD);
 	CHECK_EQ(READ_LE_UINT16(buf), 0xCDABu);
 	CHECK_EQ(MKTAG('R', 'I', 'F', 'F'), 0x52494646u);
+
+	const byte wide[8] = { 1, 2, 3, 4, 5, 6, 7, 0x80 };
+	CHECK(READ_LE_UINT64(wide) == 0x8007060504030201ull);
 }
 
 TEST(string_helpers) {

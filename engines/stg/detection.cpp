@@ -14,6 +14,8 @@
 
 #include "engines/detection.h"
 #include "engines/stg/detection_tables.h"
+#include "engines/stg/disasm.h"
+#include "engines/stg/script.h"
 #include "engines/stg/stg.h"
 
 namespace STG {
@@ -116,6 +118,32 @@ public:
 				return fallback;
 		}
 		return games;
+	}
+
+	bool describeFile(Common::SeekableReadStream &stream, bool verbose, Common::String &out) const override {
+		if (stream.size() < 4 || stream.readUint32BE() != MKTAG('S', 'G', 'E', 'N'))
+			return false;
+		stream.seek(0);
+		ScriptFile script;
+		if (!script.load(stream)) {
+			out = "SGEN script (could not be parsed)";
+			return true;
+		}
+		size_t states = 0, blocks = 0;
+		for (const ScriptObject &object : script.getObjects()) {
+			states += object.states.size();
+			for (const ScriptState &state : object.states)
+				blocks += state.blocks.size();
+		}
+		out = Common::format("SGEN script v%u: %d objects, %d states, %d event blocks, %d words of code",
+		                     script.getVersion(), (int)script.getObjects().size(), (int)states, (int)blocks,
+		                     (int)script.getCode().size());
+		out += "\n  resources:";
+		for (const Common::String &name : script.getResourceNames())
+			out += " " + name;
+		if (verbose)
+			out += "\n" + disassembleScript(script);
+		return true;
 	}
 
 	Common::Error createInstance(OSystem *syst, const DetectedGame &game,

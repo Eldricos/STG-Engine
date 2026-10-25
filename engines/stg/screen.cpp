@@ -10,6 +10,8 @@
 
 #include "common/system.h"
 
+#include <algorithm>
+
 namespace STG {
 
 Screen::Screen(OSystem *system) : _system(system) {
@@ -44,6 +46,31 @@ void Screen::drawCentered(const Graphics::Surface &image) {
 			image.format.colorToRGB(image.getPixel(sx, sy), r, g, b);
 			_surface.setPixel(x + sx, y + sy, _palette.findBestColor(r, g, b));
 		}
+	}
+}
+
+void Screen::drawImage(const Graphics::Surface &image, int areaHeight) {
+	if (image.w <= 0 || image.h <= 0)
+		return;
+	int scale = std::min(kWidth / image.w, areaHeight / image.h);
+	scale = std::max(1, std::min(scale, 3));
+	if (scale == 1 || !image.format.isCLUT8()) {
+		// Centre unscaled images in the same area.
+		int x = (kWidth - image.w) / 2;
+		int y = std::max(0, (areaHeight - image.h) / 2);
+		if (image.format.isCLUT8())
+			_surface.copyRectToSurface(image, x, y, Common::Rect(image.w, image.h));
+		else
+			drawCentered(image);
+		return;
+	}
+
+	int x0 = (kWidth - image.w * scale) / 2;
+	int y0 = (areaHeight - image.h * scale) / 2;
+	for (int y = 0; y < image.h * scale; y++) {
+		const byte *src = (const byte *)image.getBasePtr(0, y / scale);
+		for (int x = 0; x < image.w * scale; x++)
+			_surface.setPixel(x0 + x, y0 + y, src[x / scale]);
 	}
 }
 

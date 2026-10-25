@@ -11,11 +11,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 
 #include "common/archive.h"
 #include "common/config-manager.h"
 #include "common/debug.h"
 #include "common/system.h"
+#include "common/zip.h"
 #include "engines/detection.h"
 #include "engines/engine.h"
 #include "engines/metaengine.h"
@@ -40,6 +42,7 @@ const char *const kHelpString =
 	"  --add                    Detect a game in --path and add it to the config file\n"
 	"  --dump-files             Print size and detection MD5 of every file in --path\n"
 	"  --probe                  Identify the format of every file in --path (or one file)\n"
+	"  --extract                Extract files from the ZIP archive given by --path\n"
 	"\n"
 	"Options:\n"
 	"  -p, --path=PATH          Directory containing the game data\n"
@@ -51,8 +54,14 @@ const char *const kHelpString =
 	"      --integer-scaling    Only scale by whole multiples\n"
 	"      --savepath=PATH      Directory for saved games\n"
 	"      --probe-bytes=NUM    Bytes to hex dump per unknown file with --probe\n"
+	"      --pattern=GLOB       Files to extract, e.g. 'FONTS/*' or '*.OVR' (default: all)\n"
+	"  -o, --output=DIR         Directory to extract into (default: current directory)\n"
 	"      --cd1=PATH           Disc 1 (or a copy of it), for files not installed to disk\n"
 	"      --cd2=PATH           Disc 2 (or a copy of it)\n"
+	"      --viewer             Browse the game's files instead of playing it\n"
+	"      --combat=N           For testing: straight into space combat N (1-25)\n"
+	"      --story=SECTION      For testing: the story from a section of STATES.INI\n"
+	"                           (e.g. Amargosa2, Veridian; --story=list names them)\n"
 	"  -c, --config=FILE        Use an alternate configuration file\n"
 	"  -d, --debuglevel=NUM     Set debug verbosity\n"
 	"      --debugflags=A,B     Enable engine debug channels (or 'all')\n"
@@ -86,8 +95,13 @@ bool parseCommandLine(int argc, char *argv[], Command &command) {
 		{ nullptr, "integer-scaling", "integer_scaling", false, "true" },
 		{ nullptr, "savepath", "savepath", true, nullptr },
 		{ nullptr, "probe-bytes", "probe_bytes", true, nullptr },
+		{ nullptr, "pattern", "pattern", true, nullptr },
+		{ "o", "output", "output", true, nullptr },
 		{ nullptr, "cd1", "cd1path", true, nullptr },
 		{ nullptr, "cd2", "cd2path", true, nullptr },
+		{ nullptr, "viewer", "viewer", false, "true" },
+		{ nullptr, "combat", "combat", true, nullptr },
+		{ nullptr, "story", "story", true, nullptr },
 		{ "c", "config", "config", true, nullptr },
 		{ "d", "debuglevel", "debuglevel", true, nullptr },
 		{ nullptr, "debugflags", "debugflags", true, nullptr },
@@ -96,7 +110,7 @@ bool parseCommandLine(int argc, char *argv[], Command &command) {
 		{ nullptr, "speech-volume", "speech_volume", true, nullptr },
 	};
 	static const char *const commands[] = {
-		"help", "version", "list-engines", "list-games", "list-targets", "detect", "add", "dump-files", "probe"
+		"help", "version", "list-engines", "list-games", "list-targets", "detect", "add", "dump-files", "probe", "extract"
 	};
 
 	for (int i = 1; i < argc; i++) {
@@ -178,6 +192,7 @@ void registerDefaults() {
 	ConfMan.registerDefault("sfx_volume", 192);
 	ConfMan.registerDefault("speech_volume", 192);
 	ConfMan.registerDefault("mute", false);
+	ConfMan.registerDefault("viewer", false);
 	ConfMan.registerDefault("debuglevel", 0);
 
 	for (const MetaEngine *engine : getMetaEngines())
@@ -312,7 +327,7 @@ int probeCommand(const Command &command) {
 
 	int bytes = ConfMan.getInt("probe_bytes");
 	if (!path.isDirectory()) {
-		printf("%s\n", probeFile(path, path.getName(), bytes > 0 ? bytes : 512).c_str());
+		printf("%s\n", probeFile(path, path.getName(), bytes > 0 ? bytes : 512, true).c_str());
 		return 0;
 	}
 
@@ -326,6 +341,53 @@ int probeCommand(const Command &command) {
 		printf("%s\n", probeFile(node, member->getName(), bytes > 0 ? bytes : 128).c_str());
 	}
 	return 0;
+}
+
+int extractCommand(const Command &command) {
+	Common::FSNode path = getPathArgument(command);
+	std::shared_ptr<Common::ZipArchive> zip = Common::ZipArchive::open(path);
+	if (!zip) {
+		fprintf(stderr, "'%s' is not a ZIP archive\n", path.getPath().c_str());
+		return 1;
+	}
+
+	Common::String pattern = ConfMan.hasKey("pattern") ? ConfMan.get("pattern") : "*";
+	Common::FSNode output(ConfMan.hasKey("output") ? ConfMan.get("output") : Common::String("."));
+
+	int extracted = 0, failed = 0;
+	for (const Common::ZipArchive::Entry &entry : zip->getEntries()) {
+		if (!Common::matchString(entry.name, pattern))
+			continue;
+
+		// Recreate the member's directories under the output directory,
+		// refusing names that would escape it.
+		Common::StringArray parts = Common::split(entry.name, '/');
+		bool safe = true;
+		for (const Common::String &part : parts)
+			safe &= !part.empty() && part != "." && part != "..";
+		if (!safe) {
+			warning("Skipping unsafe name %s", entry.name.c_str());
+			failed++;
+			continue;
+		}
+		Common::FSNode target = output;
+		for (size_t i = 0; i < parts.size(); i++)
+			target = Common::FSNode(target.getNativePath() / std::filesystem::u8path(parts[i]));
+		target.getParent().createDirectory();
+
+		std::vector<byte> data;
+		std::unique_ptr<Common::WriteStream> out;
+		if (!zip->extract(entry, data) || !(out = target.createWriteStream()) ||
+		    out->write(data.data(), (uint32)data.size()) != data.size() || !out->flush()) {
+			warning("Could not extract %s", entry.name.c_str());
+			failed++;
+			continue;
+		}
+		printf("%s\n", target.getPath().c_str());
+		extracted++;
+	}
+	printf("Extracted %d files%s\n", extracted, failed ? Common::format(", %d failed", failed).c_str() : "");
+	return failed ? 1 : 0;
 }
 
 /** Pick the game to run, either from a config target or by detection. */
@@ -503,6 +565,8 @@ int stgMain(OSystem &system, int argc, char *argv[]) {
 		return addCommand(command);
 	if (command.name == "probe")
 		return probeCommand(command);
+	if (command.name == "extract")
+		return extractCommand(command);
 
 	system.initBackend();
 	return runGame(system, command);

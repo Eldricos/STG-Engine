@@ -16,10 +16,13 @@
  * Reverse engineering aid: identify a file's format from its contents.
  *
  * Known formats (RIFF WAVE/AVI, BMP, executables, ...) are described;
- * for AVI the stream codecs are listed. Unknown files get a hex dump of
+ * for AVI the stream codecs are listed. ZIP archives are summarised by
+ * extension, with one member of each type probed in turn; listMembers
+ * also lists every member. Unknown files get a hex dump of
  * their first dumpBytes bytes and the leading little-endian 32-bit
  * values, which is usually enough to spot a header and offset table.
  */
-Common::String probeFile(const Common::FSNode &file, const Common::String &name, uint32 dumpBytes);
+Common::String probeFile(const Common::FSNode &file, const Common::String &name, uint32 dumpBytes,
+                         bool listMembers = false);
 
 #endif

@@ -52,6 +52,10 @@ private:
  */
 std::vector<unsigned char> makeBMP8(int width, int height, const std::vector<unsigned char> &pixels, bool rle);
 
+/** A small ZIP file (see test_zip.cpp) containing README.TXT, SHORT.TXT, Data/Log.txt and RAW.BIN. */
+extern const unsigned char kTestZip[];
+extern const size_t kTestZipSize;
+
 } // End of namespace Test
 
 #define TEST_CONCAT2(a, b) a##b

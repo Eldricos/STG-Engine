@@ -43,6 +43,12 @@ public:
 	/** Draw a surface centred on screen, converting truecolour images to the palette. */
 	void drawCentered(const Graphics::Surface &image);
 
+	/**
+	 * Draw an image centred in the top areaHeight rows, enlarged by the
+	 * largest whole factor (up to 3x) that fits.
+	 */
+	void drawImage(const Graphics::Surface &image, int areaHeight);
+
 	/** Copy the back buffer to the backend and present it. */
 	void update();
 

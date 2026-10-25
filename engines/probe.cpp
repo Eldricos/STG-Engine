@@ -11,10 +11,13 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <map>
 #include <vector>
 
 #include "common/endian.h"
 #include "common/stream.h"
+#include "common/zip.h"
+#include "engines/metaengine.h"
 
 namespace {
 
@@ -166,19 +169,12 @@ void hexDump(const std::vector<byte> &data, uint32 bytes, Common::String &out) {
 		out += Common::format(" %u", READ_LE_UINT32(&data[i]));
 }
 
-} // End of anonymous namespace
-
-Common::String probeFile(const Common::FSNode &file, const Common::String &name, uint32 dumpBytes) {
-	int64 fileSize = file.getFileSize();
-	Common::String out = Common::format("%s (%lld bytes): ", name.c_str(), (long long)fileSize);
-
-	std::unique_ptr<Common::SeekableReadStream> stream = file.createReadStream();
-	if (!stream)
-		return out + "unreadable";
-	std::vector<byte> data(std::min<int64>(fileSize, kProbeReadSize));
-	data.resize(stream->read(data.data(), (uint32)data.size()));
-	if (data.empty())
-		return out + "empty";
+/** Identify a format from the leading bytes of a file or archive member. */
+void describeData(const std::vector<byte> &data, int64 fullSize, uint32 dumpBytes, Common::String &out) {
+	if (data.empty()) {
+		out += "empty";
+		return;
+	}
 
 	auto has = [&](size_t offset, const char *magic) {
 		size_t len = strlen(magic);
@@ -201,7 +197,7 @@ Common::String probeFile(const Common::FSNode &file, const Common::String &name,
 				pos += 8 + size + (size & 1);
 			}
 		}
-		return out;
+		return;
 	}
 	if (has(0, "MZ")) {
 		bool pe = false;
@@ -209,21 +205,35 @@ Common::String probeFile(const Common::FSNode &file, const Common::String &name,
 			uint32 peOffset = READ_LE_UINT32(&data[0x3C]);
 			pe = peOffset + 4 <= data.size() && memcmp(&data[peOffset], "PE\0\0", 4) == 0;
 		}
-		return out + (pe ? "Windows PE executable" : "DOS executable");
+		out += pe ? "Windows PE executable" : "DOS executable";
+		return;
 	}
-	if (has(0, "BM") && data.size() >= 30)
-		return out + Common::format("BMP %dx%d, %u bpp", (int32)READ_LE_UINT32(&data[18]), (int32)READ_LE_UINT32(&data[22]),
-		                            READ_LE_UINT16(&data[28]));
-	if (data.size() >= 6 && (READ_LE_UINT16(&data[4]) == 0xAF11 || READ_LE_UINT16(&data[4]) == 0xAF12))
-		return out + Common::format("FLIC animation %ux%u", READ_LE_UINT16(&data[8]), READ_LE_UINT16(&data[10]));
-	if (has(0, "Creative Voice File"))
-		return out + "Creative Voice (VOC)";
-	if (has(0, "FORM"))
-		return out + "IFF FORM " + (data.size() >= 12 ? fourCCLE(&data[8]) : Common::String());
-	if (has(0, "PK\x03\x04"))
-		return out + "ZIP archive";
-	if (has(0, "\x13\x5d\x65\x8c"))
-		return out + "InstallShield compressed archive";
+	if (has(0, "BM") && data.size() >= 30) {
+		out += Common::format("BMP %dx%d, %u bpp", (int32)READ_LE_UINT32(&data[18]), (int32)READ_LE_UINT32(&data[22]),
+		                      READ_LE_UINT16(&data[28]));
+		return;
+	}
+	if (data.size() >= 12 && (READ_LE_UINT16(&data[4]) == 0xAF11 || READ_LE_UINT16(&data[4]) == 0xAF12)) {
+		out += Common::format("FLIC animation %ux%u, %u frames", READ_LE_UINT16(&data[8]), READ_LE_UINT16(&data[10]),
+		                      READ_LE_UINT16(&data[6]));
+		return;
+	}
+	if (has(0, "Creative Voice File")) {
+		out += "Creative Voice (VOC)";
+		return;
+	}
+	if (has(0, "FORM")) {
+		out += "IFF FORM " + (data.size() >= 12 ? fourCCLE(&data[8]) : Common::String());
+		return;
+	}
+	if (has(0, "PK\x03\x04")) {
+		out += "ZIP archive";
+		return;
+	}
+	if (has(0, "\x13\x5d\x65\x8c")) {
+		out += "InstallShield compressed archive";
+		return;
+	}
 	if (looksLikeText(data)) {
 		out += "text";
 		// Short text files (INI files and the like) are shown in full.
@@ -231,11 +241,124 @@ Common::String probeFile(const Common::FSNode &file, const Common::String &name,
 			for (const Common::String &line : Common::split(Common::String(data.begin(), data.end()), '\n'))
 				out += "\n  | " + Common::trim(line);
 		}
-		return out;
+		return;
 	}
 
 	out += "unknown";
-	out += offsetTableHint(data, fileSize);
+	out += offsetTableHint(data, fullSize);
 	hexDump(data, dumpBytes, out);
+}
+
+Common::String extensionOf(const Common::String &name) {
+	size_t dot = name.rfind('.');
+	size_t slash = name.rfind('/');
+	if (dot == Common::String::npos || (slash != Common::String::npos && dot < slash))
+		return "(none)";
+	return Common::toUpper(name.substr(dot + 1));
+}
+
+/** Members larger than this are not decompressed just to sample them. */
+const uint32 kMaxSampleSize = 32 * 1024 * 1024;
+
+void describeZip(const Common::FSNode &file, uint32 dumpBytes, bool listAll, Common::String &out) {
+	std::shared_ptr<Common::ZipArchive> zip = Common::ZipArchive::open(file);
+	if (!zip) {
+		out += "ZIP archive (could not read the central directory)";
+		return;
+	}
+
+	const std::vector<Common::ZipArchive::Entry> &entries = zip->getEntries();
+	uint64 total = 0;
+	int encrypted = 0;
+	std::map<Common::String, int> methods;
+	struct ExtInfo {
+		int count = 0;
+		uint64 size = 0;
+		const Common::ZipArchive::Entry *sample = nullptr;
+	};
+	std::map<Common::String, ExtInfo> extensions;
+	for (const Common::ZipArchive::Entry &entry : entries) {
+		total += entry.size;
+		encrypted += entry.isEncrypted();
+		methods[Common::ZipArchive::getMethodName(entry.method)]++;
+		ExtInfo &info = extensions[extensionOf(entry.name)];
+		info.count++;
+		info.size += entry.size;
+		if (!info.sample)
+			info.sample = &entry;
+	}
+
+	out += Common::format("ZIP archive, %d members, %llu bytes uncompressed", (int)entries.size(),
+	                      (unsigned long long)total);
+	for (const auto &m : methods)
+		out += Common::format(", %d %s", m.second, m.first.c_str());
+	if (encrypted)
+		out += Common::format(", %d ENCRYPTED", encrypted);
+
+	for (const auto &ext : extensions) {
+		const ExtInfo &info = ext.second;
+		out += Common::format("\n  .%-6s %5d files %12llu bytes   e.g. %s: ", ext.first.c_str(), info.count,
+		                      (unsigned long long)info.size, info.sample->name.c_str());
+		if (info.sample->size > kMaxSampleSize) {
+			out += "too large to sample";
+			continue;
+		}
+		std::vector<byte> data;
+		if (!zip->extract(*info.sample, data)) {
+			out += Common::format("could not extract (%s)", Common::ZipArchive::getMethodName(info.sample->method));
+			continue;
+		}
+		int64 fullSize = (int64)data.size();
+		if (data.size() > kProbeReadSize)
+			data.resize(kProbeReadSize);
+		Common::String desc;
+		describeData(data, fullSize, dumpBytes, desc);
+		// Indent the sample's own detail lines under its extension line.
+		size_t pos = 0;
+		while ((pos = desc.find('\n', pos)) != Common::String::npos) {
+			desc.insert(pos + 1, "    ");
+			pos += 5;
+		}
+		out += desc;
+	}
+
+	if (listAll) {
+		out += "\n  Members:";
+		for (const Common::ZipArchive::Entry &entry : entries)
+			out += Common::format("\n    %-40s %10u  %s", entry.name.c_str(), entry.size,
+			                      Common::ZipArchive::getMethodName(entry.method));
+	}
+}
+
+} // End of anonymous namespace
+
+Common::String probeFile(const Common::FSNode &file, const Common::String &name, uint32 dumpBytes, bool listMembers) {
+	int64 fileSize = file.getFileSize();
+	Common::String out = Common::format("%s (%lld bytes): ", name.c_str(), (long long)fileSize);
+
+	std::unique_ptr<Common::SeekableReadStream> stream = file.createReadStream();
+	if (!stream)
+		return out + "unreadable";
+	std::vector<byte> data(std::min<int64>(fileSize, kProbeReadSize));
+	data.resize(stream->read(data.data(), (uint32)data.size()));
+
+	// Scripts keep their resource list at the very end, so read them whole.
+	if (data.size() >= 4 && memcmp(data.data(), "SGEN", 4) == 0 && fileSize <= 4 * 1024 * 1024) {
+		stream->seek(0);
+		data = stream->readAll();
+	}
+
+	// Engines know their own formats best.
+	for (const MetaEngine *engine : getMetaEngines()) {
+		Common::MemoryReadStream memory(data.data(), (uint32)data.size());
+		Common::String description;
+		if (engine->describeFile(memory, listMembers, description))
+			return out + description;
+	}
+
+	if (data.size() >= 4 && memcmp(data.data(), "PK\x03\x04", 4) == 0)
+		describeZip(file, dumpBytes, listMembers, out);
+	else
+		describeData(data, fileSize, dumpBytes, out);
 	return out;
 }
