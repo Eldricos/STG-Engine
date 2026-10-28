@@ -1160,11 +1160,17 @@ destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
   `0x4A2A80`); the player line's yaw and pitch go unused. With yaw read from +y
   towards -x, 66 of the 68 enemies the missions start with face the
   Enterprise (read the other way, 26).
-- Cloaking isn't in the engine yet. In the original, ships with a CLOAK
-  system fade out (`0x4AD474`, `0x4AD604`); the radar leaves them out
-  (`0x4AAC68`: +0xD4 = 0x4000 with flag 0x2000, not the Enterprise), and a
-  cloaked target can't be locked ("Target cloaked - no weapons lock"), so
-  torpedoes fly unguided.
+- Cloaking: a ship's +0xD4 runs from 0 (seen) to 0x4000 (cloaked), stepping
+  0x444 a frame by its rate +0xD8 (`0x4AD474`); fully cloaked, it sits out
+  of the fight (no AI) and drops off the radar (`0x4AAC68`), and once its
+  timer (+0xEA0, 20 s) is up it starts to uncloak (`0x4AD604`). Starting to
+  cloak (`0x4AD3B4`, cue 0x3E) is never called: no ship cloaks during a
+  fight. Ships of later waves are made fully cloaked and hidden at load and
+  uncloak (cue 0x3F) when their wave comes in (`0x4A2FA9`); destroyed ships
+  go to 0x4000 to vanish (`0x4AC2D3`). Both cloaking and uncloaking act only
+  with flag +0x2C 0x2000, which nothing in the exe is seen setting. The
+  engine's hidden waves and destroyed ships behave the same, without the
+  fade.
 - The forward view (`0x4A0D13`) sits two of the Enterprise's radii out along
   its own axis, ahead of it, so the Enterprise is never in sight. The enemy
   view (`0x4A1E85`) sits one radius out towards the target and looks at it,
