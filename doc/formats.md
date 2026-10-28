@@ -1156,7 +1156,10 @@ The console is COMBAT.RAS with the 3D view in its hole at (52,10), 532 x 231,
 destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
 
 - The forward view (`0x4A0D13`) sits two of the Enterprise's radii out along
-  its own axis, ahead of it, so the Enterprise is never in sight.
+  its own axis, ahead of it, so the Enterprise is never in sight. The enemy
+  view (`0x4A1E85`) sits one radius out towards the target and looks at it,
+  keeping the Enterprise's up. Both add the viewscreen zoom slider's
+  setting × 600 to that distance; the engine has no slider yet, so it is 0.
 - The right panel shows the Enterprise's schematic (SENT_n). Clicking the CONN
   line (262,440-438,460, `0x4AECC6`) calls up the helm menu (CONNMNU0 at
   (472,310)) over it, and letting go puts it away. The CONN line shows the

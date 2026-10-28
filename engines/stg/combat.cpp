@@ -1343,13 +1343,16 @@ void SpaceCombat::drawRadar(Graphics::Surface &screen) {
 
 void SpaceCombat::drawView(Graphics::Surface &screen) {
 	const Ship &e = _ships[0];
-	// The camera: behind the Enterprise, or on the line to the target.
+	// The camera sits out along its own line of sight from the Enterprise,
+	// so the Enterprise itself is never in view.
 	Vec3 camPos;
 	Mat3 camRot;
 	if (_enemyView && _target >= 0 && isEnemyAlive(_ships[_target])) {
+		// 0x4A1E85: one radius out towards the target, looking at it, the
+		// Enterprise's up kept.
 		Vec3 dir = (_ships[_target].position - e.position).normalized();
-		camPos = e.position - dir * (e.radius * 3) + e.orientation.up * (e.radius * 0.6);
-		camRot = Mat3::lookAlong(_ships[_target].position - camPos, e.orientation.up);
+		camPos = e.position + dir * e.radius;
+		camRot = Mat3::lookAlong(dir, e.orientation.up);
 	} else {
 		// 0x4A0D13: two of its radii out along its axis, ahead of it, so the
 		// Enterprise itself is out of sight.
@@ -1377,7 +1380,7 @@ void SpaceCombat::drawView(Graphics::Surface &screen) {
 	auto lookup = [this](const Common::String &name) { return texture(name); };
 	for (size_t i = 0; i < _ships.size(); i++) {
 		const Ship &s = _ships[i];
-		if (!s.alive || s.hidden || s.gone || (i == 0 && !_enemyView))
+		if (!s.alive || s.hidden || s.gone || i == 0)
 			continue;
 		double distance = (s.position - camPos).length();
 		// The detailed model near, the rough one further off (0x54E5D8).
