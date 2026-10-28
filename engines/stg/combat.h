@@ -98,6 +98,8 @@ private:
 		double size;
 		uint32 time;
 		const SprAnimation *sprite;
+		/** A ship blowing up, which the radar marks. */
+		bool ship = false;
 	};
 	enum Helm { kClose = 0, kEvade = 1, kMaintain = 2, kFullStop = 3, kStandBy = 4, kWarpOut = 5, kMaintainStatus = 6 };
 	enum Phase { kBriefing, kFight, kEnding };
@@ -147,6 +149,17 @@ private:
 	void drawImage(Graphics::Surface &screen, const CombatImage *image, int x, int y, const Common::Rect *clip = nullptr);
 	void drawText(Graphics::Surface &screen, const Common::String &text, int x, int y, bool small = false);
 	void drawBars(Graphics::Surface &screen, const Ship &ship, int x, int y);
+	/** How a system's part of a schematic looks: 0 working, 1 damaged, 2 destroyed. */
+	int systemLook(const Ship &ship, int system) const;
+	/** The system display (0x49E232): each system's part of S???_STR from its own picture. */
+	void drawSchematic(Graphics::Surface &screen, const Ship &ship, int x, int y);
+	/** The shield facing display (0x49F88F): the ship in 3D, from the other one. */
+	void drawShieldView(Graphics::Surface &screen, const Ship &ship, const Ship &other, const Common::Rect &panel);
+	/** One of the starfield's shapes (0x4AE2BF), in STANDARD.PAL colours. */
+	void drawStar(int x, int y, int type);
+	/** Flying by hand puts the helm on stand by (0x49557B). */
+	void flyByHand();
+	void steerByMouse(int x, int y);
 	void drawRadar(Graphics::Surface &screen);
 
 	const ResourceManager &_resources;
@@ -172,6 +185,31 @@ private:
 	std::vector<Beam> _beams;
 	std::vector<Explosion> _explosions;
 	std::vector<Vec3> _stars;
+	std::vector<int> _starTypes;
+	/**
+	 * The seven stars that stream out from the middle as the Enterprise
+	 * moves (0x4ADC6A): an offset from the centre, grown each step by
+	 * 1 + speed / top speed x 0.075.
+	 */
+	struct Streak {
+		double x, y, scale;
+		int type;
+	};
+	std::vector<Streak> _streaks;
+	/** Somewhere random in the 1904-pixel square round the middle, at scale 1. */
+	Streak newStreak();
+	CombatRenderer _panelRenderer;
+	/**
+	 * Each systems panel's shield facing display (0x54A0B4, the buttons
+	 * at its foot); off, the system display. 0 the Enterprise, 1 the target.
+	 */
+	bool _shieldView[2] = {};
+	/** Their buttons: the Enterprise's at the right panel's foot, the target's at the left's. */
+	const Common::Rect kViewButton[2] = { Common::Rect(449, 435, 468, 462), Common::Rect(174, 435, 192, 462) };
+	/** Held on the viewscreen: steering towards the mouse (0x4AEFD4), -1..1. */
+	bool _steering = false;
+	double _mouseTurn[2] = {};
+	uint32 _frames = 0;
 	CombatRenderer _renderer;
 
 	Phase _phase = kBriefing;

@@ -1182,6 +1182,30 @@ destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
   the start). SVIEWN.RAS is drawn above the knob and the lit SVIEWF.RAS below
   it. Besides moving the camera out, the zoom spreads the stars from the
   centre by 1 + zoom/30 (`0x4ADC6A`).
+- The systems panels (`0x49E232`) show the system display: S???_STR.RAS
+  numbers each pixel with a system (1-4 the shields, 5-12 weapons to cloak),
+  and each system's pixels come from S???_0 (working, bright), _1 (down or
+  damaged, dim) or _2 (destroyed, red); unnumbered pixels from _1
+  (`0x49EAF6`). The buttons at their feet (left 174,435 for the target,
+  right 449,435 for the Enterprise; BSCANL/BSCANR N and F) switch a panel to
+  the shield facing display and back, with "Shield facing display enabled" /
+  "System display enabled" (COMP0059/0058, `0x4AEC22`): below the bars, 57
+  rows down to row 461, black, with the ship drawn from 3 of its radii out
+  towards the other ship, 60 degrees across (`0x49F88F`).
+- Held on the viewscreen (hotspot 17, `0x4AEFD4`) the mouse steers: its
+  distance from (319,124) as a share of half the hotspot, ±100, joins the
+  stick's axes until let go. Here left of the middle turns left and above it
+  dives, as the arrow keys; the original's signs aren't confirmed.
+- The starfield (`0x4ADC6A`, shapes `0x4AE2BF`): stars of 13 types; type 1 a
+  cross, 3 one 0xA9 pixel, 4 an X, 5 a plus, 6 and 7 three-pixel bars, the rest
+  one pixel, 0x84 or (one time in eight) 0x87, in STANDARD.PAL. Seven more
+  stream out from the middle: each frame their offset from it grows by
+  1 + speed / top speed × 0.075, and out of the view (or back within 30
+  pixels of the middle going astern) they start again anywhere within 952
+  pixels of it at scale 1.
+- On the radar a ship blowing up is SEXP1/SEXP2 by turns (`0x4AB6DA`).
+- The torpedo count is font 1: 0-9BIG.RAS's 6 x 20 digits, 8 apart, at
+  (369,408) (`0x4AA6BB`, `0x49E01B`).
 - The radar's slider (450,317-465,371, hotspot 13) works the same way, with
   SRADARN/SRADARF. Its step s sets the range to (19 - s) × 7500 + 10
   (`0x4AB7E2`); the fight starts at step 12, 52510 (`0x49D640`).
