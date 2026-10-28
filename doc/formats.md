@@ -1166,6 +1166,17 @@ destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
   the start). SVIEWN.RAS is drawn above the knob and the lit SVIEWF.RAS below
   it. Besides moving the camera out, the zoom spreads the stars from the
   centre by 1 + zoom/30 (`0x4ADC6A`).
+- The radar's slider (450,317-465,371, hotspot 13) works the same way, with
+  SRADARN/SRADARF. Its step s sets the range to (19 - s) × 7500 + 10
+  (`0x4AB7E2`); the fight starts at step 12, 52510 (`0x49D640`).
+- The radar (`0x4AB102`, drawn by `0x4AB5C1`) is round the Enterprise, which
+  faces up. A ship more than the range off on any axis isn't shown. The rest
+  sit on the plane at (321 + sideways × 102 / range, 320 − ahead × 24 /
+  range), on a stalk as tall as height × 24 / range. The stalk is white with
+  the 11 x 11 marker (S???MAP, MAPH for the target) at its top for a ship
+  level or above, and red with the marker at its foot for one below. Ships
+  more than 96 pixels to the side or 18 ahead or behind, outside the plane's
+  ellipse (half-widths at 0x54F750) or off rows 280-360 aren't drawn.
 - The right panel shows the Enterprise's schematic (SENT_n). Clicking the CONN
   line (262,440-438,460, `0x4AECC6`) calls up the helm menu (CONNMNU0 at
   (472,310)) over it, and letting go puts it away. The CONN line shows the

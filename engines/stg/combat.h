@@ -185,14 +185,34 @@ private:
 	/** The CONN line (hotspot 2), which calls up the helm menu over the Enterprise's panel. */
 	const Common::Rect kConnLine = Common::Rect(262, 440, 439, 461);
 	bool _helmMenu = false;
-	/** The viewscreen zoom slider (hotspot 14) and its setting, 0..18 (0x54A0B0). */
-	const Common::Rect kViewSlider = Common::Rect(618, 127, 634, 181);
-	static const int kViewZoomSteps = 18;
-	int _viewZoom = 0;
-	/** Where the knob is: the row of the slot the mouse last set. It starts at the bottom, unlit. */
-	int _viewSliderRow = 54;
-	bool _draggingSlider = false;
-	void moveViewSlider(int y);
+	/**
+	 * The console's sliders (0x495B49): a slot the knob follows the mouse
+	 * down, 18 steps from top to bottom, drawn unlit (the N picture) above
+	 * the knob and lit (F) below.
+	 */
+	struct Slider {
+		Common::Rect slot;
+		const char *unlit, *lit;
+		/** The row of the slot the mouse last set. */
+		int row;
+		/** 0 at the top .. 18 at the bottom. */
+		int step() const { return 18 * (row + 1) / slot.height(); }
+	};
+	/**
+	 * The viewscreen zoom (hotspot 14): 18 - step, 0..18 (0x4AEDFE,
+	 * 0x54A0B0), 0 at the start, the slot unlit.
+	 */
+	Slider _viewSlider = { Common::Rect(618, 127, 634, 181), "SVIEWN.RAS", "SVIEWF.RAS", 54 };
+	/**
+	 * The radar's range (hotspot 13): (19 - step) x 7500 + 10 (0x4AB7E2),
+	 * at step 12 to start with (0x49D640), 52510.
+	 */
+	Slider _radarSlider = { Common::Rect(450, 317, 466, 372), "SRADARN.RAS", "SRADARF.RAS", 36 };
+	Slider *_dragging = nullptr;
+	int getViewZoom() const { return 18 - _viewSlider.step(); }
+	double getRadarRange() const { return (19 - _radarSlider.step()) * 7500.0 + 10; }
+	void moveSlider(Slider &slider, int y);
+	void drawSlider(Graphics::Surface &screen, const Slider &slider);
 	double _keepRange = 0;
 	bool _enemyView = false;
 	bool _phasersOnline = true, _photonsOnline = true;

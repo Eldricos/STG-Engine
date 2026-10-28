@@ -1181,25 +1181,31 @@ bool SpaceCombat::takeOptionsRequest() {
 	return request;
 }
 
-void SpaceCombat::moveViewSlider(int y) {
-	// 0x495B49: the knob follows the mouse down the slot, 18 steps from top
-	// to bottom; the zoom is the steps left below it (0x4AEDFE).
-	_viewSliderRow = std::max(0, std::min(y - kViewSlider.top, kViewSlider.height() - 1));
-	int step = kViewZoomSteps * (_viewSliderRow + 1) / kViewSlider.height();
-	_viewZoom = kViewZoomSteps - step;
+void SpaceCombat::moveSlider(Slider &slider, int y) {
+	slider.row = std::max(0, std::min(y - slider.slot.top, slider.slot.height() - 1));
+}
+
+void SpaceCombat::drawSlider(Graphics::Surface &screen, const Slider &slider) {
+	const Common::Rect &slot = slider.slot;
+	int split = slot.top + slider.row;
+	Common::Rect above(slot.left, slot.top, slot.right, split), below(slot.left, split, slot.right, slot.bottom);
+	drawImage(screen, image(slider.unlit), slot.left, slot.top, &above);
+	drawImage(screen, image(slider.lit), slot.left, slot.top, &below);
 }
 
 void SpaceCombat::mouseMove(int x, int y) {
-	if (_draggingSlider)
-		moveViewSlider(y);
+	if (_dragging)
+		moveSlider(*_dragging, y);
 }
 
 void SpaceCombat::mouseDown(int x, int y) {
 	_pressed = -1;
-	if (_phase == kFight && kViewSlider.contains(x, y)) {
-		_draggingSlider = true;
-		moveViewSlider(y);
-		return;
+	for (Slider *slider : { &_viewSlider, &_radarSlider }) {
+		if (_phase == kFight && slider->slot.contains(x, y)) {
+			_dragging = slider;
+			moveSlider(*slider, y);
+			return;
+		}
 	}
 	if (_phase == kFight && Common::Rect(202, 380, 307, 400).contains(x, y))
 		_pressed = 0;
@@ -1212,8 +1218,8 @@ void SpaceCombat::mouseDown(int x, int y) {
 void SpaceCombat::mouseUp(int x, int y) {
 	int pressed = _pressed;
 	_pressed = -1;
-	if (_draggingSlider) {
-		_draggingSlider = false;
+	if (_dragging) {
+		_dragging = nullptr;
 		return;
 	}
 	if (_phase == kBriefing) {
@@ -1339,25 +1345,41 @@ void SpaceCombat::drawBars(Graphics::Surface &screen, const Ship &ship, int x, i
 }
 
 void SpaceCombat::drawRadar(Graphics::Surface &screen) {
-	// Top down round the Enterprise, which faces up the screen.
-	const int cx = 321, cy = 323;
-	drawImage(screen, image("RADARM.RAS"), cx - 102, cy - 48);
+	// 0x4AB102 / 0x4AB5C1: round the Enterprise, which faces up the
+	// screen. Each ship sits on the plane (sideways 102 pixels and ahead
+	// 24 pixels to the range) on a stalk as tall as its height (24 pixels
+	// to the range): white with the marker on top if level or above, red
+	// with it at the foot if below.
+	const int cx = 321, cy = 320;
+	// Half the plane's width, a row at a time out from the middle (0x54F750).
+	static const int kHalfWidth[19] = { 102, 102, 102, 102, 101, 101, 100, 99, 98, 97,
+	                                    96, 94, 92, 90, 87, 85, 81, 78, 75 };
+	drawImage(screen, image("RADARM.RAS"), cx - 102, 323 - 48);
 	const Ship &e = _ships[0];
-	double range = 40000;
+	double range = getRadarRange();
 	for (size_t i = 0; i < _ships.size(); i++) {
 		const Ship &s = _ships[i];
 		if (!isEnemyAlive(s) && i != 0)
 			continue;
 		Vec3 local = e.orientation.inverse(s.position - e.position);
-		int x = cx + (int)(local.x / range * 100), y = cy - (int)(local.z / range * 46);
-		if (x < 196 || x > 444 || y < 255 || y > 372)
+		if (std::fabs(local.x) > range || std::fabs(local.y) > range || std::fabs(local.z) > range)
 			continue;
+		int across = (int)(local.x * 102 / range), ahead = (int)(local.z * 24 / range);
+		int height = (int)(local.y * 24 / range);
+		int x = cx + across, foot = cy - ahead, tip = foot - height;
+		int top = std::min(foot, tip), bottom = std::max(foot, tip);
+		if (std::abs(across) > 96 || std::abs(ahead) > 18 || top < 280 || bottom > 360 ||
+		    across < -kHalfWidth[std::abs(ahead)] || across > kHalfWidth[std::abs(ahead)] - 5)
+			continue;
+		uint32 stalk = height < 0 ? 0xFFFF0000u : 0xFFFFFFFFu;
+		for (int y = top; y <= bottom; y++)
+			*(uint32 *)screen.getBasePtr(x, y) = stalk;
 		Common::String token = Common::toUpper(s.token);
 		const CombatImage *blip = image(Common::format("S%sMAP%s.RAS", token.c_str(), (int)i == _target ? "H" : ""));
 		if (!blip)
 			blip = image(Common::format("S%sMAP.RAS", token.c_str()));
 		if (blip)
-			drawImage(screen, blip, x - blip->w / 2, y - blip->h / 2);
+			drawImage(screen, blip, x - 5, (height < 0 ? bottom : top) - 5);
 	}
 	if (_target >= 0 && _target < (int)_ships.size())
 		drawText(screen, Common::format("RANGE: %6.0f", (_ships[_target].position - e.position).length()), 209, 365, true);
@@ -1373,13 +1395,13 @@ void SpaceCombat::drawView(Graphics::Surface &screen) {
 		// 0x4A1E85: one radius out towards the target, looking at it, the
 		// Enterprise's up kept.
 		Vec3 dir = (_ships[_target].position - e.position).normalized();
-		camPos = e.position + dir * (e.radius + _viewZoom * 600.0);
+		camPos = e.position + dir * (e.radius + getViewZoom() * 600.0);
 		camRot = Mat3::lookAlong(dir, e.orientation.up);
 	} else {
 		// 0x4A0D13: two of its radii out along its axis, ahead of it, so the
 		// Enterprise itself is out of sight.
 		camRot = e.orientation;
-		camPos = e.position + e.orientation.forward * (e.radius * 2 + _viewZoom * 600.0);
+		camPos = e.position + e.orientation.forward * (e.radius * 2 + getViewZoom() * 600.0);
 	}
 	_renderer.setCamera(camPos, camRot);
 	Common::Rect view(kViewX, kViewY, kViewX + kViewW, kViewY + kViewH);
@@ -1391,7 +1413,7 @@ void SpaceCombat::drawView(Graphics::Surface &screen) {
 
 	// The stars, far away: only the camera's turn moves them, and the
 	// zoom spreads them from the centre (0x4ADC6A).
-	double spread = _renderer.getFocal() * (1 + _viewZoom / 30.0);
+	double spread = _renderer.getFocal() * (1 + getViewZoom() / 30.0);
 	for (const Vec3 &star : _stars) {
 		Vec3 local = camRot.inverse(star);
 		if (local.z <= 0.05)
@@ -1520,13 +1542,8 @@ void SpaceCombat::drawConsole(Graphics::Surface &screen) {
 	drawImage(screen, image(_phasersOnline ? "BPHASERN.RAS" : "BPHASERF.RAS"), 307, 380);
 	drawImage(screen, image(_photonsOnline ? "BPHOTONN.RAS" : "BPHOTONF.RAS"), 425, 380);
 	drawImage(screen, image(_enemyView ? "BENEMYN.RAS" : "BENEMYF.RAS"), 174, 344);
-	// The viewscreen zoom slider: unlit above the knob, lit below it.
-	const CombatImage *sliderOff = image("SVIEWN.RAS"), *sliderOn = image("SVIEWF.RAS");
-	int split = kViewSlider.top + _viewSliderRow;
-	Common::Rect above(kViewSlider.left, kViewSlider.top, kViewSlider.left + 16, split);
-	Common::Rect below(kViewSlider.left, split, kViewSlider.left + 16, kViewSlider.bottom);
-	drawImage(screen, sliderOff, kViewSlider.left, kViewSlider.top, &above);
-	drawImage(screen, sliderOn, kViewSlider.left, kViewSlider.top, &below);
+	drawSlider(screen, _viewSlider);
+	drawSlider(screen, _radarSlider);
 
 	// The tubes, and the torpedoes left.
 	if (e.cls) {
