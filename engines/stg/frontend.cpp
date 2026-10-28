@@ -79,8 +79,13 @@ bool STGEngine::startFrontEnd() {
 	// For testing: straight into a space combat (--combat=n), or the story
 	// from any section (--story=Amargosa2; --story=list names them).
 	Common::String story = ConfMan.get("story");
-	if (ConfMan.getInt("combat") > 0)
-		story = Common::format("SpaceCombat%dPlay", ConfMan.getInt("combat"));
+	if (ConfMan.getInt("combat") > 0) {
+		// Combats 13-24 are the fleets', which the story fights as FightFleetN.
+		int combat = ConfMan.getInt("combat");
+		story = Common::format("SpaceCombat%dPlay", combat);
+		if (!_campaign.hasSection(story))
+			story = Common::format("FightFleet%d", combat);
+	}
 	if (story == "list") {
 		Common::String names;
 		for (const Common::String &name : _campaign.getSectionNames())

@@ -30,6 +30,8 @@ Still open:
 - A full playthrough looking for bugs.
 - Some map marker styles haven't been seen in the original yet, so how they
   look is unconfirmed. See [doc/formats.md](doc/formats.md).
+- Space combat has no cloaking yet: Birds of Prey and the other ships with a
+  cloak stay visible and can always be targeted.
 - Only the 2 CD Windows English release is in the detection table. Other
   versions are found by a fallback that looks for an executable mentioning
   "Generations", and reported as unknown versions.

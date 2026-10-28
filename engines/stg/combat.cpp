@@ -301,7 +301,20 @@ bool SpaceCombat::load(int mission) {
 		          (int)_random.getRandomNumber(2000) - 1000);
 		_stars.push_back(star.normalized());
 	}
-	nextTarget(false);
+	// 0x49461C: the nearest ship is the first target, and the Enterprise
+	// starts facing it, level; the mission file's heading for it is unused.
+	Ship &e = _ships[0];
+	_target = -1;
+	double nearest = 0;
+	for (size_t i = 1; i < _ships.size(); i++) {
+		double distance = (_ships[i].position - e.position).length();
+		if (isEnemyAlive(_ships[i]) && (_target < 0 || distance < nearest)) {
+			_target = (int)i;
+			nearest = distance;
+		}
+	}
+	if (_target > 0 && nearest > 0)
+		e.orientation = Mat3::lookAlong(_ships[_target].position - e.position);
 	return true;
 }
 
@@ -343,7 +356,9 @@ void SpaceCombat::addShip(const MissionShip &line) {
 		ship.radius = std::max(50.0f, ship.model->radius);
 	// The mission's (x, y, z) is east, north and altitude (0x4A36A4).
 	ship.position = Vec3(line.x, line.z, line.y);
-	ship.orientation = Mat3::fromYawPitch(line.yaw * M_PI / 180, line.pitch * M_PI / 180);
+	// Headings turn from +y towards -x (90 faces -x): that way 66 of the 68
+	// enemies the missions start with face the Enterprise.
+	ship.orientation = Mat3::fromYawPitch(-line.yaw * M_PI / 180, line.pitch * M_PI / 180);
 	ship.wave = line.wave;
 	ship.hidden = line.wave > 1;
 	ship.soran = line.ai == "soran" || line.ai == "soran9" ? 1 : line.ai == "quarash" ? 2 : 0;

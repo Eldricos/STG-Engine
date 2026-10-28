@@ -1148,13 +1148,23 @@ lights when a short-range scan has found Soran in the Enterprise's system.
 | `.SPR` | animations ('SPRT', 'TIME', 'COMP' frames packed four ways) in `STANDARD.PAL` (6-bit) |
 | `.MET` | big-endian glyph cells into `SCANNER.RAS` / `A-Z_0-9.RAS` |
 | `SYSTEMS.DAT` | ship classes: speed, agility, 27 systems (shields 1-4, weapons, life support, engines, power, computer, sensors, damage control, cloak, 10 phaser banks with firing octants, 4 photon tubes), the shields' leak tables, phaser and photon range and damage |
-| `SCn.MIS` | `SpaceCombat n`: `:wave` and ship lines `id type x y z yaw pitch velocity AI ...` (x, y the plane, z altitude; AI `soran`, `quarash` or `standard-N` to aim at system N) |
+| `SCn.MIS` | `SpaceCombat n`: `:wave` and ship lines `id type x y z yaw pitch velocity AI ...` (x, y the plane, z altitude; yaw in degrees from +y towards -x, so 90 faces -x; AI `soran`, `quarash` or `standard-N` to aim at system N) |
 | `COMBATn.BMP`, `PROCEED.BMP` | the briefing; PROCEED's position is a table in the exe (0x548618) |
 
 The console is COMBAT.RAS with the 3D view in its hole at (52,10), 532 x 231,
 60 degrees across. The game reads the module's result as 0 the Enterprise
 destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
 
+- At the start (`0x47B688` → `0x49461C`) the ship nearest the Enterprise is
+  the target, and the Enterprise is turned to face it, level (`0x4A6639`,
+  `0x4A2A80`); the player line's yaw and pitch go unused. With yaw read from +y
+  towards -x, 66 of the 68 enemies the missions start with face the
+  Enterprise (read the other way, 26).
+- Cloaking isn't in the engine yet. In the original, ships with a CLOAK
+  system fade out (`0x4AD474`, `0x4AD604`); the radar leaves them out
+  (`0x4AAC68`: +0xD4 = 0x4000 with flag 0x2000, not the Enterprise), and a
+  cloaked target can't be locked ("Target cloaked - no weapons lock"), so
+  torpedoes fly unguided.
 - The forward view (`0x4A0D13`) sits two of the Enterprise's radii out along
   its own axis, ahead of it, so the Enterprise is never in sight. The enemy
   view (`0x4A1E85`) sits one radius out towards the target and looks at it,
