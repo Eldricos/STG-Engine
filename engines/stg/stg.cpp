@@ -194,6 +194,9 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		case Common::EVENT_KEYUP:
 			_combat->keyUp(event.kbd);
 			break;
+		case Common::EVENT_MOUSEMOVE:
+			_combat->mouseMove(event.mouse.x, event.mouse.y);
+			break;
 		case Common::EVENT_LBUTTONDOWN:
 			_combat->mouseDown(event.mouse.x, event.mouse.y);
 			break;

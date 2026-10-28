@@ -143,7 +143,8 @@ Enterprise arrives. After the briefing (PROCEED), fly by hand with the arrows
 Evade, Maintain distance, Full stop, Stand by, Warp out, Maintain status) or
 the menu the CONN line calls up. Shift (or F) fires phasers, Enter (or G) photon
 torpedoes; T or the button by the radar picks the next target, V switches
-between the forward and enemy views, and clicking the target's schematic
+between the forward and enemy views, the slider at the right of the
+viewscreen zooms it, and clicking the target's schematic
 picks a system to aim at. Win by destroying or driving off every ship (or
 beating Soran's); warping out loses the fight, and losing the Enterprise
 ends the game. The enemies fly the original's own AI: they make attack runs

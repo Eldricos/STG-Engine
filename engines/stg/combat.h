@@ -63,6 +63,7 @@ public:
 	void draw(Graphics::Surface &screen);
 	void keyDown(const Common::KeyState &key);
 	void keyUp(const Common::KeyState &key);
+	void mouseMove(int x, int y);
 	void mouseDown(int x, int y);
 	void mouseUp(int x, int y);
 	/** Esc: the options menu. */
@@ -184,6 +185,14 @@ private:
 	/** The CONN line (hotspot 2), which calls up the helm menu over the Enterprise's panel. */
 	const Common::Rect kConnLine = Common::Rect(262, 440, 439, 461);
 	bool _helmMenu = false;
+	/** The viewscreen zoom slider (hotspot 14) and its setting, 0..18 (0x54A0B0). */
+	const Common::Rect kViewSlider = Common::Rect(618, 127, 634, 181);
+	static const int kViewZoomSteps = 18;
+	int _viewZoom = 0;
+	/** Where the knob is: the row of the slot the mouse last set. It starts at the bottom, unlit. */
+	int _viewSliderRow = 54;
+	bool _draggingSlider = false;
+	void moveViewSlider(int y);
 	double _keepRange = 0;
 	bool _enemyView = false;
 	bool _phasersOnline = true, _photonsOnline = true;

@@ -1158,8 +1158,14 @@ destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
 - The forward view (`0x4A0D13`) sits two of the Enterprise's radii out along
   its own axis, ahead of it, so the Enterprise is never in sight. The enemy
   view (`0x4A1E85`) sits one radius out towards the target and looks at it,
-  keeping the Enterprise's up. Both add the viewscreen zoom slider's
-  setting × 600 to that distance; the engine has no slider yet, so it is 0.
+  keeping the Enterprise's up. Both add the viewscreen zoom × 600 to that
+  distance.
+- The viewscreen zoom slider (618,127-633,180, hotspot 14): clicking or
+  dragging in it sets the knob to that row, 18 steps from top to bottom
+  (`0x495B49`), and the zoom is the steps below it, 0 to 18 (`0x4AEDFE`, 0 at
+  the start). SVIEWN.RAS is drawn above the knob and the lit SVIEWF.RAS below
+  it. Besides moving the camera out, the zoom spreads the stars from the
+  centre by 1 + zoom/30 (`0x4ADC6A`).
 - The right panel shows the Enterprise's schematic (SENT_n). Clicking the CONN
   line (262,440-438,460, `0x4AECC6`) calls up the helm menu (CONNMNU0 at
   (472,310)) over it, and letting go puts it away. The CONN line shows the

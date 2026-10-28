@@ -1181,8 +1181,26 @@ bool SpaceCombat::takeOptionsRequest() {
 	return request;
 }
 
+void SpaceCombat::moveViewSlider(int y) {
+	// 0x495B49: the knob follows the mouse down the slot, 18 steps from top
+	// to bottom; the zoom is the steps left below it (0x4AEDFE).
+	_viewSliderRow = std::max(0, std::min(y - kViewSlider.top, kViewSlider.height() - 1));
+	int step = kViewZoomSteps * (_viewSliderRow + 1) / kViewSlider.height();
+	_viewZoom = kViewZoomSteps - step;
+}
+
+void SpaceCombat::mouseMove(int x, int y) {
+	if (_draggingSlider)
+		moveViewSlider(y);
+}
+
 void SpaceCombat::mouseDown(int x, int y) {
 	_pressed = -1;
+	if (_phase == kFight && kViewSlider.contains(x, y)) {
+		_draggingSlider = true;
+		moveViewSlider(y);
+		return;
+	}
 	if (_phase == kFight && Common::Rect(202, 380, 307, 400).contains(x, y))
 		_pressed = 0;
 	else if (_phase == kFight && Common::Rect(320, 380, 425, 400).contains(x, y))
@@ -1194,6 +1212,10 @@ void SpaceCombat::mouseDown(int x, int y) {
 void SpaceCombat::mouseUp(int x, int y) {
 	int pressed = _pressed;
 	_pressed = -1;
+	if (_draggingSlider) {
+		_draggingSlider = false;
+		return;
+	}
 	if (_phase == kBriefing) {
 		if (Common::Rect(_proceedX, _proceedY, _proceedX + 83, _proceedY + 19).contains(x, y)) {
 			playEffect("PROCEED.WAV");
@@ -1351,13 +1373,13 @@ void SpaceCombat::drawView(Graphics::Surface &screen) {
 		// 0x4A1E85: one radius out towards the target, looking at it, the
 		// Enterprise's up kept.
 		Vec3 dir = (_ships[_target].position - e.position).normalized();
-		camPos = e.position + dir * e.radius;
+		camPos = e.position + dir * (e.radius + _viewZoom * 600.0);
 		camRot = Mat3::lookAlong(dir, e.orientation.up);
 	} else {
 		// 0x4A0D13: two of its radii out along its axis, ahead of it, so the
 		// Enterprise itself is out of sight.
 		camRot = e.orientation;
-		camPos = e.position + e.orientation.forward * (e.radius * 2);
+		camPos = e.position + e.orientation.forward * (e.radius * 2 + _viewZoom * 600.0);
 	}
 	_renderer.setCamera(camPos, camRot);
 	Common::Rect view(kViewX, kViewY, kViewX + kViewW, kViewY + kViewH);
@@ -1367,13 +1389,15 @@ void SpaceCombat::drawView(Graphics::Surface &screen) {
 	}
 	_renderer.begin(screen, kViewX, kViewY);
 
-	// The stars, far away: only the camera's turn moves them.
+	// The stars, far away: only the camera's turn moves them, and the
+	// zoom spreads them from the centre (0x4ADC6A).
+	double spread = _renderer.getFocal() * (1 + _viewZoom / 30.0);
 	for (const Vec3 &star : _stars) {
 		Vec3 local = camRot.inverse(star);
 		if (local.z <= 0.05)
 			continue;
-		int x = (int)(kViewW / 2.0 + _renderer.getFocal() * local.x / local.z);
-		int y = (int)(kViewH / 2.0 - _renderer.getFocal() * local.y / local.z);
+		int x = (int)(kViewW / 2.0 + spread * local.x / local.z);
+		int y = (int)(kViewH / 2.0 - spread * local.y / local.z);
 		_renderer.plot(x, y, (int)(std::fabs(star.x) * 1000) % 3 ? 0xFF9090A0u : 0xFFE0E0FFu);
 	}
 
@@ -1496,6 +1520,13 @@ void SpaceCombat::drawConsole(Graphics::Surface &screen) {
 	drawImage(screen, image(_phasersOnline ? "BPHASERN.RAS" : "BPHASERF.RAS"), 307, 380);
 	drawImage(screen, image(_photonsOnline ? "BPHOTONN.RAS" : "BPHOTONF.RAS"), 425, 380);
 	drawImage(screen, image(_enemyView ? "BENEMYN.RAS" : "BENEMYF.RAS"), 174, 344);
+	// The viewscreen zoom slider: unlit above the knob, lit below it.
+	const CombatImage *sliderOff = image("SVIEWN.RAS"), *sliderOn = image("SVIEWF.RAS");
+	int split = kViewSlider.top + _viewSliderRow;
+	Common::Rect above(kViewSlider.left, kViewSlider.top, kViewSlider.left + 16, split);
+	Common::Rect below(kViewSlider.left, split, kViewSlider.left + 16, kViewSlider.bottom);
+	drawImage(screen, sliderOff, kViewSlider.left, kViewSlider.top, &above);
+	drawImage(screen, sliderOn, kViewSlider.left, kViewSlider.top, &below);
 
 	// The tubes, and the torpedoes left.
 	if (e.cls) {
