@@ -349,7 +349,7 @@ bool LevelFile::loadTables() {
 		actor.maxTurn = READ_LE_UINT16(r + 0x102);
 		actor.turnSpeed = READ_LE_UINT16(r + 0x104);
 		actor.heading = READ_LE_UINT16(r + 0x108);
-		actor.followPlayer = r[0x10D];
+		actor.guardMode = r[0x10D];
 		actor.mode = r[0x10E];
 		_actors.push_back(actor);
 	}

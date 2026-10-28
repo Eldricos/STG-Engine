@@ -80,6 +80,8 @@ struct Actors::Actor {
 	bool returning = false;
 	double walked = 0, nextTurn = 0;
 	double centreDistance = 0;
+	/** SET_ACTOR_COMBAT_PARAMS: the id of what it guards (+0x70), 0 none. */
+	uint16 guardTarget = 0;
 	// Proximity.
 	bool near = false, inRange = false;
 	/** Projectile type fired in attack mode, or -1. */
@@ -147,7 +149,7 @@ void Actors::sync(Common::Serializer &s) {
 		s.syncAsUint16(d.minTurn);
 		s.syncAsUint16(d.maxTurn);
 		s.syncAsUint16(d.turnSpeed);
-		s.syncAsByte(d.followPlayer);
+		s.syncAsByte(d.guardMode);
 		for (LevelFile::Animation &animation : d.animations)
 			s.syncAsUint16(animation.speed);
 		d.light.sync(s);
@@ -169,6 +171,8 @@ void Actors::sync(Common::Serializer &s) {
 		s.syncAsDouble(a.walked);
 		s.syncAsDouble(a.nextTurn);
 		s.syncAsDouble(a.centreDistance);
+		if (s.getVersion() == 0 || s.getVersion() >= kGuardSaveVersion)
+			s.syncAsUint16(a.guardTarget);
 		s.syncAsBool(a.near);
 		s.syncAsBool(a.inRange);
 		s.syncAsInt(a.weapon);
@@ -471,25 +475,58 @@ void Actors::setAnimationRate(uint16 id, int mode, byte rate) {
 		_actors[index]->data.animations[mode].rate = rate;
 }
 
-void Actors::setWander(uint16 id, bool followPlayer, uint16 minTurn, uint16 maxTurn, double innerRadius,
-                       double homeRadius, double outerRadius, double minWalk, double maxWalk) {
+void Actors::setWander(uint16 id, const Wander &wander) {
+	auto set16 = [](uint16 &field, int value) {
+		if (value != kKeep)
+			field = (uint16)value;
+	};
+	auto set32 = [](int32 &field, uint32 value) {
+		if (value != kKeep32)
+			field = (int32)value;
+	};
 	for (int index : findAll(id)) {
-		LevelFile::Actor &data = _actors[index]->data;
-		data.followPlayer = followPlayer;
+		Actor &actor = *_actors[index];
+		LevelFile::Actor &data = actor.data;
+		if (wander.guardMode != kKeep)
+			data.guardMode = (byte)wander.guardMode;
+		set16(actor.guardTarget, wander.guardTarget);
 		// Stored as they come, as the original does: scripts give degrees
 		// but the engine reads 1/65536 turns.
-		data.minTurn = minTurn;
-		data.maxTurn = maxTurn;
-		data.innerRadius = (int32)std::lround(innerRadius * kFixed);
-		data.homeRadius = (int32)std::lround(homeRadius * kFixed);
-		data.outerRadius = (int32)std::lround(outerRadius * kFixed);
-		data.minWalk = (int32)std::lround(minWalk * kFixed);
-		data.maxWalk = (int32)std::lround(maxWalk * kFixed);
+		set16(data.minTurn, wander.minTurn);
+		set16(data.maxTurn, wander.maxTurn);
+		set32(data.innerRadius, wander.inner);
+		set32(data.homeRadius, wander.home);
+		set32(data.outerRadius, wander.outer);
+		set32(data.minWalk, wander.minWalk);
+		set32(data.maxWalk, wander.maxWalk);
 	}
 }
 
 void Actors::setProximity(int actorClass, int targetClass, const double radii[5]) {
 	_proximity[(uint16)((actorClass & 0xFF) << 8 | (targetClass & 0xFF))] = std::vector<double>(radii, radii + 5);
+}
+
+bool Actors::getGuardPosition(int mode, uint16 target, double &x, double &y) const {
+	// Found by its number, whatever type bits come with it.
+	uint16 number = target & 0x1FFF;
+	if (mode == 2) {
+		for (const LevelFile::Billboard &billboard : _level.getBillboards()) {
+			if ((billboard.objectId & 0x1FFF) == number) {
+				x = fromFixed(billboard.x);
+				y = fromFixed(billboard.y);
+				return true;
+			}
+		}
+		return false;
+	}
+	for (const std::unique_ptr<Actor> &other : _actors) {
+		if ((other->data.objectId & 0x1FFF) == number) {
+			x = other->x;
+			y = other->y;
+			return true;
+		}
+	}
+	return false;
 }
 
 bool Actors::getTarget(const Actor &actor, const Walker &player, double &x, double &y, double &z) const {
@@ -604,10 +641,16 @@ double Actors::runAnimation(Actor &actor, uint32 ms, std::vector<ScriptEvent> &e
 }
 
 void Actors::runWander(Actor &actor, int index, double step, const Walker &player, uint32 ms) {
-	// 0x4C3C10, mode 6. The centre is home, or the player.
+	// 0x4C3C10, mode 6. The centre (0x4C4015) is home, or else what it
+	// guards: an actor (1) or a billboard (2), the player if none.
 	const LevelFile::Actor &data = actor.data;
-	double cx = data.followPlayer ? player.getX() : actor.homeX;
-	double cy = data.followPlayer ? player.getY() : actor.homeY;
+	double cx = actor.homeX, cy = actor.homeY;
+	if (data.guardMode) {
+		cx = player.getX();
+		cy = player.getY();
+		if (actor.guardTarget)
+			getGuardPosition(data.guardMode, actor.guardTarget, cx, cy);
+	}
 	double distance = distance2D(cx - actor.x, cy - actor.y);
 	uint16 towardsCentre = headingTowards(cx - actor.x, cy - actor.y);
 	double inner = fromFixed(data.innerRadius), home = fromFixed(data.homeRadius);

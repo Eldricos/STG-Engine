@@ -40,7 +40,7 @@ const uint32 kSaveMagic = MKTAG('S', 'T', 'G', 'S');
 // 1: the viewer's place; 2: adds a mission in progress; 3: doors, lifts,
 // lights and the rest the other missions need; 4: the date saved and the
 // campaign; 5: the bridge. Missions saved by an older version can't be read.
-const uint32 kSaveVersion = 6;
+const uint32 kSaveVersion = 7;
 const uint32 kFirstMissionSaveVersion = 3;
 const uint32 kFirstDatedSaveVersion = 4;
 const uint32 kFirstBridgeSaveVersion = 5;

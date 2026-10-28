@@ -1256,15 +1256,20 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		setActorMode(vm, Actors::kModeWalkTo, false);
 		break;
 	case 0x4E: { // SET_ACTOR_COMBAT_PARAMS: the wander settings
+		// 0x457703; 0x8000 and 0x80000000 keep a value.
 		uint16 id = (uint16)vm.pop();
-		bool followPlayer = vm.pop() != 0;
-		vm.pop(); // guard target, not implemented
-		uint16 minTurn = (uint16)vm.pop();
-		uint16 maxTurn = (uint16)vm.pop();
-		double inner = pop32(vm), home = pop32(vm), outer = pop32(vm);
-		double minWalk = pop32(vm), maxWalk = pop32(vm);
+		Actors::Wander wander;
+		wander.guardMode = (uint16)vm.pop();
+		wander.guardTarget = (uint16)vm.pop();
+		wander.minTurn = (uint16)vm.pop();
+		wander.maxTurn = (uint16)vm.pop();
+		wander.inner = popRaw32(vm);
+		wander.home = popRaw32(vm);
+		wander.outer = popRaw32(vm);
+		wander.minWalk = popRaw32(vm);
+		wander.maxWalk = popRaw32(vm);
 		if (_actors)
-			_actors->setWander(id, followPlayer, minTurn, maxTurn, inner, home, outer, minWalk, maxWalk);
+			_actors->setWander(id ? id : self.object->id, wander);
 		break;
 	}
 	case 0x4F: { // SET_ACTOR_WIDTH
@@ -1756,8 +1761,8 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		break;
 	}
 	case 0x95: // SET_TRANSITION_STYLE
-		// game+0x330 (1 by default), handed to the transitions' blends with
-		// their colour; what each style looks like isn't known.
+		// game+0x330 (1 by default), the transitions' speckles (0x40BC05):
+		// 1 single pixels, 2 streaks a sixteenth of the width.
 		_transitionStyle = vm.pop();
 		break;
 	case 0xED: { // SET_FLAT_SAFE
@@ -2162,7 +2167,8 @@ void Mission::callNative(ScriptVM &vm, ScriptInstance &self, uint16 op) {
 		break;
 	}
 	case 0xAE: // SET_PLAYER_CONTROLS
-		// game+0x1E8; the default is 0x5F. What each bit allows isn't known.
+		// game+0x1E8, 0x5F by default: the bits of Mission::Control, what the
+		// player may do (0x43AD04).
 		_controls = (uint16)vm.pop();
 		break;
 	case 0xB2: { // SET_PLAYER_MOTION

@@ -376,8 +376,11 @@ public:
 		uint16 heading;
 		/** AI mode (see Actors::Mode). */
 		byte mode;
-		/** Wander around the player rather than home. */
-		byte followPlayer;
+		/**
+		 * What mode 6 wanders about (+0x10D): 0 home, else the guard
+		 * target, 1 an actor and 2 a billboard (the player if none).
+		 */
+		byte guardMode;
 		LightInfo light;
 	};
 

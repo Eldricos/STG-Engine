@@ -1405,3 +1405,58 @@ TEST(actors_walk_and_block) {
 	CHECK(std::fabs(player.getY() - (30 - 1 - STG::Walker::kRadius)) < 0.05);
 	CHECK_EQ(actors.getObstacleObject(player.getContactObstacle()), 0xA002);
 }
+
+TEST(actors_wander_about_what_they_guard) {
+	using STG::Actors;
+	LevelBuilder builder;
+	builder.addFloor(-40, -40, 80, 80, 0);
+	builder.addActor(1, 10, 10, 0, Actors::kModeWander, 0);
+	builder.addActor(2, 30, 30, 0, Actors::kModeIdle, 0);
+	STG::LevelFile level;
+	CHECK(loadLevel(level, builder.build()));
+	STG::Walker player(level);
+	player.place(-20, 30, 0);
+	Actors actors(level, player, loadTestSprites);
+
+	// How close it comes to a point while it wanders: it heads back to its
+	// centre until inside the outer band.
+	auto closest = [&](double px, double py) {
+		std::vector<Actors::ScriptEvent> events;
+		double best = 1e9;
+		for (int t = 0; t < 8000; t += 20) {
+			actors.update(20, player, events);
+			double x, y, z;
+			uint16 heading;
+			actors.getPosition(1, x, y, z, heading);
+			best = std::min(best, std::hypot(x - px, y - py));
+		}
+		return best;
+	};
+
+	// Guarding actor 2 (mode 1), it goes over and wanders about it.
+	Actors::Wander wander;
+	wander.guardMode = 1;
+	wander.guardTarget = 2;
+	wander.minTurn = 0x2000;
+	wander.maxTurn = 0x4000;
+	wander.inner = 0;
+	wander.home = 4 << 16;
+	wander.outer = 3 << 16;
+	wander.minWalk = 1 << 16;
+	wander.maxWalk = 2 << 16;
+	actors.setWander(1, wander);
+	CHECK(closest(30, 30) < 4);
+	CHECK(closest(-20, 30) > 15);
+
+	// Target 0, the rest kept: the player.
+	Actors::Wander toPlayer;
+	toPlayer.guardTarget = 0;
+	actors.setWander(1, toPlayer);
+	CHECK(closest(-20, 30) < 4);
+
+	// Mode 0: about home.
+	Actors::Wander toHome;
+	toHome.guardMode = 0;
+	actors.setWander(1, toHome);
+	CHECK(closest(10, 10) < 4);
+}
