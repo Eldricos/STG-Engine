@@ -1186,8 +1186,8 @@ lights when a short-range scan has found Soran in the Enterprise's system.
 
 | File | Format |
 |------|--------|
-| `.3DV`, `.3DR`, `.PCn` | DRE object v1.10: parts of triangles with a material, 16.16 UVs, face normals; x across, y up, z forward |
-| `.MTL`, `.MTR`, `.DMG` | 36-byte materials: RGB555 colour, flags (1 textured, 2 effect, 3 flat), texture name |
+| `.3DV`, `.3DR`, `.PCn` | DRE object v1.10: parts of triangles with a material, 16.16 UVs, face normals; x across, y up, z forward. A face's material has a flag in its top bit (the shields, the debris, the phaser beam), taken here as "both sides shown" |
+| `.MTL`, `.MTR`, `.DMG` | 36-byte materials: RGB555 colour, a parameter (4096 for the shield dome, 11000 for the shield spheres, else 0), flags (1 textured, 2 effect, 3 flat, 0 the spheres' flat see-through), texture name |
 | `.IMG` | GIF87a textures, each with its own palette |
 | `.LBM` | IFF PBM effect textures |
 | `.RAS` | Sun rasterfiles: the console; colour (255,0,163) is see-through |
@@ -1236,8 +1236,32 @@ destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
   right 449,435 for the Enterprise; BSCANL/BSCANR N and F) switch a panel to
   the shield facing display and back, with "Shield facing display enabled" /
   "System display enabled" (COMP0059/0058, `0x4AEC22`): below the bars, 57
-  rows down to row 461, black, with the ship drawn from 3 of its radii out
-  towards the other ship, 60 degrees across (`0x49F88F`).
+  rows down to row 461, black, with the ship drawn from three times its
+  largest extent (+0x30) out towards the other ship, 60 degrees across
+  (`0x49F88F`). Round the ship is its shield sphere (`0x49FC1E`):
+  `SHLD8k_c.3DV` (k 4 for a ship with four shields, else 0; c the ship's
+  place in the mission, 1-9 then a-f), a 26-point sphere whose four
+  quarters take the four materials of `SHLD8n_0.MTL` (n its number of
+  shields): with four, magenta, blue, green and red; fewer repeat them. It
+  is scaled to 0.8 of the largest extent per 100 units (`0x4A3BB4`).
+- Shields hit (`0x49A3D1` torpedoes, `0x49B6C5` phasers), before the
+  damage: if the facing isn't destroyed and the ship's shield isn't already
+  flashing, it flashes (`0x497B99`); otherwise the Enterprise only jolts.
+  The flash is `SHIELD_c.3DV`, a shallow dome 208 across, with the ship's
+  `?_SHIELD.SPR` animation put in place of its `SHIELD.LBM` texture. Each
+  frame (`0x497D2E`) it is turned to face where the hit came from (the
+  torpedo, or the firing ship) and set twice the ship's largest extent out
+  from its middle that way, scaled by the mean of the ship's extents over
+  412.667 (the Enterprise's, so the dome fits it as made; `0x4A3A72`). It
+  shows until the animation ends. The Enterprise's ends at once, unseen.
+  The sound is `SHIELDS1`-`3.WAV` for the Enterprise, `KSHIELD1.WAV` for the
+  rest. A torpedo leaves no explosion of its own.
+- The Enterprise's jolt (`0x497B00`): the screen shakes for 0x91 ticks (the
+  clock runs at 291 a second), every other frame moved right by 0..5 and
+  down by 0..3 pixels (`0x47BEFF`). If the facing hit is more than four
+  tenths gone (t tenths), the screen also dims for (4t - 16) × 9 ticks: a
+  level runs from -127 to 127, and while it's within ±63 every colour is
+  quartered, otherwise halved (`0x47BC14`, `0x47C2EC`).
 - Held on the viewscreen (hotspot 17, `0x4AEFD4`) the mouse steers: its
   distance from (319,124) as a share of half the hotspot, ±100, joins the
   stick's axes until let go. Here left of the middle turns left and above it

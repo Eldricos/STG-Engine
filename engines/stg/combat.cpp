@@ -131,6 +131,15 @@ struct SpaceCombat::Ship {
 	/** When the next point to run to may be picked (+0xE9C), and when a swerve ends (+0xEB0). */
 	uint32 fleeAt = 0, avoidUntil = 0;
 	int destroyedReported = 0;
+	/** The model's largest extent (+0x30) and the mean of its three, which sizes the shields. */
+	double size = 0, meanSize = 0;
+	/** The shield hit's dome (+0xE60, SHIELD_c.3DV) and the shield facing sphere (+0x524, SHLD8k_c.3DV). */
+	const Model3D *shieldModel = nullptr, *sphereModel = nullptr;
+	const std::vector<CombatMaterial> *shieldMaterials = nullptr, *sphereMaterials = nullptr;
+	/** A shield hit showing (+0xE64): how long since, and towards what. */
+	bool flashing = false;
+	uint32 flashTime = 0;
+	Vec3 flashFrom;
 };
 
 SpaceCombat::SpaceCombat(const ResourceManager &resources, Audio::Mixer *mixer, Common::RandomSource &random)
@@ -356,8 +365,22 @@ void SpaceCombat::addShip(const MissionShip &line) {
 	ship.materials = materials(Common::String(type->model) + ".MTL");
 	ship.lowModel = model(Common::String(type->model) + ".3DR");
 	ship.lowMaterials = materials(Common::String(type->model) + ".MTR");
-	if (ship.model)
+	if (ship.model) {
 		ship.radius = std::max(50.0f, ship.model->radius);
+		const float *e = ship.model->extent;
+		ship.size = std::max(e[0], std::max(e[1], e[2]));
+		ship.meanSize = (e[0] + e[1] + e[2]) / 3;
+	}
+	// Its shields (0x4A48DD): a copy of each model for every ship, named by
+	// its place in the mission, 1-9 then a-f.
+	int slot = (int)_ships.size() + 1;
+	char c = slot <= 9 ? (char)('0' + slot) : (char)('a' + slot - 10);
+	ship.shieldModel = model(Common::format("SHIELD_%c.3DV", c));
+	ship.shieldMaterials = materials(Common::format("SHIELD_%c.MTL", c));
+	if (ship.cls && ship.cls->shields > 0) {
+		ship.sphereModel = model(Common::format("SHLD8%d_%c.3DV", ship.cls->shields == 4 ? 4 : 0, c));
+		ship.sphereMaterials = materials(Common::format("SHLD8%d_0.MTL", ship.cls->shields));
+	}
 	// The mission's (x, y, z) is east, north and altitude (0x4A36A4).
 	ship.position = Vec3(line.x, line.z, line.y);
 	// Headings turn from +y towards -x (90 faces -x): that way 66 of the 68
@@ -436,6 +459,17 @@ void SpaceCombat::update(uint32 ms) {
 	updateWeapons(ms);
 	for (Explosion &e : _explosions)
 		e.time += ms;
+	// Shield hits run their animation, then end (0x497D2E); the
+	// Enterprise's at once, as it isn't seen.
+	for (size_t i = 0; i < _ships.size(); i++) {
+		Ship &ship = _ships[i];
+		if (!ship.flashing)
+			continue;
+		ship.flashTime += ms;
+		const SprAnimation *spr = sprite(Common::format("%c_SHIELD.SPR", ship.effects == 'P' ? '_' : ship.effects));
+		if (i == 0 || !spr || ship.flashTime >= spr->frames.size() * spr->frameMillis)
+			ship.flashing = false;
+	}
 	// The streaming stars grow out from the middle with the speed, at the
 	// original's rate a frame taken as twenty frames a second.
 	const Ship &enterprise = _ships[0];
@@ -772,7 +806,7 @@ void SpaceCombat::updateWeapons(uint32 ms) {
 			if (beam.hit && beam.to < (int)_ships.size() && _ships[beam.to].alive && !_ships[beam.to].gone) {
 				const Ship &from = _ships[beam.from];
 				int aimed = beam.from == 0 ? _aimedSystem : from.aimed;
-				hit(beam.to, facing(_ships[beam.to], from.position), beam.damage, aimed);
+				hit(beam.to, facing(_ships[beam.to], from.position), beam.damage, aimed, from.position);
 			}
 		}
 	}
@@ -791,14 +825,9 @@ void SpaceCombat::updateWeapons(uint32 ms) {
 			t.velocity = (t.velocity + (want - t.velocity) * std::min(1.0, dt * 2.5)).normalized() * speed;
 			if (to.length() < target.radius + speed * dt) {
 				int owner = t.owner;
-				hit(t.target, facing(target, t.position), t.damage, owner == 0 ? _aimedSystem : _ships[owner].aimed);
-				Explosion e;
-				e.position = t.position;
-				e.size = 400;
-				e.time = 0;
-				e.sprite = sprite(Common::format("%c_SHIELD.SPR", target.effects == 'P' ? '_' : target.effects));
-				if (e.sprite)
-					_explosions.push_back(e);
+				// The torpedo is gone; the shield's flash is all that shows (0x49A3D1).
+				hit(t.target, facing(target, t.position), t.damage, owner == 0 ? _aimedSystem : _ships[owner].aimed,
+				    t.position);
 				t.life = 0;
 				continue;
 			}
@@ -809,11 +838,98 @@ void SpaceCombat::updateWeapons(uint32 ms) {
 	                 _torpedoes.end());
 }
 
-void SpaceCombat::hit(int index, int shield, double amount, int aimed) {
+void SpaceCombat::shieldHit(int index, const Vec3 &from, int shield) {
+	// 0x497B99: the shield's dome takes the ship's ?_SHIELD.SPR as its
+	// texture and shows towards what hit it until the animation ends.
+	Ship &ship = _ships[index];
+	if (!ship.shieldModel)
+		return;
+	ship.flashing = true;
+	ship.flashTime = 0;
+	ship.flashFrom = from;
+	if (index == 0) {
+		jolt(index, shield);
+		playEffect(Common::format("SHIELDS%d.WAV", 1 + (int)_random.getRandomNumber(2)));
+	} else {
+		playEffect("KSHIELD1.WAV");
+	}
+}
+
+void SpaceCombat::jolt(int index, int shield) {
+	// 0x497B00, for the Enterprise only: the screen shakes for 0x91 ticks;
+	// a shield more than four tenths gone also dims it, for longer the
+	// worse it is (0x47BC14).
+	if (index != 0 || shield < 1 || shield > 4)
+		return;
+	const Ship &ship = _ships[0];
+	_shakeUntil = _time + kShakeTicks * 1000 / kTicksPerSecond;
+	int max = ship.cls ? ship.cls->systems[shield].max : 0;
+	if (max <= 0)
+		return;
+	int tenths = (int)(ship.damage[shield] * 10) / max;
+	if (tenths > 4) {
+		_dimLength = (uint32)((tenths * 4 - 16) * 9 * 1000 / kTicksPerSecond);
+		_dimStart = _time;
+		if (!_dimLevel)
+			_dimLevel = -127;
+	}
+}
+
+void SpaceCombat::drawJolt(Graphics::Surface &screen) {
+	// Dimming: a level running from -127 to 127 over its time; the screen
+	// is a quarter as bright in the middle half of it, half at the ends.
+	if (_dimLevel) {
+		int half = std::max<int>(1, _dimLength / 2);
+		int level = (int)(((int)(_time - _dimStart) - half) * 127 / half);
+		if (level == 0)
+			level = 1;
+		_dimLevel = std::max(_dimLevel, level);
+		if (_dimLevel > 127) {
+			_dimLevel = 0;
+		} else {
+			int shift = 2 - std::abs(_dimLevel) * 2 / 127;
+			if (shift > 0) {
+				uint32 mask = (0xFFu >> shift) * 0x010101u;
+				for (int y = 0; y < screen.h; y++) {
+					uint32 *row = (uint32 *)screen.getBasePtr(0, y);
+					for (int x = 0; x < screen.w; x++)
+						row[x] = 0xFF000000u | ((row[x] >> shift) & mask);
+				}
+			}
+		}
+	}
+	// Shaking: every other frame the picture moves right by up to five and
+	// down by up to three pixels (0x4995D8's random 0..n).
+	if (_time < _shakeUntil) {
+		_shakeFrame = !_shakeFrame;
+		int dx = _shakeFrame ? 0 : (int)_random.getRandomNumber(5), dy = _shakeFrame ? 0 : (int)_random.getRandomNumber(3);
+		if (dx || dy) {
+			for (int y = screen.h - 1; y >= 0; y--) {
+				uint32 *row = (uint32 *)screen.getBasePtr(0, y);
+				if (y < dy) {
+					std::fill(row, row + screen.w, 0xFF000000u);
+					continue;
+				}
+				const uint32 *src = (const uint32 *)screen.getBasePtr(0, y - dy);
+				memmove(row + dx, src, (screen.w - dx) * sizeof(uint32));
+				std::fill(row, row + dx, 0xFF000000u);
+			}
+		}
+	}
+}
+
+void SpaceCombat::hit(int index, int shield, double amount, int aimed, const Vec3 &from) {
 	Ship &ship = _ships[index];
 	if (!ship.alive || !ship.cls || _phase != kFight)
 		return;
 	const ShipClass &cls = *ship.cls;
+	// Before the damage (0x49A3D1, 0x49B6C5): a shield still up flashes,
+	// unless it is already; otherwise the Enterprise only shakes.
+	bool up = shield >= 1 && shield <= 4 && ship.damage[shield] != cls.systems[shield].max;
+	if (up && !ship.flashing)
+		shieldHit(index, from, shield);
+	else
+		jolt(index, shield);
 	// The difficulty weighs on the Enterprise (0x4B08C3).
 	if (index == 0)
 		amount *= _difficulty == 0 ? 1.2 : _difficulty == 2 ? 0.85 : 1.0;
@@ -850,7 +966,6 @@ void SpaceCombat::hit(int index, int shield, double amount, int aimed) {
 				speak(kGone[shield]);
 			else if (wasUp && ship.damage[shield] >= cls.systems[shield].max * 0.5)
 				speak(kHalf[shield]);
-			playEffect(Common::format("SHIELDS%d.WAV", 1 + (int)_random.getRandomNumber(2)));
 		} else if (down) {
 			static const int kTheirs[5] = { 0, 0xFD, 0x100, 0xFF, 0xFE };
 			speak(kTheirs[shield]);
@@ -1463,8 +1578,8 @@ void SpaceCombat::drawSchematic(Graphics::Surface &screen, const Ship &ship, int
 void SpaceCombat::drawShieldView(Graphics::Surface &screen, const Ship &ship, const Ship &other,
                                  const Common::Rect &panel) {
 	// 0x49F302 / 0x49F88F: below the bars (57 rows down) to row 461, a
-	// width a multiple of four; black, with the ship seen from 3 of its
-	// radii out towards the other, 60 degrees across.
+	// width a multiple of four; black, with the ship seen from three times
+	// its largest extent out towards the other, 60 degrees across.
 	int left = panel.left, top = panel.top + 57, w = panel.width() & ~3, h = 461 - top;
 	Common::Rect area(left, top, left + w, top + h);
 	for (int y = area.top; y < area.bottom; y++) {
@@ -1478,12 +1593,18 @@ void SpaceCombat::drawShieldView(Graphics::Surface &screen, const Ship &ship, co
 	if (towards.length() < 1e-6)
 		towards = ship.orientation.forward;
 	Vec3 dir = towards.normalized();
-	Vec3 camPos = ship.position + dir * (ship.radius * 3);
+	Vec3 camPos = ship.position + dir * (ship.size * 3);
 	_panelRenderer.setViewport(w, h, 60);
 	_panelRenderer.setCamera(camPos, Mat3::lookAlong(dir * -1.0, ship.orientation.up));
 	_panelRenderer.begin(screen, left, top);
 	_panelRenderer.drawModel(*m, *ship.materials, [this](const Common::String &name) { return texture(name); },
 	                         ship.position, ship.orientation);
+	// Round it the shield sphere (0x49FC1E), a colour to each facing,
+	// sized 0.8 of the ship's largest extent per 100 units (0x4A3BB4).
+	if (ship.sphereModel && ship.sphereMaterials)
+		_panelRenderer.drawModel(*ship.sphereModel, *ship.sphereMaterials,
+		                         [](const Common::String &) { return (const CombatImage *)nullptr; }, ship.position,
+		                         ship.orientation, ship.size * 0.8 / 100);
 }
 
 void SpaceCombat::drawStar(int x, int y, int type) {
@@ -1677,6 +1798,28 @@ void SpaceCombat::drawView(Graphics::Surface &screen) {
 		                        },
 		                        true);
 	}
+	// Shield hits (0x497D2E): the dome twice the ship's size out from its
+	// middle towards what hit it, facing that way, sized by the ship (the
+	// model fits the Enterprise, whose sizes average 412.667) and textured
+	// with the ship's shield animation.
+	for (size_t i = 1; i < _ships.size(); i++) {
+		const Ship &s = _ships[i];
+		if (!s.flashing || !s.alive || s.hidden || s.gone || !s.shieldModel || !s.shieldMaterials)
+			continue;
+		const SprAnimation *spr = sprite(Common::format("%c_SHIELD.SPR", s.effects == 'P' ? '_' : s.effects));
+		if (!spr || spr->frames.empty())
+			continue;
+		const std::vector<byte> &frame = spr->frames[std::min(spr->frames.size() - 1, (size_t)(s.flashTime / spr->frameMillis))];
+		_flashImage.w = spr->w;
+		_flashImage.h = spr->h;
+		_flashImage.pixels.resize(frame.size());
+		for (size_t p = 0; p < frame.size(); p++)
+			_flashImage.pixels[p] = frame[p] ? _palette[frame[p]] : 0xFF000000u;
+		Vec3 towards = (s.flashFrom - s.position).normalized();
+		_renderer.drawModel(*s.shieldModel, *s.shieldMaterials,
+		                    [this](const Common::String &) { return &_flashImage; }, s.position + towards * (s.size * 2),
+		                    Mat3::lookAlong(towards), s.meanSize / 412.667);
+	}
 	for (const Explosion &e2 : _explosions) {
 		const SprAnimation *spr = e2.sprite;
 		if (!spr || spr->frames.empty())
@@ -1809,6 +1952,7 @@ void SpaceCombat::draw(Graphics::Surface &screen) {
 	}
 	drawView(screen);
 	drawConsole(screen);
+	drawJolt(screen);
 }
 
 } // End of namespace STG

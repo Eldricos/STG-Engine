@@ -135,7 +135,13 @@ private:
 	int facing(const Ship &target, const Vec3 &from) const;
 	/** The octant of a point seen from a ship: 4 starboard, 2 aft, 1 dorsal. */
 	int octant(const Ship &ship, const Vec3 &point) const;
-	void hit(int target, int facing, double damage, int aimed);
+	/** from: where the hit came from, which the shield's flash faces. */
+	void hit(int target, int facing, double damage, int aimed, const Vec3 &from);
+	/** A shield still up is hit: its flash and sound (0x497B99). */
+	void shieldHit(int index, const Vec3 &from, int shield);
+	/** The Enterprise is hit: the screen shakes, and dims if the shield is badly hurt (0x497B00). */
+	void jolt(int index, int shield);
+	void drawJolt(Graphics::Surface &screen);
 	void destroy(int ship);
 	void nextTarget(bool announce);
 	void checkEnd();
@@ -222,6 +228,16 @@ private:
 	bool _finished = false;
 	uint32 _endTime = 0;
 	uint32 _time = 0;
+	/** The original's clock runs at 291 ticks a second. */
+	static const int kTicksPerSecond = 291;
+	static const int kShakeTicks = 0x91;
+	uint32 _shakeUntil = 0;
+	/** The shield animation's frame being drawn on a dome. */
+	CombatImage _flashImage;
+	bool _shakeFrame = false;
+	/** The dimming's level (0x54D468; 0 when not dimming), start and length in ms. */
+	int _dimLevel = 0;
+	uint32 _dimStart = 0, _dimLength = 0;
 	int _target = -1;
 	int _aimedSystem = -1;
 	Helm _helm = kStandBy;

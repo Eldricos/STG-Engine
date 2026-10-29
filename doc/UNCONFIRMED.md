@@ -37,6 +37,15 @@ engine does now and what would settle it. Deliberate differences are in
 - **What "dim" means on the schematics.** See
   [KNOWN_DIFFERENCES.md](KNOWN_DIFFERENCES.md). *Settles it:* comparing a
   damaged ship's panel with the original's.
+- **How see-through the shields are.** The shield materials carry a
+  parameter (4096 for the hit dome, 11000 for the spheres) whose meaning
+  wasn't traced into the DRE library's drawing. Here both are mixed half and
+  half with what's behind, unlit. *Settles it:* a screenshot of the
+  original's shield facing display or of a shield hit up close.
+- **Where a shield hit shows.** As traced, the flash sits twice the ship's
+  length out from its middle, towards the shot, and a little dome for any
+  ship but the Enterprise. That seems far out; it's built as read.
+  *Settles it:* footage of a hit on a Bird of Prey up close.
 - **The streaming stars' speed.** The original grows them once a frame, and
   its frame rate isn't known. Twenty frames a second is assumed.
 

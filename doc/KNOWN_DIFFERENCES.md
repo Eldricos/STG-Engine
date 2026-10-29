@@ -64,9 +64,6 @@ are in [UNCONFIRMED.md](UNCONFIRMED.md).
 
 ## Space combat
 
-- **No shield models.** When shields are hit, the hit animation plays, but
-  the ship's shield bubble isn't drawn. That includes the panels' shield
-  facing display, which shows only the ship.
 - **Arriving waves appear at once.** In the original, later waves may fade
   in as they uncloak (see [UNCONFIRMED.md](UNCONFIRMED.md)). Only SC9 has
   later waves.

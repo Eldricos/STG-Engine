@@ -73,8 +73,11 @@ Every fight:
 - The right panel shows the Enterprise's schematic. Clicking the CONN line
   calls up the helm menu, and the CONN line shows the current order.
 - The buttons at the foot of each side panel switch between the system
-  display and the shield facing display (a 3D view of the ship), with the
-  computer saying which.
+  display and the shield facing display (a 3D view of the ship inside its
+  coloured shield sphere), with the computer saying which.
+- A hit on an enemy's shields shows a flash on its side towards the shot.
+  Hits on the Enterprise shake the screen, and once a shield is badly hurt
+  the screen dims for a moment as well.
 - The slider beside the viewscreen zooms it; the one beside the radar sets
   the radar's range.
 - Holding the mouse on the viewscreen steers. Tell us if up and down feel
