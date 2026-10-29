@@ -27,7 +27,8 @@ The whole game runs, from the title to the credits:
 
 Still open:
 
-- A full playthrough looking for bugs. Check these when you get there:
+- A full playthrough looking for bugs ([doc/TESTING.md](doc/TESTING.md)).
+  Check these when you get there:
   - Space combat openings: the original's radar showed fewer ships than the
     mission file holds at the start of Halee's fight (SC16); here they all
     show. The cause isn't known.
@@ -40,6 +41,18 @@ Still open:
 - Only the 2 CD Windows English release is in the detection table. Other
   versions are found by a fallback that looks for an executable mentioning
   "Generations", and reported as unknown versions.
+
+More in [doc/](doc/):
+
+- [KNOWN_DIFFERENCES.md](doc/KNOWN_DIFFERENCES.md): where the engine knowingly
+  differs from the original.
+- [UNCONFIRMED.md](doc/UNCONFIRMED.md): behaviour worked out but not yet
+  confirmed, and what would settle each item.
+- [TESTING.md](doc/TESTING.md): what to check in the playthrough, and how to
+  report a problem.
+- [REVERSE_ENGINEERING.md](doc/REVERSE_ENGINEERING.md): how the formats and
+  behaviour were worked out.
+- [formats.md](doc/formats.md): every format and system, field by field.
 
 ## Layout
 
@@ -216,10 +229,11 @@ settings file is `stg.ini` and saves go in `saves/`.
 ## How the work was done
 
 Everything was worked out from the original: the data formats by reading the
-files, and the behaviour by disassembling `sgens.exe` with Ghidra. Addresses in
-the code's comments (like `0x4A7C91`) point at the original functions each
-piece follows. [doc/formats.md](doc/formats.md) records what is known about
-each format and system.
+files, and the behaviour by disassembling `sgens.exe`. Addresses in the code's
+comments (like `0x4A7C91`) point at the original functions each piece follows.
+[doc/REVERSE_ENGINEERING.md](doc/REVERSE_ENGINEERING.md) describes the method,
+and [doc/formats.md](doc/formats.md) records what is known about each format
+and system.
 
 New platform-neutral code (a decoder, a format reader) goes in `common/` so
 other engines could use it. Anything specific to Generations stays in
