@@ -55,6 +55,10 @@ are in [UNCONFIRMED.md](UNCONFIRMED.md).
 - **The held weapon isn't raised as the player looks down.** The original
   raises it, but by an amount that isn't known. The playthrough video shows
   no visible change, so it's left out.
+- **Mouse Look's speed is scaled to the keys'.** The original turns the view
+  a fifth of the way to the mouse's heading each frame. Here that rate is
+  scaled by the same ratio as the turn and look keys' speeds, so the two
+  stay in step.
 - **One script array (the F2/F3 instructions) holds 4096 words.** The
   original's limit isn't known. Nothing comes near it.
 
@@ -73,10 +77,6 @@ are in [UNCONFIRMED.md](UNCONFIRMED.md).
 - **Timing based on frames.** Where the original steps something once a
   frame (the streaming stars), the engine takes the original as running at
   twenty frames a second and scales by the real time.
-- **Mouse Look's speed is scaled to the keys'.** The original turns the view
-  a fifth of the way to the mouse's heading each frame. Here that rate is
-  scaled by the same ratio as the turn and look keys' speeds, so the two
-  stay in step.
 
 ## Versions
 
