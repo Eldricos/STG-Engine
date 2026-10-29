@@ -1069,131 +1069,143 @@ void SpaceCombat::keyDown(const Common::KeyState &key) {
 		return;
 	}
 	Helm before = _helm;
-	auto manual = [this]() { flyByHand(); };
-	switch (key.keycode) {
-	case Common::KEYCODE_ESCAPE:
+	// Esc is the menu whatever the map says (0x47AF5B).
+	if (key.keycode == Common::KEYCODE_ESCAPE) {
 		_optionsRequest = true;
-		break;
-	case Common::KEYCODE_LSHIFT:
-	case Common::KEYCODE_RSHIFT:
-	case Common::KEYCODE_f:
-		if (_phasersOnline && !_phaserLockout) {
-			_phaserLockout = 1000;
-			speak(0xAD);
-			firePhasers(0);
-		}
-		break;
-	case Common::KEYCODE_RETURN:
-	case Common::KEYCODE_KP_ENTER:
-	case Common::KEYCODE_g:
-		if (_photonsOnline && !_photonLockout) {
-			_photonLockout = 1000;
-			speak(0xAE);
-			firePhotons(0);
-		}
-		break;
-	case Common::KEYCODE_LEFT:
-	case Common::KEYCODE_KP4:
-		manual();
-		_turnKeys[0] = -1;
-		break;
-	case Common::KEYCODE_RIGHT:
-	case Common::KEYCODE_KP6:
-		manual();
-		_turnKeys[0] = 1;
-		break;
-	case Common::KEYCODE_UP:
-	case Common::KEYCODE_KP8:
-		manual();
-		_turnKeys[1] = -1; // dive, as a flight stick
-		break;
-	case Common::KEYCODE_DOWN:
-	case Common::KEYCODE_KP2:
-		manual();
-		_turnKeys[1] = 1;
-		break;
-	case Common::KEYCODE_LCTRL:
-	case Common::KEYCODE_RCTRL:
-	case Common::KEYCODE_q:
-		manual();
-		_turnKeys[2] = -1;
-		break;
-	case Common::KEYCODE_KP0:
-	case Common::KEYCODE_e:
-		manual();
-		_turnKeys[2] = 1;
-		break;
-	case Common::KEYCODE_KP_PLUS:
-	case Common::KEYCODE_EQUALS:
-		manual();
-		_speedKey = 1;
-		break;
-	case Common::KEYCODE_KP_MINUS:
-	case Common::KEYCODE_MINUS:
-		manual();
-		_speedKey = -1;
-		break;
-	case Common::KEYCODE_KP5:
-		_helm = kFullStop;
-		break;
-	case Common::KEYCODE_TAB:
-	case Common::KEYCODE_t:
-		nextTarget(true);
-		break;
-	case Common::KEYCODE_v:
-		_enemyView = !_enemyView;
-		speak(_enemyView ? 0x12A : 0x129);
-		break;
-	default:
-		if (key.keycode >= Common::KEYCODE_1 && key.keycode <= Common::KEYCODE_7)
-			_helm = (Helm)(key.keycode - Common::KEYCODE_1);
-		break;
+		return;
 	}
-	if (_helm != before) {
-		speak(0xAF + _helm, true);
-		if (_helm == kMaintain && _target >= 0)
-			_keepRange = (_ships[_target].position - _ships[0].position).length();
-		if (_helm == kWarpOut) {
-			// Warp needs a fifth of the engines (0x4A53A1).
-			if (systemFraction(_ships[0], ShipClass::kEngines) >= 0.21) {
-				finish(kLost);
-			} else {
-				speak(0x9E, true);
-				_helm = kStandBy;
-			}
+	byte action = _keys.get(KeyMap::virtualKey(key.keycode));
+	if (action != KeyMap::kNone) {
+		shipAction(action, true);
+	} else {
+		switch (key.keycode) {
+		case Common::KEYCODE_TAB:
+		case Common::KEYCODE_t:
+			nextTarget(true);
+			break;
+		case Common::KEYCODE_v:
+			toggleEnemyView();
+			break;
+		default:
+			if (extraAction(key.keycode) >= 0)
+				shipAction(extraAction(key.keycode), true);
+			break;
+		}
+	}
+	helmChanged(before);
+}
+
+void SpaceCombat::helmChanged(Helm before) {
+	if (_helm == before)
+		return;
+	speak(0xAF + _helm, true);
+	if (_helm == kMaintain && _target >= 0)
+		_keepRange = (_ships[_target].position - _ships[0].position).length();
+	if (_helm == kWarpOut) {
+		// Warp needs a fifth of the engines (0x4A53A1).
+		if (systemFraction(_ships[0], ShipClass::kEngines) >= 0.21) {
+			finish(kLost);
+		} else {
+			speak(0x9E, true);
+			_helm = kStandBy;
 		}
 	}
 }
 
 void SpaceCombat::keyUp(const Common::KeyState &key) {
-	switch (key.keycode) {
-	case Common::KEYCODE_LEFT:
-	case Common::KEYCODE_RIGHT:
-	case Common::KEYCODE_KP4:
-	case Common::KEYCODE_KP6:
-		_turnKeys[0] = 0;
-		break;
-	case Common::KEYCODE_UP:
-	case Common::KEYCODE_DOWN:
-	case Common::KEYCODE_KP8:
-	case Common::KEYCODE_KP2:
-		_turnKeys[1] = 0;
-		break;
-	case Common::KEYCODE_LCTRL:
-	case Common::KEYCODE_RCTRL:
-	case Common::KEYCODE_KP0:
+	byte action = _keys.get(KeyMap::virtualKey(key.keycode));
+	if (action != KeyMap::kNone)
+		shipAction(action, false);
+	else if (extraAction(key.keycode) >= 0)
+		shipAction(extraAction(key.keycode), false);
+}
+
+void SpaceCombat::toggleEnemyView() {
+	_enemyView = !_enemyView;
+	speak(_enemyView ? 0x12A : 0x129);
+}
+
+void SpaceCombat::releaseKeys() {
+	_turnKeys[0] = _turnKeys[1] = _turnKeys[2] = 0;
+	_speedKey = 0;
+}
+
+int SpaceCombat::extraAction(Common::KeyCode key) {
+	switch (key) {
+	case Common::KEYCODE_f:
+		return KeyMap::kShipPhasers;
+	case Common::KEYCODE_g:
+		return KeyMap::kShipPhotons;
 	case Common::KEYCODE_q:
+		return KeyMap::kShipRollLeft;
 	case Common::KEYCODE_e:
-		_turnKeys[2] = 0;
-		break;
-	case Common::KEYCODE_KP_PLUS:
-	case Common::KEYCODE_KP_MINUS:
+		return KeyMap::kShipRollRight;
 	case Common::KEYCODE_EQUALS:
+		return KeyMap::kShipFaster;
 	case Common::KEYCODE_MINUS:
-		_speedKey = 0;
-		break;
+		return KeyMap::kShipSlower;
 	default:
+		return -1;
+	}
+}
+
+void SpaceCombat::shipAction(int action, bool down) {
+	if (action >= KeyMap::kShipHelm && action <= KeyMap::kShipHelm + kMaintainStatus) {
+		if (down)
+			_helm = (Helm)(action - KeyMap::kShipHelm);
+		return;
+	}
+	// The flight keys hold a rate while down; any of them takes the helm
+	// to Stand By (0x49557B).
+	int axis = -1, direction = 0;
+	switch (action) {
+	case KeyMap::kShipPhasers:
+		if (down && _phasersOnline && !_phaserLockout) {
+			_phaserLockout = 1000;
+			speak(0xAD);
+			firePhasers(0);
+		}
+		return;
+	case KeyMap::kShipPhotons:
+		if (down && _photonsOnline && !_photonLockout) {
+			_photonLockout = 1000;
+			speak(0xAE);
+			firePhotons(0);
+		}
+		return;
+	case KeyMap::kShipLeft:
+	case KeyMap::kShipRight:
+		axis = 0;
+		direction = action == KeyMap::kShipLeft ? -1 : 1;
 		break;
+	case KeyMap::kShipDive:
+	case KeyMap::kShipClimb:
+		// Dive, as a flight stick, is up.
+		axis = 1;
+		direction = action == KeyMap::kShipDive ? -1 : 1;
+		break;
+	case KeyMap::kShipRollLeft:
+	case KeyMap::kShipRollRight:
+		axis = 2;
+		direction = action == KeyMap::kShipRollLeft ? -1 : 1;
+		break;
+	case KeyMap::kShipFaster:
+	case KeyMap::kShipSlower:
+		if (down) {
+			flyByHand();
+			_speedKey = action == KeyMap::kShipFaster ? 1 : -1;
+		} else {
+			_speedKey = 0;
+		}
+		return;
+	default:
+		return;
+	}
+	if (down) {
+		flyByHand();
+		_turnKeys[axis] = direction;
+	} else {
+		_turnKeys[axis] = 0;
 	}
 }
 
@@ -1293,13 +1305,10 @@ void SpaceCombat::mouseUp(int x, int y) {
 	}
 	if (_phase != kFight)
 		return;
-	Common::KeyState key;
 	if (pressed == 0 && Common::Rect(202, 380, 307, 400).contains(x, y)) {
-		key.keycode = Common::KEYCODE_f;
-		keyDown(key);
+		shipAction(KeyMap::kShipPhasers, true);
 	} else if (pressed == 1 && Common::Rect(320, 380, 425, 400).contains(x, y)) {
-		key.keycode = Common::KEYCODE_g;
-		keyDown(key);
+		shipAction(KeyMap::kShipPhotons, true);
 	} else if (Common::Rect(307, 380, 320, 400).contains(x, y)) {
 		_phasersOnline = !_phasersOnline;
 		speak(_phasersOnline ? 0x12D : 0x12E, true);
@@ -1309,16 +1318,16 @@ void SpaceCombat::mouseUp(int x, int y) {
 	} else if (Common::Rect(177, 317, 190, 343).contains(x, y)) {
 		nextTarget(true);
 	} else if (Common::Rect(177, 344, 190, 372).contains(x, y)) {
-		key.keycode = Common::KEYCODE_v;
-		keyDown(key);
+		toggleEnemyView();
 	} else if (_helmMenu && !kConnLine.contains(x, y)) {
 		// The helm menu (CONNMNU0), a row each 20 pixels: let go over one to
 		// give the order, anywhere else to put it away.
 		_helmMenu = false;
 		int row = (y - 319) / 20;
 		if (Common::Rect(472, 319, 639, 459).contains(x, y) && row >= 0 && row <= 6) {
-			key.keycode = (Common::KeyCode)(Common::KEYCODE_1 + row);
-			keyDown(key);
+			Helm before = _helm;
+			shipAction(KeyMap::kShipHelm + row, true);
+			helmChanged(before);
 		}
 	} else if (Common::Rect(1, 252, 175, 462).contains(x, y) && _target >= 0) {
 		// The enemy's systems: aim at the next one (weapons .. cloak).

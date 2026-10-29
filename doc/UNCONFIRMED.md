@@ -51,6 +51,11 @@ engine does now and what would settle it. Deliberate differences are in
   for it to be beamed up. It couldn't be reproduced. *Settles it:* the
   playthrough.
 
+- **Which way Mouse Look turns.** The original's heading and pitch signs
+  weren't traced through to the screen. Here the view turns towards the
+  mouse: left of the middle turns left, above it looks up. *Settles it:*
+  holding the right button in the original.
+
 ## Bridge
 
 - **Fleets marked `Cloaked`.** Here this keeps the fleet off the star map,

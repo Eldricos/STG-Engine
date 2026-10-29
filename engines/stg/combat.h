@@ -20,6 +20,7 @@
 #include "common/random.h"
 #include "engines/stg/combatdata.h"
 #include "engines/stg/combatrender.h"
+#include "engines/stg/keymap.h"
 #include "engines/stg/resources.h"
 #include "engines/stg/rgbimage.h"
 
@@ -61,8 +62,12 @@ public:
 
 	void update(uint32 ms);
 	void draw(Graphics::Surface &screen);
+	/** The player's starship keys (SGENS.CFG's cfg+0x238). */
+	void setKeyMap(const KeyMap &keys) { _keys = keys; }
 	void keyDown(const Common::KeyState &key);
 	void keyUp(const Common::KeyState &key);
+	/** Let go of every flight key. */
+	void releaseKeys();
 	void mouseMove(int x, int y);
 	void mouseDown(int x, int y);
 	void mouseUp(int x, int y);
@@ -258,6 +263,14 @@ private:
 	// Keys held: yaw, pitch, roll (-1..1) and speed changes.
 	int _turnKeys[3] = {};
 	int _speedKey = 0;
+	KeyMap _keys = KeyMap::starshipDefaults();
+	/** A starship action (KeyMap::StarshipAction) pressed or released (0x4A6976). */
+	void shipAction(int action, bool down);
+	/** This engine's own keys for an action, for keys the map leaves free; -1 if none. */
+	static int extraAction(Common::KeyCode key);
+	/** After an order may have changed the helm: Picard gives it, and it takes effect. */
+	void helmChanged(Helm before);
+	void toggleEnemyView();
 	int _pressed = -1;
 	bool _optionsRequest = false;
 	uint32 _lifeSupportOut = 0;

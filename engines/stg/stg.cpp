@@ -43,6 +43,9 @@ const int kLevelPageMap = 0;
 const int kLevelPage3D = 1;
 const int kLevelPageTextures = 2;
 const double kPi = 3.14159265358979323846;
+/** Walking: turning in radians a second, looking in pitch a second. */
+const double kTurnSpeed = 2.0;
+const double kLookSpeed = 0.8;
 
 } // End of anonymous namespace
 
@@ -367,6 +370,17 @@ void STGEngine::handleEvent(const Common::Event &event) {
 	case Common::EVENT_LBUTTONUP:
 		if (_hudScreen && _mission)
 			_hudScreen->mouseUp(*_mission, event.mouse.x, event.mouse.y);
+		viewButton(1, false);
+		break;
+	case Common::EVENT_RBUTTONUP:
+		viewButton(2, false);
+		break;
+	case Common::EVENT_MBUTTONUP:
+		viewButton(4, false);
+		break;
+	case Common::EVENT_MBUTTONDOWN:
+		if (_level && _levelPage == kLevelPage3D && event.mouse.y < HudScreen::kView.bottom)
+			viewButton(4, true);
 		break;
 	case Common::EVENT_LBUTTONDOWN:
 	case Common::EVENT_RBUTTONDOWN:
@@ -376,8 +390,8 @@ void STGEngine::handleEvent(const Common::Event &event) {
 			bool right = event.type == Common::EVENT_RBUTTONDOWN;
 			if (_hudScreen && _mission && event.mouse.y >= HudScreen::kView.bottom)
 				_hudScreen->mouseDown(*_mission, event.mouse.x, event.mouse.y, right);
-			else if (!right)
-				attack();
+			else
+				viewButton(right ? 2 : 1, true);
 			break;
 		}
 		if (event.type == Common::EVENT_RBUTTONDOWN)
@@ -386,6 +400,7 @@ void STGEngine::handleEvent(const Common::Event &event) {
 		playBeep(220 + event.mouse.x * 2);
 		break;
 	case Common::EVENT_FOCUS_LOST:
+		releaseWalkKeys();
 		pauseEngine(true);
 		break;
 	case Common::EVENT_FOCUS_GAINED:
@@ -1116,34 +1131,26 @@ void STGEngine::showLevelPage(int page) {
 }
 
 bool STGEngine::handleWalkKey(const Common::KeyState &state, bool down) {
+	// The player's key map first (0x43E8FB), as the Controls panel sets it.
+	byte action = _settings.awayKeys.get(KeyMap::virtualKey(state.keycode));
+	if (action != KeyMap::kNone && walkAction(action, down))
+		return true;
+
+	// Then this engine's own keys, for keys the map leaves free.
 	Common::KeyCode key = state.keycode;
 	int walkKey;
 	switch (key) {
-	case Common::KEYCODE_UP:
 	case Common::KEYCODE_w:
 		walkKey = kWalkForward;
 		break;
-	case Common::KEYCODE_DOWN:
 	case Common::KEYCODE_s:
 		walkKey = kWalkBack;
-		break;
-	case Common::KEYCODE_LEFT:
-		walkKey = kWalkTurnLeft;
-		break;
-	case Common::KEYCODE_RIGHT:
-		walkKey = kWalkTurnRight;
 		break;
 	case Common::KEYCODE_a:
 		walkKey = kWalkStrafeLeft;
 		break;
 	case Common::KEYCODE_d:
 		walkKey = kWalkStrafeRight;
-		break;
-	case Common::KEYCODE_PAGEUP:
-		walkKey = kWalkLookUp;
-		break;
-	case Common::KEYCODE_PAGEDOWN:
-		walkKey = kWalkLookDown;
 		break;
 	case Common::KEYCODE_END:
 		if (down)
@@ -1160,18 +1167,8 @@ bool STGEngine::handleWalkKey(const Common::KeyState &state, bool down) {
 		}
 		walkKey = kWalkCrouch;
 		break;
-	case Common::KEYCODE_RETURN:
-	case Common::KEYCODE_KP_ENTER:
-		// The original's crouch keys (table 0x545500, action 11).
-		walkKey = kWalkCrouch;
-		break;
 	case Common::KEYCODE_x:
-	case Common::KEYCODE_KP_PERIOD:
-		// Jump (action 10), once per press.
-		if (down && !_walkKeys[kWalkJump])
-			_jumpPressed = true;
-		walkKey = kWalkJump;
-		break;
+		return walkAction(KeyMap::kAwayJump, down);
 	case Common::KEYCODE_l:
 		if (down) {
 			_levelRenderer->setLightingEnabled(!_levelRenderer->isLightingEnabled());
@@ -1191,13 +1188,6 @@ bool STGEngine::handleWalkKey(const Common::KeyState &state, bool down) {
 			_hudScreen->setLeftMode(key == Common::KEYCODE_b   ? HudScreen::kLeftLife
 			                        : key == Common::KEYCODE_h ? HudScreen::kLeftMap
 			                                                   : HudScreen::kLeftObject);
-		return true;
-	case Common::KEYCODE_LCTRL:
-	case Common::KEYCODE_RCTRL:
-		// The original's default fire key; one attack per press.
-		if (down && !_fireHeld)
-			attack();
-		_fireHeld = down;
 		return true;
 	case Common::KEYCODE_1:
 	case Common::KEYCODE_2:
@@ -1221,10 +1211,92 @@ bool STGEngine::handleWalkKey(const Common::KeyState &state, bool down) {
 	return true;
 }
 
+bool STGEngine::walkAction(int action, bool down) {
+	int walkKey;
+	switch (action) {
+	case KeyMap::kAwayForward:
+		walkKey = kWalkForward;
+		break;
+	case KeyMap::kAwayBackward:
+		walkKey = kWalkBack;
+		break;
+	case KeyMap::kAwayLeft:
+		walkKey = kWalkTurnLeft;
+		break;
+	case KeyMap::kAwayRight:
+		walkKey = kWalkTurnRight;
+		break;
+	case KeyMap::kAwaySlideLeft:
+		walkKey = kWalkStrafeLeft;
+		break;
+	case KeyMap::kAwaySlideRight:
+		walkKey = kWalkStrafeRight;
+		break;
+	case KeyMap::kAwayLookUp:
+		walkKey = kWalkLookUp;
+		break;
+	case KeyMap::kAwayLookDown:
+		walkKey = kWalkLookDown;
+		break;
+	case KeyMap::kAwayCrouch:
+		walkKey = kWalkCrouch;
+		break;
+	case KeyMap::kAwayRun:
+		walkKey = kWalkRun;
+		break;
+	case KeyMap::kAwayJump:
+		// Once per press.
+		if (down && !_walkKeys[kWalkJump])
+			_jumpPressed = true;
+		walkKey = kWalkJump;
+		break;
+	case KeyMap::kAwayLookCenter:
+		if (down)
+			_camera.pitch = 0;
+		return true;
+	case KeyMap::kAwayAttack:
+		// One attack per press (game+0x2E8 latches it until the key is up).
+		if (down && !_fireHeld)
+			attack();
+		_fireHeld = down;
+		return true;
+	case KeyMap::kAwayMouseLook:
+		// game.vt120 (0x440BB4): letting go centres the view with Lookspring.
+		if (!down && _mouseLook && _settings.lookspring)
+			_camera.pitch = 0;
+		_mouseLook = down;
+		return true;
+	default:
+		return false;
+	}
+	_walkKeys[walkKey] = down;
+	return true;
+}
+
+void STGEngine::releaseWalkKeys() {
+	for (bool &held : _walkKeys)
+		held = false;
+	_fireHeld = _mouseLook = false;
+	_viewButtons = 0;
+}
+
+void STGEngine::viewButton(int vk, bool down) {
+	// The view's buttons go through the key map as virtual keys 1, 2 and 4
+	// (0x4420A7, 0x442123); a release counts only after a press in the view.
+	int bit = 1 << vk;
+	if (down)
+		_viewButtons |= bit;
+	else if (!(_viewButtons & bit))
+		return;
+	else
+		_viewButtons &= ~bit;
+	byte action = _settings.awayKeys.get(vk);
+	if (action != KeyMap::kNone)
+		walkAction(action, down);
+}
+
 void STGEngine::updateWalk(uint32 delta) {
 	const double kSpeed = 25.0;    // world units per second
-	const double kTurnSpeed = 2.0; // radians per second
-	const double kLookSpeed = 0.8; // pitch per second
 	double seconds = std::min<uint32>(delta, 100) / 1000.0;
 
 	double forward = (_walkKeys[kWalkForward] ? 1 : 0) - (_walkKeys[kWalkBack] ? 1 : 0);
@@ -1269,7 +1341,20 @@ void STGEngine::updateWalk(uint32 delta) {
 		lookScale = (double)motion.lookRate / kDefault.lookRate;
 	}
 
+	// Run doubles walking and turning (game+0x210 and +0x218, 0x43B904).
+	if (_walkKeys[kWalkRun]) {
+		moveScale *= 2;
+		turnScale *= 2;
+	}
+
 	_camera.yaw += turn * kTurnSpeed * turnScale * seconds;
+	double mouseTurn = 0, mouseLook = 0;
+	if (_mouseLook)
+		mouseLookRates(mouseTurn, mouseLook);
+	if (controls & Mission::kControlTurn)
+		_camera.yaw += mouseTurn * seconds;
+	if (controls & Mission::kControlLook)
+		look += mouseLook / kLookSpeed / lookScale;
 	// SET_PLAYER_SPIN: turned regardless, degrees a second (heading up is yaw down).
 	if (_mission && _mission->getSpin())
 		_camera.yaw -= _mission->getSpin() * kPi / 180 * seconds;
@@ -1313,8 +1398,32 @@ void STGEngine::updateWalk(uint32 delta) {
 	_camera.y = _walker->getY();
 	_camera.z = _walker->getEye();
 	_levelRenderer->setVisibleZones(_walker->getActiveZones() | (_mission ? _mission->getExtraZones() : 0));
-	if (turn != 0 || look != 0 || _camera.x != oldX || _camera.y != oldY || _camera.z != oldZ)
+	if (turn != 0 || look != 0 || mouseTurn != 0 || _camera.x != oldX || _camera.y != oldY || _camera.z != oldZ)
 		updateWalkStatus();
+}
+
+void STGEngine::mouseLookRates(double &turn, double &look) const {
+	// 0x43AFA3: away from a 64-pixel band across the middle of the view, the
+	// mouse sets a heading and pitch atan(offset / distance from the far
+	// side to the band) degrees away, and each frame the view turns a
+	// fifth of the way there. The keys turn by the turn rate (15 by
+	// default, Mission::Motion) and look by the look rate (10) a frame,
+	// which here are kTurnSpeed and kLookSpeed; the mouse is scaled alike.
+	auto angle = [](int mouse, int size, int offset) {
+		int edge = size / 2 - offset;
+		mouse = std::max(0, std::min(size - 1, mouse));
+		int d = mouse - edge;
+		if (d > 0) {
+			edge += 64;
+			d = mouse - edge;
+			if (d < 0)
+				return 0.0;
+		}
+		return -std::atan2((double)d, (double)edge) * 180 / kPi;
+	};
+	turn = angle(_mouseX, _viewW, 32) / 5 / 15 * kTurnSpeed;
+	// Up the view is a positive pitch in the original, a negative one here.
+	look = -angle(_mouseY, _viewH, 16) / 5 / 10 * kLookSpeed;
 }
 
 void STGEngine::prepareAim(int w, int h) {

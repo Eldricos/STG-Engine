@@ -143,8 +143,10 @@ then each away mission in the order the script gives, branching on whether its
 objectives were met, through to one of the endings and the credits. Esc in a
 mission opens the menu: Load, Save (nine slots plus the automatic save the
 story makes), New, Quit (the credits, then out), Settings (effects and music
-volume, difficulty, subtitles) and Controls (the keys, which can't be changed
-yet). Settings are kept in the settings file.
+volume, difficulty, subtitles) and Controls (the keys: click a box and press
+the key or mouse button for it, or Esc to give up; each action can have two,
+on the away and starship pages, and Lookspring levels the view when Mouse
+Look is let go). Settings, keys included, are kept in the settings file.
 
 Between missions the story runs on the bridge, the star map of the ten
 stars. Click a star, planet, station or fleet to select it; SET COURSE warps
@@ -157,12 +159,14 @@ stardate, a scan a tenth, and the story's deadlines run on stardates. Space
 skips the speech playing; Esc or OPTIONS opens the menu.
 
 Space combat starts from the bridge, or when a hostile fleet is where the
-Enterprise arrives. After the briefing (PROCEED), fly by hand with the arrows
-(Up dives, Down climbs), Ctrl / Q and Num 0 / E to roll, Num + and Num - (or
-= and -) for speed, or give the helm an order with 1-7 (Close on target,
-Evade, Maintain distance, Full stop, Stand by, Warp out, Maintain status) or
-the menu the CONN line calls up. Shift (or F) fires phasers, Enter (or G) photon
-torpedoes; T or the button by the radar picks the next target, V switches
+Enterprise arrives. After the briefing (PROCEED), with the original's
+default keys, fly by hand with the arrows or Num 8/2/4/6 (Up dives, Down
+climbs), Ctrl and Num 0 to roll, Num + and Num - for speed, or give the helm
+an order with 1-7 (Close on target, Evade, Maintain distance, Full stop (also
+Num 5), Stand by, Warp out, Maintain status) or the menu the CONN line calls
+up. Shift fires phasers, Enter photon torpedoes. The Controls screen changes
+any of these; while the keys are free, Q / E also roll, = and - set the speed,
+and F and G fire. T or the button by the radar picks the next target, V switches
 between the forward and enemy views, the slider at the right of the
 viewscreen zooms it, the one by the radar sets its range, holding the mouse on
 the viewscreen steers towards it, the buttons at the foot of each systems panel
@@ -195,9 +199,13 @@ In the viewer, Left/Right steps through images and PgUp/PgDn jumps between
 archives. Tab and Shift+Tab jump to the next and previous 3D level (`GAME.LV2`),
 whose name the 3D view shows on its status line. Away from the starting screen, Up/Down steps through sounds and Space replays the current one. On a level, `]`/`[` step
 from the floor plan to a 3D view and then through the textures. In the 3D view, the
-arrows or WASD move, PgUp/PgDn look up and down, End levels the view, X (or
-keypad .) jumps, C (or Enter) crouches while held, L switches the lighting off
-and on, and Shift+C lets you walk through walls. Ctrl or the left
+keys are the Controls screen's, by default the original's: the arrows walk and
+turn, Num / and Num * slide, PgUp/PgDn look up and down, Home levels the view,
+Enter jumps, Ctrl crouches while held, Shift runs, and holding the right
+mouse button looks with the mouse (the further from the middle of the view,
+the faster it turns). While the keys are free, WASD also walk and slide, End
+levels the view, X jumps and C crouches. L switches the lighting off and on,
+and Shift+C lets you walk through walls. Insert or the left
 mouse button attacks: with the weapon in use (verid1 starts with the phaser),
 held up in the view, it fires at the mouse cursor (or the centre of the view
 when the cursor is elsewhere); with none, bare-handed at the centre. `[` and

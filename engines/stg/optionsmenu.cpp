@@ -29,27 +29,8 @@ const Common::Rect kEffectsSlider(106, 126, 318, 144);
 const Common::Rect kMusicSlider(106, 157, 318, 175);
 const int kSliderSteps = 30;
 
-/**
- * The away controls in the Controls panel's order, with this engine's
- * keys for them (it has no key remapping yet).
- */
-const char *const kAwayKeys[][2] = {
-	{ "Ctrl", "Click" }, // Attack
-	{ "Up", "W" },       // Forward
-	{ "Left", "" },      // Left
-	{ "Right", "" },     // Right
-	{ "Down", "S" },     // Backward
-	{ "A", "" },         // Slide Left
-	{ "D", "" },         // Slide Right
-	{ "", "" },          // Jump
-	{ "", "" },          // Crouch
-	{ "", "" },          // Run
-	{ "PgUp", "" },      // Look Up
-	{ "PgDn", "" },      // Look Down
-	{ "End", "" },       // Look Center
-	{ "", "" }           // Mouse Look
-};
-const int kAwayActions = 14, kStarshipActions = 17;
+/** The selected key cell's highlight, KEYHIGH.BMP, from the cell (0x483C8B). */
+const int kKeyHighX = -3, kKeyHighY = -6;
 
 } // End of anonymous namespace
 
@@ -205,7 +186,14 @@ int OptionsMenu::hit(int x, int y) const {
 	return -1;
 }
 
-void OptionsMenu::mouseDown(int x, int y) {
+void OptionsMenu::mouseDown(int x, int y, int button) {
+	if (_captureCell >= 0) {
+		// The panel holds the mouse while it waits, so a button is the key.
+		assignKey(button);
+		return;
+	}
+	if (button != 1)
+		return;
 	_pressed = hit(x, y);
 	if (_pressed < 0)
 		_dragging = clickPanel(x, y, false);
@@ -230,6 +218,14 @@ void OptionsMenu::mouseUp(int x, int y) {
 }
 
 void OptionsMenu::keyDown(const Common::KeyState &key) {
+	if (_captureCell >= 0) {
+		// The original takes Escape as a key here too; this lets it cancel.
+		if (key.keycode == Common::KEYCODE_ESCAPE)
+			_captureCell = -1;
+		else
+			assignKey(KeyMap::virtualKey(key.keycode));
+		return;
+	}
 	if (key.keycode == Common::KEYCODE_ESCAPE) {
 		if (_panel != kPanelMain)
 			cancel();
@@ -262,6 +258,59 @@ void OptionsMenu::openPanel(Panel panel) {
 	_selected = -1;
 	_editName.clear();
 	_starshipPage = false;
+	_captureCell = -1;
+	if (panel == kPanelControls)
+		fillCells();
+}
+
+Common::Rect OptionsMenu::cellRect(int cell) {
+	int action = cell / 2;
+	int x = (action < 10 ? 84 : 252) + 34 * (cell % 2), y = 37 + 30 * (action % 10);
+	return Common::Rect(x, y, x + 32, y + 26);
+}
+
+int OptionsMenu::hitCell(int x, int y) const {
+	int cells = 2 * (_starshipPage ? KeyMap::kStarshipActions : KeyMap::kAwayActions);
+	for (int i = 0; i < cells; i++) {
+		if (cellRect(i).contains(x - kPanelX, y - kPanelY))
+			return i;
+	}
+	return -1;
+}
+
+void OptionsMenu::fillCells() {
+	for (int page = 0; page < 2; page++) {
+		const KeyMap &map = page ? _working.starshipKeys : _working.awayKeys;
+		const byte *actions = page ? KeyMap::kStarshipPanel : KeyMap::kAwayPanel;
+		int count = page ? KeyMap::kStarshipActions : KeyMap::kAwayActions;
+		for (int i = 0; i < count; i++)
+			map.findKeys(actions[i], _cellKeys[page][2 * i], _cellKeys[page][2 * i + 1]);
+	}
+}
+
+void OptionsMenu::assignKey(int vk) {
+	// 0x485AF3 takes the key while the cell waits: not the function keys,
+	// and for Mouse Look only the left or right button.
+	if (vk < 0 || (vk >= 0x70 && vk <= 0x7B))
+		return;
+	int page = _starshipPage ? 1 : 0;
+	byte action = (page ? KeyMap::kStarshipPanel : KeyMap::kAwayPanel)[_captureCell / 2];
+	if (action == KeyMap::kAwayMouseLook && !page && vk != 1 && vk != 2)
+		return;
+	// 0x483CAB: the cell's old key does nothing now, the new key does the
+	// cell's action, and any other cell showing the new key is cleared.
+	KeyMap &map = page ? _working.starshipKeys : _working.awayKeys;
+	int &cell = _cellKeys[page][_captureCell];
+	if (cell >= 0)
+		map.set(cell, KeyMap::kNone);
+	map.set(vk, action);
+	int cells = 2 * (page ? KeyMap::kStarshipActions : KeyMap::kAwayActions);
+	for (int i = 0; i < cells; i++) {
+		if (_cellKeys[page][i] == vk)
+			_cellKeys[page][i] = -1;
+	}
+	cell = vk;
+	_captureCell = -1;
 }
 
 void OptionsMenu::click(int widget) {
@@ -321,6 +370,7 @@ void OptionsMenu::click(int widget) {
 	case kStarshipTab:
 	case kAwayTab:
 		_starshipPage = widget == kStarshipTab;
+		_captureCell = -1;
 		play(1001);
 		break;
 	case kLookspringLabel:
@@ -373,6 +423,7 @@ void OptionsMenu::cancel() {
 	play(1003);
 	play(2000);
 	_working = _settings;
+	_captureCell = -1;
 	_panel = kPanelMain;
 	_selected = -1;
 }
@@ -393,6 +444,11 @@ bool OptionsMenu::clickPanel(int x, int y, bool drag) {
 			(i == 0 ? _working.effectsVolume : _working.musicVolume) = value;
 			return true;
 		}
+		return false;
+	}
+	if (_panel == kPanelControls && !drag) {
+		// A cell waits for a key (0x483843).
+		_captureCell = hitCell(x, y);
 		return false;
 	}
 	if ((_panel == kPanelLoad || _panel == kPanelSave) && !drag && px >= kSlotNameX - 28 && px < kSlotRight) {
@@ -493,13 +549,21 @@ void OptionsMenu::draw(Graphics::Surface &screen) const {
 		drawSlider(screen, kMusicSlider, _working.musicVolume);
 	} else if (_panel == kPanelControls) {
 		// Two cells for each action, down two columns.
-		int actions = _starshipPage ? kStarshipActions : kAwayActions;
-		for (int i = 0; i < actions; i++) {
-			int x = kPanelX + (i < 10 ? 84 : 252), y = kPanelY + 37 + 30 * (i % 10) + 5;
-			for (int k = 0; k < 2; k++) {
-				Common::String key = _starshipPage ? "" : kAwayKeys[i][k];
-				drawText(screen, key, x + 34 * k + (32 - _font.getStringWidth(key)) / 2, y);
+		int page = _starshipPage ? 1 : 0;
+		if (_captureCell >= 0) {
+			if (const FramedImage *high = find("KEYHIGH.BMP")) {
+				Common::Rect r = cellRect(_captureCell);
+				high->draw(screen, 0, kPanelX + r.left + kKeyHighX, kPanelY + r.top + kKeyHighY,
+				           FramedImage::kFirstPixel);
 			}
+		}
+		int cells = 2 * (page ? KeyMap::kStarshipActions : KeyMap::kAwayActions);
+		for (int i = 0; i < cells; i++) {
+			if (_cellKeys[page][i] < 0)
+				continue;
+			Common::String key = KeyMap::keyName(_cellKeys[page][i]);
+			Common::Rect r = cellRect(i);
+			drawText(screen, key, kPanelX + r.left + (r.width() - _font.getStringWidth(key)) / 2, kPanelY + r.top + 5);
 		}
 	}
 

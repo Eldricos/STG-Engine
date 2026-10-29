@@ -17,6 +17,7 @@
 #include "common/keyboard.h"
 #include "engines/stg/font.h"
 #include "engines/stg/framedimage.h"
+#include "engines/stg/keymap.h"
 #include "engines/stg/resources.h"
 
 namespace STG {
@@ -31,10 +32,13 @@ struct GameSettings {
 	bool largeWindow = false;
 	bool subtitles = true;
 	bool lookspring = false;
+	KeyMap awayKeys = KeyMap::awayDefaults();
+	KeyMap starshipKeys = KeyMap::starshipDefaults();
 
 	bool operator==(const GameSettings &o) const {
 		return musicVolume == o.musicVolume && effectsVolume == o.effectsVolume && difficulty == o.difficulty &&
-		       largeWindow == o.largeWindow && subtitles == o.subtitles && lookspring == o.lookspring;
+		       largeWindow == o.largeWindow && subtitles == o.subtitles && lookspring == o.lookspring &&
+		       awayKeys == o.awayKeys && starshipKeys == o.starshipKeys;
 	}
 	bool operator!=(const GameSettings &o) const { return !(*this == o); }
 };
@@ -99,7 +103,8 @@ public:
 	void setSlots(const std::vector<Slot> &slots) { _slots = slots; }
 	void setSoundCallback(SoundCallback callback) { _sound = callback; }
 
-	void mouseDown(int x, int y);
+	/** button: the virtual key of the mouse button, 1 left, 2 right, 4 middle. */
+	void mouseDown(int x, int y, int button = 1);
 	void mouseMove(int x, int y);
 	void mouseUp(int x, int y);
 	void keyDown(const Common::KeyState &key);
@@ -165,6 +170,14 @@ private:
 	void cancel();
 	/** A click on a slot row, or the sliders. */
 	bool clickPanel(int x, int y, bool drag);
+	/** The Controls panel's key cell under (x, y), or -1. */
+	int hitCell(int x, int y) const;
+	/** The cell's rectangle within the panel (0x48074F: 32 x 26, two to an action). */
+	static Common::Rect cellRect(int cell);
+	/** Fill the cells from the working key maps, as the panel opens (the loop at 0x4852A0). */
+	void fillCells();
+	/** Give the captured cell's action the key vk (0x483CAB). */
+	void assignKey(int vk);
 	void play(int id);
 
 	const ResourceManager &_resources;
@@ -177,6 +190,10 @@ private:
 	bool _canReturn = false, _canSave = false, _canChangeDifficulty = true;
 	Panel _panel = kPanelMain;
 	bool _starshipPage = false;
+	/** The keys the cells show, away then starship, -1 for none. */
+	int _cellKeys[2][KeyMap::kStarshipActions * 2];
+	/** The cell waiting for a key, or -1. */
+	int _captureCell = -1;
 	std::vector<Slot> _slots;
 	int _selected = -1;
 	Common::String _editName;

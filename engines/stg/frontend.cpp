@@ -141,6 +141,11 @@ void STGEngine::loadSettings() {
 		_settings.largeWindow = ConfMan.getBool("large_window");
 	if (ConfMan.hasKey("lookspring"))
 		_settings.lookspring = ConfMan.getBool("lookspring");
+	// Unreadable maps keep the defaults, as the original does with a bad SGENS.CFG.
+	if (ConfMan.hasKey("away_keys"))
+		_settings.awayKeys.fromString(ConfMan.get("away_keys"));
+	if (ConfMan.hasKey("starship_keys"))
+		_settings.starshipKeys.fromString(ConfMan.get("starship_keys"));
 }
 
 void STGEngine::saveSettings() {
@@ -151,6 +156,8 @@ void STGEngine::saveSettings() {
 	ConfMan.setBool("subtitles", _settings.subtitles);
 	ConfMan.setBool("large_window", _settings.largeWindow);
 	ConfMan.setBool("lookspring", _settings.lookspring);
+	ConfMan.set("away_keys", _settings.awayKeys.toString());
+	ConfMan.set("starship_keys", _settings.starshipKeys.toString());
 	ConfMan.flushToDisk();
 	syncSoundSettings();
 }
@@ -265,6 +272,7 @@ bool STGEngine::playSpaceCombat(int number) {
 	}
 	_combat->setSubtitles(_settings.subtitles);
 	_combat->setDifficulty(_settings.difficulty);
+	_combat->setKeyMap(_settings.starshipKeys);
 	setTrueColour(true);
 	setCursor(false);
 	return true;
@@ -343,6 +351,10 @@ void STGEngine::openMenu(bool canReturn) {
 	if (_combat)
 		_system->initSize(Screen::kWidth, Screen::kHeight);
 	_menuOpen = true;
+	// The menu takes the keys, so nothing stays held (as 0x43F552 clears them).
+	releaseWalkKeys();
+	if (_combat)
+		_combat->releaseKeys();
 	_menu->setSlots(listSaves());
 	bool inMission = _playingMission && _mission;
 	// Combat can't be saved: its state isn't kept. Nor can a mission that
@@ -390,6 +402,12 @@ void STGEngine::handleMenuEvent(const Common::Event &event) {
 	case Common::EVENT_LBUTTONDOWN:
 		_menu->mouseDown(event.mouse.x, event.mouse.y);
 		break;
+	case Common::EVENT_RBUTTONDOWN:
+		_menu->mouseDown(event.mouse.x, event.mouse.y, 2);
+		break;
+	case Common::EVENT_MBUTTONDOWN:
+		_menu->mouseDown(event.mouse.x, event.mouse.y, 4);
+		break;
 	case Common::EVENT_MOUSEMOVE:
 		_menu->mouseMove(event.mouse.x, event.mouse.y);
 		break;
@@ -406,6 +424,8 @@ void STGEngine::handleMenuEvent(const Common::Event &event) {
 		saveSettings();
 		if (_mission)
 			_mission->setDifficulty(_settings.difficulty);
+		if (_combat)
+			_combat->setKeyMap(_settings.starshipKeys);
 		if (_bridge)
 			_bridge->setSubtitles(_settings.subtitles);
 	}

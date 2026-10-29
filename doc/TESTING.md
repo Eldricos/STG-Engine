@@ -33,6 +33,19 @@ screenshot. Add the save and the log if you have them.
 - Lifts, doors and switches respond, and the player isn't carried off by a
   lift unless standing on the car.
 
+## Controls
+
+- On the Controls screen, the defaults match the original's (away: arrows,
+  Num / and Num *, Enter, Ctrl, Shift, PgUp, PgDn, Home, Insert and the
+  mouse buttons; starship: arrows and the keypad, Ctrl, Shift, Enter, 1-7).
+- Click a box, press a key: the key moves there from any other action, the
+  old key in that box stops working, and Accept keeps it after a restart.
+  Cancel throws the changes away.
+- Mouse Look takes only the left or right mouse button.
+- In a mission, Shift runs, and holding the right button turns and tilts the
+  view towards the mouse. With Lookspring on, letting go levels the view.
+- Keys you've changed work in space combat too.
+
 ## Away missions
 
 | Mission | Check in particular |

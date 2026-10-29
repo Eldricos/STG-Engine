@@ -15,6 +15,7 @@ target_sources(stg_engines PRIVATE
 	level.cpp
 	mission.cpp
 	opcodes.cpp
+	keymap.cpp
 	optionsmenu.cpp
 	overlay.cpp
 	hud.cpp
