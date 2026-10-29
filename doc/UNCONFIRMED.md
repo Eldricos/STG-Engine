@@ -29,11 +29,6 @@ engine does now and what would settle it. Deliberate differences are in
   0x2000, and nothing in the code was seen setting it. So either the ships
   fade in, or (if the flag is never set) they would never appear. Here they
   appear at once. *Settles it:* footage of SC9.
-- **Steering by holding the mouse on the viewscreen.** The original
-  measures the mouse from the middle of the viewscreen (`0x4AEFD4`), but
-  which way that turns depends on how its joystick values are centred,
-  which wasn't traced. Here left of the middle turns left and above it
-  dives, as the arrow keys do. *Settles it:* trying it in the original.
 - **What "dim" means on the schematics.** See
   [KNOWN_DIFFERENCES.md](KNOWN_DIFFERENCES.md). *Settles it:* comparing a
   damaged ship's panel with the original's.
@@ -51,19 +46,9 @@ engine does now and what would settle it. Deliberate differences are in
 
 ## Away missions
 
-- **View overlay mode 2.** SHOW_VIEW_OVERLAY's mode 2 (used only for
-  Epsion's SHELL.OVR) draws row by row in the original (`0x409DDC`), and
-  that routine wasn't fully decoded. Here it's drawn as mode 1 (centred),
-  which should look the same for a full-width picture. *Settles it:* seeing
-  the shell in Epsion during the playthrough.
 - **The body in AMARGOS1.** Once, a body stayed in place after Riker asked
   for it to be beamed up. It couldn't be reproduced. *Settles it:* the
   playthrough.
-
-- **Which way Mouse Look turns.** The original's heading and pitch signs
-  weren't traced through to the screen. Here the view turns towards the
-  mouse: left of the middle turns left, above it looks up. *Settles it:*
-  holding the right button in the original.
 
 ## Bridge
 

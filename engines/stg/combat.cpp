@@ -1357,11 +1357,12 @@ void SpaceCombat::flyByHand() {
 }
 
 void SpaceCombat::steerByMouse(int x, int y) {
-	// 0x4AEFD4: the distance from the middle of the viewscreen hotspot,
-	// (0,0)-(639,249), as a share of half its size: left of the middle
-	// turns left and above it dives, like the arrow keys.
+	// 0x4AEFD4: (middle - mouse) * 100 / half the viewscreen hotspot,
+	// (0,0)-(639,249), for each axis. 0x4A6F7D takes the yaw rate down by
+	// x, turning left, and the pitch rate up by y, as Climb does: left of
+	// the middle turns left, above it climbs.
 	_mouseTurn[0] = clamp1((x - 319) / 319.0);
-	_mouseTurn[1] = clamp1((y - 124) / 124.0);
+	_mouseTurn[1] = clamp1((124 - y) / 124.0);
 }
 
 void SpaceCombat::mouseDown(int x, int y) {

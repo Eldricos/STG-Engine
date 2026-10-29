@@ -24,6 +24,9 @@ are in [UNCONFIRMED.md](UNCONFIRMED.md).
   loading carries on from where you were. Saving in space combat works as
   in the original: loading starts the fight again from its briefing.
 - **A mission can't be saved while its briefing waits for PROCEED.**
+- **The Window option does nothing.** Settings keeps the original's large
+  or small window choice, but the view is always the large one, 640 wide.
+  In the original the small window's view is 504 wide.
 
 ## Extras the original doesn't have
 

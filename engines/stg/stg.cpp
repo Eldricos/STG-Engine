@@ -1466,8 +1466,10 @@ void STGEngine::drawViewOverlay(Graphics::Surface &view) {
 				warning("Could not load the view overlay %s", overlay.image.c_str());
 		}
 	}
-	// Mode 1 centres it, mode 2 lays it down row by row (the same for
-	// these full-width pictures), anything else draws nothing.
+	// 0x409DDC: a picture no wider than the view is centred in both modes;
+	// only a wider one differs (mode 1 crops round its middle, mode 2
+	// copies its rows from the left), which with the view always 640 wide
+	// never happens. Anything else draws nothing.
 	if (!_viewOverlayLoaded || (overlay.mode != 1 && overlay.mode != 2))
 		return;
 	// One frame of every row (0x431355 sets no frame height).

@@ -56,7 +56,7 @@ screenshot. Add the save and the log if you have them.
 | ARVADA1 | Actors told to guard something stay near it rather than following you. |
 | BERSUS | The same guards (actors 38-47) stay near what they guard. Water, as in Antilios. |
 | ENTERP | The finale on the Enterprise. |
-| EPSION | The SHELL overlay over the view looks right (it's drawn by a mode not fully decoded). The yellow streak transitions. |
+| EPSION | The SHELL overlay over the view. The yellow streak transitions. |
 | GALORN1, GALORN2 | The BIGCROP overlay appears over the view. |
 | QURASH | The helmet overlay. |
 | VERID1 | The finale with Soran. |
@@ -80,8 +80,8 @@ Every fight:
   the screen dims for a moment as well.
 - The slider beside the viewscreen zooms it; the one beside the radar sets
   the radar's range.
-- Holding the mouse on the viewscreen steers. Tell us if up and down feel
-  the wrong way round compared with the original.
+- Holding the mouse on the viewscreen steers towards it: left of the middle
+  turns left, above it climbs.
 - A ship blowing up shows as a flashing marker on the radar.
 
 Particular fights:

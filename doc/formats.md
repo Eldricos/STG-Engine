@@ -430,8 +430,10 @@ heading in degrees.
     id, height, low, high: zones by height for a lift, the first at or below its height counting.
   - SET_SKY (0xB6) n: sky n, and the sky on. SHOW_VIEW_OVERLAY (0xB8) image, mode: a script
     resource's .OVR over the view, one frame of every row (-1 removes it). The mode is how it is
-    drawn (`0x409DDC`): 1 centred (helm.ovr, BIGCROP.OVR), 2 row by row (epsion's SHELL.OVR, the same
-    for these 640 x 252 pictures), anything else not at all. MAP_HEIGHT_BAND (0xC9) below, above.
+    drawn (`0x409DDC`): 1 (helm.ovr, BIGCROP.OVR) or 2 (epsion's SHELL.OVR), anything else not at
+    all. Both centre a picture no wider than the view; for a wider one, 1 crops round its middle and 2
+    copies each row from its left edge into the locked surface (`0x402A42`). SHELL.OVR is 640 wide, so
+    it is only wider in the original's small, 504-wide window. MAP_HEIGHT_BAND (0xC9) below, above.
   - ENGAGE (0x73) id: event 35 once the player walks 3 units off (another engaged object gets it at
     once). TELEPORT_PLAYER_RELATIVE (0x76) from, to: moved and turned by their difference.
   - Health: SET_ENVIRONMENT_DAMAGE (0x88) period: 1 health a period (kind 13), 0 stops;
@@ -1138,7 +1140,10 @@ held, the view turns towards the mouse (0x43AFA3): outside a 64-pixel band
 across the middle of the view, the target heading is atan(offset / distance
 from the far side to the band) degrees away, the band starting 32 pixels
 left of the middle (16 above it for the pitch), and each frame the view
-moves a fifth of the way. On release, with Lookspring on, the view levels.
+moves a fifth of the way. The keys and the mouse feed the same turn (`0x43C7D4`):
+Left adds the turn rate, and the mouse left of the middle a positive angle, so it
+turns left; above the middle it looks up, as Look Up does. On release, with
+Lookspring on, the view levels.
 
 The Controls panel (0x483843) has two cells an action, 32 x 26, at x 84 (the
 first ten actions) or 252 (the rest) of the panel, the second 34 to the
@@ -1262,10 +1267,11 @@ destroyed, 1 lost (warped out), 2 or 3 won (the fleet is marked beaten).
   tenths gone (t tenths), the screen also dims for (4t - 16) × 9 ticks: a
   level runs from -127 to 127, and while it's within ±63 every colour is
   quartered, otherwise halved (`0x47BC14`, `0x47C2EC`).
-- Held on the viewscreen (hotspot 17, `0x4AEFD4`) the mouse steers: its
-  distance from (319,124) as a share of half the hotspot, ±100, joins the
-  stick's axes until let go. Here left of the middle turns left and above it
-  dives, as the arrow keys; the original's signs aren't confirmed.
+- Held on the viewscreen (hotspot 17, `0x4AEFD4`) the mouse steers:
+  (middle − mouse) × 100 / half the hotspot for each axis, from (319,124),
+  joins the stick's axes until let go. `0x4A6F7D` takes the yaw rate down by
+  x and the pitch rate up by y, so left of the middle turns left (as Turn
+  Left does) and above it climbs (as Climb does, the Down key).
 - The starfield (`0x4ADC6A`, shapes `0x4AE2BF`): stars of 13 types; type 1 a
   cross, 3 one 0xA9 pixel, 4 an X, 5 a plus, 6 and 7 three-pixel bars, the rest
   one pixel, 0x84 or (one time in eight) 0x87, in STANDARD.PAL. Seven more
