@@ -88,6 +88,11 @@ bool OptionsMenu::load() {
 	if (!_resources.loadImage({ kArchive, "CAPTAINS.BMP" }, decoder) || !decoder.hasPalette())
 		return false;
 	_palette = decoder.getPalette();
+	for (int i = 0; i < 256; i++) {
+		byte r, g, b;
+		_palette.get(i, r, g, b);
+		_dim[i] = _palette.findBestColor(r * 2 / 5, g * 2 / 5, b * 2 / 5);
+	}
 	_images.clear();
 	image("CAPTAINS.BMP");
 	for (const WidgetInfo &w : kWidgets)
@@ -360,8 +365,9 @@ void OptionsMenu::click(int widget) {
 		break;
 	case kWindowLabel:
 	case kWindowValue:
-		_working.largeWindow = !_working.largeWindow;
-		play(1001);
+		// The view is always the large window's here, so the choice is
+		// shown dimmed and refused with the empty-slot sound.
+		play(1002);
 		break;
 	case kSubtitlesLabel:
 	case kSubtitlesValue:
@@ -477,6 +483,15 @@ void OptionsMenu::drawWidget(Graphics::Surface &screen, int widget, int frame) c
 		return;
 	Common::Rect r = screenRect(widget);
 	img->draw(screen, frame, r.left, r.top);
+	if (widget == kWindowLabel || widget == kWindowValue) {
+		// Dimmed: it does nothing here.
+		r.clip(Common::Rect(0, 0, screen.w, screen.h));
+		for (int y = r.top; y < r.bottom; y++) {
+			byte *row = (byte *)screen.getBasePtr(0, y);
+			for (int x = r.left; x < r.right; x++)
+				row[x] = _dim[row[x]];
+		}
+	}
 }
 
 void OptionsMenu::drawText(Graphics::Surface &screen, const Common::String &text, int x, int y) const {
@@ -580,7 +595,7 @@ void OptionsMenu::draw(Graphics::Surface &screen) const {
 			frame = _working.difficulty;
 			break;
 		case kWindowValue:
-			frame = _working.largeWindow ? 0 : 1;
+			frame = 0; // LARGE, the only window here
 			break;
 		case kSubtitlesValue:
 			frame = _working.subtitles ? 0 : 1;

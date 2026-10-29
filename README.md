@@ -142,7 +142,8 @@ objectives were met, through to one of the endings and the credits. Esc in a
 mission opens the menu: Load, Save (nine slots plus the automatic save the
 story makes; a save made in space combat, as in the original, starts that
 fight again from its briefing), New, Quit (the credits, then out), Settings (effects and music
-volume, difficulty, subtitles) and Controls (the keys: click a box and press
+volume, difficulty, subtitles; the window size is shown dimmed, as the view is
+always the large one) and Controls (the keys: click a box and press
 the key or mouse button for it, or Esc to give up; each action can have two,
 on the away and starship pages, and Lookspring levels the view when Mouse
 Look is let go). Settings, keys included, are kept in the settings file.

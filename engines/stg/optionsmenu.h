@@ -184,6 +184,8 @@ private:
 
 	const ResourceManager &_resources;
 	Graphics::Palette _palette;
+	/** Each colour at two fifths of its brightness, for options that do nothing here. */
+	byte _dim[256] = {};
 	std::map<Common::String, std::unique_ptr<FramedImage>> _images;
 	Font _font;
 
