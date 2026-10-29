@@ -27,7 +27,14 @@ The whole game runs, from the title to the credits:
 
 Still open:
 
-- A full playthrough looking for bugs.
+- A full playthrough looking for bugs. Check these when you get there:
+  - Space combat openings: the original's radar showed fewer ships than the
+    mission file holds at the start of Halee's fight (SC16); here they all
+    show. The cause isn't known.
+  - SC9's later waves: the original may fade the arriving ships in with the
+    uncloak sound; here they appear at once.
+  - Epsion's shell overlay (SHELL.OVR, view overlay mode 2): drawn as mode 1;
+    it should look the same.
 - Some map marker styles haven't been seen in the original yet, so how they
   look is unconfirmed. See [doc/formats.md](doc/formats.md).
 - Only the 2 CD Windows English release is in the detection table. Other
