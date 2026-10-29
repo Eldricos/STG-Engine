@@ -357,10 +357,13 @@ void STGEngine::openMenu(bool canReturn) {
 		_combat->releaseKeys();
 	_menu->setSlots(listSaves());
 	bool inMission = _playingMission && _mission;
-	// Combat can't be saved: its state isn't kept. Nor can a mission that
-	// hasn't started.
-	_menu->open(_settings, canReturn, (inMission || _menuOverBridge) && !_combat && !_awaitingProceed,
+	// A combat in the story is saved as it started: its state isn't kept,
+	// and loading starts it again (the original's "save game at start of
+	// current encounter"). A mission that hasn't started can't be saved.
+	bool encounter = _combat && _campaign.getCombat();
+	_menu->open(_settings, canReturn, (inMission || _menuOverBridge || encounter) && !_awaitingProceed,
 	            !inMission && !_combat);
+	_menu->setEncounter(encounter);
 	_screen->getPalette() = _menu->getPalette();
 	_screen->applyPalette();
 	setCursor(false);

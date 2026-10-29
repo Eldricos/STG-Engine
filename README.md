@@ -142,7 +142,8 @@ a new game; here the menu comes first, so a saved game can be loaded instead. Ne
 then each away mission in the order the script gives, branching on whether its
 objectives were met, through to one of the endings and the credits. Esc in a
 mission opens the menu: Load, Save (nine slots plus the automatic save the
-story makes), New, Quit (the credits, then out), Settings (effects and music
+story makes; a save made in space combat, as in the original, starts that
+fight again from its briefing), New, Quit (the credits, then out), Settings (effects and music
 volume, difficulty, subtitles) and Controls (the keys: click a box and press
 the key or mouse button for it, or Esc to give up; each action can have two,
 on the away and starship pages, and Lookspring levels the view when Mouse

@@ -99,6 +99,8 @@ public:
 	 * (the original allows it on the bridge only).
 	 */
 	void open(const GameSettings &settings, bool canReturn, bool canSave, bool canChangeDifficulty);
+	/** Saving now saves the start of a space combat: the Save panel says so. */
+	void setEncounter(bool encounter) { _encounter = encounter; }
 	/** The saved games, kSlots of them and then the automatic one. */
 	void setSlots(const std::vector<Slot> &slots) { _slots = slots; }
 	void setSoundCallback(SoundCallback callback) { _sound = callback; }
@@ -190,6 +192,7 @@ private:
 	bool _canReturn = false, _canSave = false, _canChangeDifficulty = true;
 	Panel _panel = kPanelMain;
 	bool _starshipPage = false;
+	bool _encounter = false;
 	/** The keys the cells show, away then starship, -1 for none. */
 	int _cellKeys[2][KeyMap::kStarshipActions * 2];
 	/** The cell waiting for a key, or -1. */

@@ -18,8 +18,11 @@ are in [UNCONFIRMED.md](UNCONFIRMED.md).
   original's saves. The save version is 7. Older STG-Engine saves still
   load; actors in them that guard something (Arvada 1, Bersus) circle the
   player until a script changes their orders.
-- **Space combat can't be saved.** Its state isn't kept, so Save is off
-  during a fight.
+- **A save in an away mission keeps the moment.** The original saves only
+  where the story is, so loading starts the mission again ("Save game at
+  start of current mission"). Here the mission's whole state is saved, and
+  loading carries on from where you were. Saving in space combat works as
+  in the original: loading starts the fight again from its briefing.
 - **A mission can't be saved while its briefing waits for PROCEED.**
 
 ## Extras the original doesn't have

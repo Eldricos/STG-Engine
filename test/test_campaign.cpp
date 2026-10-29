@@ -282,3 +282,53 @@ TEST(options_menu_controls) {
 	CHECK_EQ(menu.getSettings().starshipKeys.get(0x02), (int)KeyMap::kShipPhasers);
 	CHECK_EQ(menu.getSettings().starshipKeys.get(0x10), (int)KeyMap::kShipPhasers); // the other cell keeps Shift
 }
+
+namespace {
+
+// A bridge that is never shown: the script runs straight on.
+struct HiddenBridge : STG::CampaignWorld {
+	void bridgeCommand(const Common::String &, const std::vector<Common::String> &) override {}
+	bool isBridgeShown() const override { return false; }
+	bool isEnterpriseAt(const Common::String &) const override { return false; }
+	bool getObjectFlag(const Common::String &, int) const override { return false; }
+	double getStardate() const override { return 0; }
+	bool isAudioQueueEmpty() const override { return true; }
+	bool isWarping() const override { return false; }
+	bool isZooming() const override { return false; }
+	bool isEnterpriseIdle() const override { return true; }
+};
+
+} // End of anonymous namespace
+
+TEST(campaign_saved_in_a_combat_starts_it_again) {
+	typedef STG::Campaign::Action A;
+	HiddenBridge bridge;
+	STG::Campaign c;
+	c.load("[Start]\nMovie 1\nSpaceCombat 5 Won Lost\n[Won]\nMovie 2\n[Lost]\nMovie 3\n");
+	c.setWorld(&bridge);
+	c.start("Start");
+	int n = 0;
+	CHECK_EQ(next(c), A::kMovie);
+	CHECK_EQ(next(c, &n), A::kSpaceCombat);
+	CHECK_EQ(n, 5);
+	CHECK_EQ(c.getCombat(), 5);
+
+	// Saved during the fight: loading starts the fight again, not the section.
+	Common::MemoryWriteStreamDynamic out;
+	Common::Serializer save(nullptr, &out);
+	c.sync(save);
+	STG::Campaign d;
+	d.load("[Start]\nMovie 1\nSpaceCombat 5 Won Lost\n[Won]\nMovie 2\n[Lost]\nMovie 3\n");
+	d.setWorld(&bridge);
+	Common::MemoryReadStream in(out.getData().data(), out.size());
+	Common::Serializer load(&in, nullptr);
+	d.sync(load);
+	CHECK(!load.err());
+	d.restartSection();
+	CHECK_EQ(next(d, &n), A::kSpaceCombat);
+	CHECK_EQ(n, 5);
+	CHECK_EQ(next(d), A::kNone);
+	d.combatEnded(STG::Campaign::kCombatWon);
+	CHECK_EQ(next(d, &n), A::kMovie);
+	CHECK_EQ(n, 2);
+}

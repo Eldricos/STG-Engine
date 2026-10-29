@@ -105,6 +105,7 @@ bool OptionsMenu::load() {
 
 void OptionsMenu::open(const GameSettings &settings, bool canReturn, bool canSave, bool canChangeDifficulty) {
 	_settings = _working = settings;
+	_encounter = false;
 	_canReturn = canReturn;
 	_canSave = canSave;
 	_canChangeDifficulty = canChangeDifficulty;
@@ -525,7 +526,9 @@ void OptionsMenu::draw(Graphics::Surface &screen) const {
 
 	if (_panel == kPanelLoad || _panel == kPanelSave) {
 		if (const FramedImage *title = find("SAVELOAD.BMP"))
-			title->draw(screen, _panel == kPanelLoad ? 0 : 1, kPanelX + 3, kPanelY + 3);
+			// Load, Save, Save at start of current mission (unused: missions
+			// are saved as they are), Save at start of current encounter.
+			title->draw(screen, _panel == kPanelLoad ? 0 : _encounter ? 3 : 1, kPanelX + 3, kPanelY + 3);
 		if (_selected >= 0) {
 			if (const FramedImage *bar = find("NAMEBAR.BMP"))
 				bar->draw(screen, 0, kPanelX + 4, kPanelY + kSlotTop + kSlotPitch * _selected - 3,

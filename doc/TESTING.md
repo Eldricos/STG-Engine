@@ -65,6 +65,10 @@ screenshot. Add the save and the log if you have them.
 
 Every fight:
 
+- Esc, then Save: the panel reads "Save game at start of current
+  encounter". Loading that save starts the same fight again from its
+  briefing, and winning or losing it carries the story on as before.
+
 - It opens with the target dead ahead on the radar.
 - The right panel shows the Enterprise's schematic. Clicking the CONN line
   calls up the helm menu, and the CONN line shows the current order.
